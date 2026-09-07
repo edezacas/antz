@@ -1,16 +1,15 @@
 # antz
 
 ## Overview
-`antz` defines a three-role, spec-driven development (SPDD) workflow as agent prompt definitions: **specifier** writes behavior specs, **coder** implements one sub-spec at a time, **verifier** validates and merges. No application code lives here yet — this repo *is* the agent definitions.
+`antz` defines a three-role, spec-driven development (SPDD) workflow as agent prompt definitions: **specifier** writes behavior specs, **coder** implements one sub-spec at a time, **verifier** validates and merges. No application code lives here yet — this repo *is* the agent definitions, kept independent of any one agent framework's frontmatter format.
 
 ## Stack
-- Plain Markdown with YAML frontmatter (`name`, `description`, `tools`) describing each agent's role and allowed tools.
-- No build system, package manager, or runtime — nothing to compile or install.
+- Prompt bodies and metadata are split so the same definitions can target multiple agent frameworks: plain text prompt files, plus small YAML metadata files (`name`, `description`, `access`).
+- No build system, package manager, or runtime — nothing to compile. `install.sh` (POSIX `sh`, runnable via `curl | sh`) renders these into each detected framework's native subagent file and installs it globally (`~/.claude/agents/`, `~/.config/opencode/agents/`).
 
 ## Structure
-- `agents/specifier.md` — turns a natural-language request into Gherkin sub-specs + an e2e QA suite under `spdd/changes/<slug>/`. Read-only role.
-- `agents/coder.md` — implements exactly one sub-spec from `spdd/changes/`. The only role allowed to edit/write files.
-- `agents/verifier.md` — checks the coder's work against the sub-spec's Gherkin scenarios, then merges into `spdd/specs/` and archives to `spdd/archive/`. Read-only role.
+- `agents/prompts/{specifier,coder,verifier}.prompt` — the role instructions verbatim, with no framework-specific syntax.
+- `agents/meta/{specifier,coder,verifier}.yaml` — `name`, `description`, and `access` (`readonly`/`readwrite`) per role. `access` is what a framework-specific generator maps onto that framework's own tool/permission model.
 - `spdd/{changes,specs,archive}/` — not present yet; created on first run of the workflow (specifier creates `spdd/changes/<slug>/`; verifier creates/updates `spdd/specs/` and `spdd/archive/`).
 
 ## Gotchas

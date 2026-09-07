@@ -1,23 +1,24 @@
 # antz
 
 ## Overview
-`antz` defines a three-role, spec-driven development (SPDD) workflow as a set of Claude Code subagents: **specifier** writes behavior specs, **coder** implements one sub-spec at a time, **verifier** validates and merges. No application code lives here yet — this repo *is* the agent definitions.
+`antz` defines a three-role, spec-driven development (SPDD) workflow: **specifier** writes behavior specs, **coder** implements one sub-spec at a time, **verifier** validates and merges. No application code lives here yet — this repo *is* the agent definitions, kept client-agnostic so they can be installed into Claude Code, OpenCode, or other agent runners.
 
 ## Stack
-- Plain Markdown with YAML frontmatter (Claude Code subagent format: `name`, `description`, `tools`).
-- No build system, package manager, or runtime — nothing to compile or install.
+- Plain text/YAML, split by concern: prompt body (client-agnostic) vs. metadata (name/description/access), rendered by `install.sh` into each client's native frontmatter.
+- No build system, package manager, or runtime — nothing to compile. `install.sh` is a POSIX `sh` script (works via `curl | sh`, no bash-only syntax).
 
 ## Structure
-- `agents/specifier.md` — turns a natural-language request into Gherkin sub-specs + an e2e QA suite under `spdd/changes/<slug>/`. Read-only tools (Read/Grep/Glob/Bash).
-- `agents/coder.md` — implements exactly one sub-spec from `spdd/changes/`. Read/Grep/Glob/Bash/Edit/Write.
-- `agents/verifier.md` — checks the coder's work against the sub-spec's Gherkin scenarios, then merges into `spdd/specs/` and archives to `spdd/archive/`. Read-only tools.
+- `agents/prompts/{specifier,coder,verifier}.prompt` — the role instructions verbatim (no frontmatter, no client-specific syntax). This is the single source of truth for behavior.
+- `agents/meta/{specifier,coder,verifier}.yaml` — `name`, `description`, `access` (`readonly` or `readwrite`) per role. `access` is the abstract capability a generator maps to each client's tool/permission model (e.g. Claude Code `tools:` list, OpenCode `permission:` block + `mode`).
 - `spdd/{changes,specs,archive}/` — not present yet; created on first run of the workflow (specifier creates `spdd/changes/<slug>/`; verifier creates/updates `spdd/specs/` and `spdd/archive/`).
 
 ## Gotchas
 - Strict directory ownership: coder only reads `spdd/changes/` and must never touch `spdd/specs/` or `spdd/archive/`; verifier merges into specs and archives changes, but never overwrites a domain spec file wholesale (merge scenario-by-scenario, ADD/MODIFY/REMOVE).
 - coder handles exactly one sub-spec per session — if handed a full multi-layer plan, it's supposed to refuse and ask for a single sub-spec.
 - This is a distinct, standalone three-role split (specifier/coder/verifier), separate from this Claude Code installation's own `spdd-canvas`/`spdd-design`/`spdd-implement`/`spdd-verify` skills — don't conflate the two; the skills are a different (5-phase) pipeline that isn't defined by this repo.
+- `specifier`/`verifier` are `access: readonly` (no edit/write capability); `coder` is `access: readwrite` (the only role that modifies files). Keep this mapping in mind when generating client-specific frontmatter — it's the safety boundary the whole workflow depends on.
 
-## Claude Code Integration
-- Files under `agents/` are Claude Code subagent definitions, invoked via the `Agent` tool with `subagent_type` matching the `name` field in frontmatter (e.g. `specifier`, `coder`, `verifier`).
-- Each subagent's `tools:` frontmatter line is an allowlist — specifier and verifier are read-only (no Edit/Write); only coder can modify files.
+## Client Integration
+- Neither `agents/prompts/` nor `agents/meta/` is itself a Claude Code or OpenCode subagent file — `install.sh` renders each `<name>.prompt` + `<name>.yaml` pair into the frontmatter each client needs (Claude Code: `name`/`description`/`tools:`; OpenCode: `description`/`mode`/`permission:`) and installs to that client's global agents directory. `access: readonly` maps to no edit/write capability; `access: readwrite` maps to full edit access — see `install.sh` for the exact mapping.
+- Files `install.sh` writes carry an `antz:generated` marker comment inside the frontmatter; re-running it overwrites those in place but backs up (`.bak.<timestamp>`) any pre-existing file with the same name that lacks the marker, rather than clobbering it.
+- `install.sh` works both from a local checkout (reads `agents/` directly) and via `curl | sh` (fetches from `RAW_BASE` in the script, currently GitHub `master`) — keep that URL in sync if the default branch or repo location changes.

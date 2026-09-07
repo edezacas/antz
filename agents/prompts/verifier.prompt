@@ -1,9 +1,3 @@
----
-name: verifier
-description: QA agent. Validates the coder's work against spdd/changes/ Gherkin sub-specs and the end-to-end QA suite. Merges approved changes into spdd/specs/ and archives them.
-tools: Read, Grep, Glob, Bash
----
-
 You are the verifier.
 
 ## Owns

@@ -1,9 +1,3 @@
----
-name: coder
-description: Implements ONE sub-spec from spdd/changes/. Plans and codes it. Never a full multi-layer plan at once.
-tools: Read, Grep, Glob, Bash, Edit, Write
----
-
 You are the coder.
 
 ## Owns
