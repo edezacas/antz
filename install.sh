@@ -30,7 +30,7 @@ REPO_NAME="antz"
 REPO_BRANCH="master"
 RAW_BASE="https://raw.githubusercontent.com/$REPO_OWNER/$REPO_NAME/$REPO_BRANCH"
 
-AGENTS="specifier coder verifier"
+AGENTS="specifier coder verifier orchestrator"
 MARKER="antz:generated"
 
 usage() {
@@ -103,6 +103,7 @@ claude_tools_for_access() {
   case "$1" in
     readonly) printf 'Read, Grep, Glob, Bash' ;;
     readwrite) printf 'Read, Grep, Glob, Bash, Edit, Write' ;;
+    orchestrateonly) printf 'Read, Grep, Glob, Bash, Agent' ;;
     *) echo "Unknown access level: $1" >&2; exit 1 ;;
   esac
 }
@@ -111,6 +112,32 @@ opencode_edit_perm_for_access() {
   case "$1" in
     readonly) printf 'deny' ;;
     readwrite) printf 'allow' ;;
+    orchestrateonly) printf 'deny' ;;
+    *) echo "Unknown access level: $1" >&2; exit 1 ;;
+  esac
+}
+
+opencode_mode_for_access() {
+  case "$1" in
+    readonly) printf 'subagent' ;;
+    readwrite) printf 'subagent' ;;
+    orchestrateonly) printf 'primary' ;;
+    *) echo "Unknown access level: $1" >&2; exit 1 ;;
+  esac
+}
+
+opencode_task_perm_for_access() {
+  # For readonly/readwrite: a plain scalar (they may never delegate at all).
+  # For orchestrateonly: a glob-pattern-keyed object, deny-by-default, allowing
+  # only the three role agents by exact name (last-match-wins) -- this is
+  # real, runtime-enforced scoping on OpenCode, unlike Claude Code's plain
+  # Agent grant (see CLAUDE.md Gotchas).
+  case "$1" in
+    readonly) printf 'deny' ;;
+    readwrite) printf 'deny' ;;
+    orchestrateonly)
+      printf '\n    "*": deny\n    antz-specifier: allow\n    antz-coder: allow\n    antz-verifier: allow'
+      ;;
     *) echo "Unknown access level: $1" >&2; exit 1 ;;
   esac
 }
@@ -124,9 +151,23 @@ render_claude() {
 
 render_opencode() {
   # $1 name (unused, filename carries it), $2 description, $3 access, $4 body, $5 version
+  mode=$(opencode_mode_for_access "$3")
   editperm=$(opencode_edit_perm_for_access "$3")
-  printf -- '---\n# %s version=%s -- do not edit by hand; regenerate with install.sh\ndescription: %s\nmode: subagent\npermission:\n  edit: %s\n---\n\n%s\n' \
-    "$MARKER" "$5" "$2" "$editperm" "$4"
+  taskperm=$(opencode_task_perm_for_access "$3")
+  printf -- '---\n# %s version=%s -- do not edit by hand; regenerate with install.sh\ndescription: %s\nmode: %s\npermission:\n  edit: %s\n  task: %s\n---\n\n%s\n' \
+    "$MARKER" "$5" "$2" "$mode" "$editperm" "$taskperm" "$4"
+}
+
+render_claude_command() {
+  # $1 version
+  printf -- '---\n# %s version=%s -- do not edit by hand; regenerate with install.sh\ndescription: Recommended entry point for antz. Delegates to the antz-orchestrator subagent, which sequences specifier -> coder -> verifier for one change.\nargument-hint: [request]\n---\n\nDelegate the user'"'"'s request verbatim to the antz-orchestrator subagent via the Agent tool: $ARGUMENTS\n' \
+    "$MARKER" "$1"
+}
+
+render_opencode_command() {
+  # $1 version
+  printf -- '---\n# %s version=%s -- do not edit by hand; regenerate with install.sh\ndescription: Recommended entry point for antz. Runs the antz-orchestrator agent, which sequences specifier -> coder -> verifier for one change.\nagent: antz-orchestrator\n---\n\n$ARGUMENTS\n' \
+    "$MARKER" "$1"
 }
 
 install_file() {
@@ -215,3 +256,13 @@ for agent in $AGENTS; do
     install_file "$HOME/.config/opencode/agents/$name.md" "$content"
   fi
 done
+
+if [ "$want_claude" -eq 1 ]; then
+  mkdir -p "$HOME/.claude/commands"
+  install_file "$HOME/.claude/commands/antz.md" "$(render_claude_command "$version")"
+fi
+
+if [ "$want_opencode" -eq 1 ]; then
+  mkdir -p "$HOME/.config/opencode/commands"
+  install_file "$HOME/.config/opencode/commands/antz.md" "$(render_opencode_command "$version")"
+fi
