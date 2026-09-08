@@ -34,3 +34,4 @@
 ## Versioning
 - `VERSION` (semver) and `CHANGELOG.md` (Keep a Changelog format) track changes to `agents/prompts/` and `agents/meta/`. Any commit that changes those directories must bump `VERSION` and add a matching `CHANGELOG.md` entry in the same commit — patch for non-behavioral wording tweaks, minor for behavior changes, major for breaking changes to the workflow contract (directory layout, access model, etc). Changes elsewhere (`install.sh`, docs) don't require a bump.
 - `install.sh` embeds the source `VERSION` in each installed file's marker comment. Every run compares that to the installed copy's embedded version and, if newer, prints the intervening `CHANGELOG.md` entries before overwriting. `./install.sh --check` only prints that report — no files are written.
+- Every `VERSION` bump gets a matching git tag (`vX.Y.Z`) created locally against the commit that makes the bump, in the same change — tags aren't pushed automatically, only on explicit request.
