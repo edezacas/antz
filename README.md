@@ -4,6 +4,16 @@ Spec-driven development workflow (specifier / coder / verifier) as portable agen
 
 Installed agent names are prefixed (`antz-specifier`, `antz-coder`, `antz-verifier`, `antz-orchestrator`) to avoid colliding with other agents you may already have.
 
+## Why
+
+AI coding agents are good at writing code and bad at remembering what the system is *supposed* to do. Without a persistent spec, intent gets re-derived from scratch every session, ambiguity surfaces after the code is written instead of before, and a small feature can quietly change behavior nobody meant to touch.
+
+antz addresses that with:
+- **Clarity before code** — `specifier` turns a request into concrete Gherkin scenarios before any code is written. A genuine ambiguity blocks implementation (`OPEN_QUESTIONS.md`) instead of getting guessed away.
+- **Specs that persist** — `verifier` merges each shipped scenario into `spdd/specs/<domain>.md`, so the next session reads what the system actually does instead of re-deriving it from code or chat history.
+- **Work split by dependency** — `specifier` breaks a feature into sub-specs that are each independently implementable and verifiable, ordered so dependencies come first.
+- **Guarded automation** — the `orchestrator` runs specifier -> coder -> verifier end to end, but stops and reports whenever something needs a human call: an ambiguous change, an open question, a stuck sub-spec, or a rejection that doesn't trace back to a single sub-spec.
+
 ## Usage
 
 Run `/antz <your request>` in Claude Code or OpenCode after installing. It delegates to `antz-orchestrator`, which sequences `specifier -> coder -> verifier` for one change, picking up correctly even if interrupted and resumed later. The three underlying roles remain directly invokable for manual/expert use.
