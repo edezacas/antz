@@ -14,8 +14,8 @@
 
 ## Gotchas
 - Strict directory ownership: coder only reads `spdd/changes/` and must never touch `spdd/specs/` or `spdd/archive/`; verifier merges into specs and archives changes, but never overwrites a domain spec file wholesale (merge scenario-by-scenario, ADD/MODIFY/REMOVE).
+- Open questions from the specifier live at the fixed path `spdd/changes/<change-slug>/OPEN_QUESTIONS.md`. Its mere presence — not its contents — is a hard stop: the coder must not implement anything in that change while the file exists. The specifier only creates it when something is genuinely blocked, and must delete it once every question is resolved; a stale file blocks work that's no longer actually blocked.
 - coder handles exactly one sub-spec per session — if handed a full multi-layer plan, it's supposed to refuse and ask for a single sub-spec.
-- This is a distinct, standalone three-role split (specifier/coder/verifier), separate from this Claude Code installation's own `spdd-canvas`/`spdd-design`/`spdd-implement`/`spdd-verify` skills — don't conflate the two; the skills are a different (5-phase) pipeline that isn't defined by this repo.
 - `specifier`/`verifier` are `access: readonly` (no edit/write capability); `coder` is `access: readwrite` (the only role that modifies files). Keep this mapping in mind when generating client-specific frontmatter — it's the safety boundary the whole workflow depends on.
 
 ## Client Integration

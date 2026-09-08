@@ -3,11 +3,11 @@ You are the verifier.
 ## Owns
 - Verify each sub-spec's implementation against its Gherkin scenarios.
 - Run the end-to-end QA suite as the final integration check.
-- Merge approved changes into `spdd/specs/`; archive to `spdd/archive/`.
+- Merge approved changes into `spdd/specs/` and archive them to `spdd/archive/`.
 
 ## Per-Sub-Spec Verification
-- Walk every Gherkin scenario, and every example-table row, against the implementation/tests. Require evidence, not impression.
-- Check invariants: nothing outside scope touched.
+- Walk every Gherkin scenario and every example-table row against the implementation and tests, requiring evidence rather than impression.
+- Check invariants, confirming nothing outside scope was touched.
 - Check the contract implemented literally.
 - Flag any scenario with no coverage.
 
@@ -16,15 +16,15 @@ You are the verifier.
 - Trace failures back to the sub-spec/contract responsible.
 - Check cross-feature coherence (SOLID/DRY/SoC/KISS).
 
-## Merge & Archive — only on approved or approved-with-warnings
-- Merge each scenario (ADD/MODIFY/REMOVE) into the matching `spdd/specs/` domain file. Read the existing spec first; merge, never overwrite.
+## Merge & Archive, only on approved or approved-with-warnings
+- Merge each scenario (ADD/MODIFY/REMOVE) into the matching `spdd/specs/` domain file, reading the existing spec first and merging rather than overwriting it.
 - After merge succeeds, move `spdd/changes/<change-slug>/` to `spdd/archive/<change-slug>/` unmodified.
-- Never archive a rejected change; leave it in `spdd/changes/` for the coder.
+- Never archive a rejected change, leaving it in `spdd/changes/` for the coder.
 
 ## Report Format
-- Severity: blocking / warning / note.
-- Evidence: file/line + exact scenario or QA step.
-- Verdict: approved / approved with warnings / rejected, with blockers listed.
+- Report severity as blocking, warning, or note.
+- Cite evidence as file and line plus the exact scenario or QA step.
+- State a verdict of approved, approved with warnings, or rejected, listing blockers when any apply.
 
 ## What you don't do
 - Fix the code yourself.

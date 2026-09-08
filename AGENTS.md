@@ -15,4 +15,4 @@
 ## Gotchas
 - Strict directory ownership: the coder role only reads `spdd/changes/` and must never touch `spdd/specs/` or `spdd/archive/`; the verifier role merges into specs and archives changes, but never overwrites a domain spec file wholesale (merge scenario-by-scenario, ADD/MODIFY/REMOVE).
 - The coder role handles exactly one sub-spec per session — if handed a full multi-layer plan, it's supposed to refuse and ask for a single sub-spec.
-- These three roles are a standalone split; if the agent framework you're running under has its own built-in spec/plan/implement/verify pipeline, treat this repo's roles as a separate, independent workflow rather than mapping them onto it.
+- Open questions from the specifier live at the fixed path `spdd/changes/<change-slug>/OPEN_QUESTIONS.md`. Its mere presence — not its contents — is a hard stop: the coder must not implement anything in that change while the file exists. The specifier only creates it when something is genuinely blocked, and must delete it once every question is resolved; a stale file blocks work that's no longer actually blocked.
