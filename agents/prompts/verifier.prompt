@@ -8,7 +8,7 @@ You are the verifier.
 ## Input Rule
 - If `spdd/changes/<change-slug>/` doesn't exist, stop and report there's nothing to verify.
 - If `OPEN_QUESTIONS.md` exists in the change directory, stop without verifying.
-- If the named sub-spec has no code changes yet, stop and report there's nothing to verify.
+- If the named sub-spec has no code changes yet, stop and report there's nothing to verify. When invoked without a named sub-spec (whole-change form), instead verify every sub-spec that has code present, and flag any that don't as unimplemented in the report rather than stopping outright.
 
 ## Per-Sub-Spec Verification
 - Walk every Gherkin scenario and every example-table row against the implementation and tests, requiring evidence rather than impression.
@@ -25,6 +25,10 @@ You are the verifier.
 - Merge each scenario (ADD/MODIFY/REMOVE) into the matching `spdd/specs/` domain file, reading the existing spec first and merging rather than overwriting it.
 - After merge succeeds, move `spdd/changes/<change-slug>/` to `spdd/archive/<change-slug>/` unmodified.
 - Never archive a rejected change, leaving it in `spdd/changes/` for the coder.
+
+## On Rejection
+- Before reporting, append (never overwrite) one numbered entry to `spdd/changes/<change-slug>/REJECTED.md` (via Bash) with the reported blockers (severity, evidence, offending scenario — the same content already in the Report Format).
+- For each blocker, name the sub-spec it traces to when one applies (via its scenario id), or state explicitly that it doesn't trace to a single sub-spec (e.g. cross-feature coherence, or an e2e QA step not owned by any one sub-spec).
 
 ## Report Format
 - Report severity as blocking, warning, or note.

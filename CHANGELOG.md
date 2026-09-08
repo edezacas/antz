@@ -7,6 +7,14 @@ and this project uses [Semantic Versioning](https://semver.org/): patch for
 non-behavioral wording tweaks, minor for behavior changes, major for breaking
 changes to the workflow contract (directory layout, access model, etc).
 
+## [0.5.0] - 2026-09-08
+
+### Added
+- Verifier now appends one numbered entry to `spdd/changes/<change-slug>/REJECTED.md` on each rejection (never overwriting), recording the reported blockers and, per blocker, the sub-spec it traces to or an explicit note that it doesn't trace to a single sub-spec.
+
+### Changed
+- Verifier's Input Rule now supports a whole-change invocation form: when invoked without a named sub-spec, it verifies every sub-spec with code present instead of stopping, flagging any unimplemented sub-specs in the report.
+
 ## [0.4.0] - 2026-09-08
 
 ### Changed
