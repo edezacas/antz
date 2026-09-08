@@ -7,6 +7,11 @@ and this project uses [Semantic Versioning](https://semver.org/): patch for
 non-behavioral wording tweaks, minor for behavior changes, major for breaking
 changes to the workflow contract (directory layout, access model, etc).
 
+## [1.1.1] - 2026-09-08
+
+### Changed
+- Orchestrator prompt: wording pass (tightened phrasing, em dashes to colons, dropped redundant rationale) with no behavioral change.
+
 ## [1.1.0] - 2026-09-08
 
 ### Changed
