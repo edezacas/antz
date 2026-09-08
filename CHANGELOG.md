@@ -7,6 +7,11 @@ and this project uses [Semantic Versioning](https://semver.org/): patch for
 non-behavioral wording tweaks, minor for behavior changes, major for breaking
 changes to the workflow contract (directory layout, access model, etc).
 
+## [1.4.0] - 2026-09-08
+
+### Fixed
+- `/antz-set-model` (Claude Code and OpenCode): the embedded script was corrupted by the client's command-body templating before it ever ran — OpenCode rewrites every `$<digits>` token plus `$ARGUMENTS` anywhere in a command body (missing positionals become the literal string `undefined`), and Claude Code does the same for `$1`/`$2`/`$ARGUMENTS`, so the script's positional-parameter parser and awk whole-line variable were replaced with invocation arguments at invocation time and every invocation failed with `unknown agent '...'`. The emitted script now contains no dollar-digit token at all: flag values are captured through a pending-flag for-loop instead of positional parameters, and the frontmatter rewrite is a plain read/printf loop instead of awk, with identical observable behavior (a rendering-level regression test guards the constraint).
+
 ## [1.3.0] - 2026-09-08
 
 ### Changed

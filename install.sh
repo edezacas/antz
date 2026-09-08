@@ -180,6 +180,21 @@ set_model_script() {
   # (no --claude/--opencode flag; see README Client binding). $HOME below is
   # left as a literal token in the emitted script, resolved by the shell
   # that later runs it, not by install.sh.
+  #
+  # Hard constraint on the emitted text: it must contain NO dollar-digit
+  # token ($1, $2, $0, ...) and no "$ARGUMENTS". Both clients template the
+  # command body at invocation time -- OpenCode replaces every /\$\d+/g
+  # match plus $ARGUMENTS (missing positionals become the literal string
+  # "undefined"), and Claude Code does the same for $1/$2/$3.../$ARGUMENTS --
+  # inside code fences included. The original awk-based script was corrupted
+  # exactly this way (its positional params and awk's whole-line variable
+  # were rewritten before it ever ran). So the argument loop below avoids
+  # positional parameters entirely (a for-loop with a pending-value state
+  # machine), and the frontmatter rewrite is a plain read/printf loop
+  # instead of awk. Word variables ($arg, $line, $newline, ...) are not
+  # substituted and are safe. Note the emitted script's own comments must
+  # also stay free of dollar-digit and $ARGUMENTS sequences, since comments
+  # are templated too.
   client="$1"
   case "$client" in
     claude) agents_dir='$HOME/.claude/agents' ;;
@@ -204,42 +219,44 @@ model_value=""
 have_model=0
 have_clear=0
 
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --agent)
-      if [ $# -lt 2 ]; then
-        echo "Error: --agent requires a value." >&2
-        usage
-        exit 1
-      fi
-      agent="$2"
-      shift 2
-      ;;
-    --model)
-      if [ $# -lt 2 ]; then
-        echo "Error: --model requires a value." >&2
-        usage
-        exit 1
-      fi
-      have_model=1
-      model_value="$2"
-      shift 2
-      ;;
-    --clear)
-      have_clear=1
-      shift
-      ;;
+# No positional parameters here: the client substitutes dollar-digit tokens
+# in the command body at invocation time (missing ones become the literal
+# string "undefined"), so flag values are captured through a pending-flag
+# state machine over a plain for-loop instead.
+pending=""
+for arg do
+  if [ -n "$pending" ]; then
+    case "$pending" in
+      agent) agent="$arg" ;;
+      model) have_model=1; model_value="$arg" ;;
+    esac
+    pending=""
+    continue
+  fi
+  case "$arg" in
+    --agent) pending=agent ;;
+    --model) pending=model ;;
+    --clear) have_clear=1 ;;
     -h|--help)
       usage
       exit 0
       ;;
     *)
-      echo "Error: unknown option: $1" >&2
+      echo "Error: unknown option: $arg" >&2
       usage
       exit 1
       ;;
   esac
 done
+
+if [ -n "$pending" ]; then
+  case "$pending" in
+    agent) echo "Error: --agent requires a value." >&2 ;;
+    model) echo "Error: --model requires a value." >&2 ;;
+  esac
+  usage
+  exit 1
+fi
 
 if [ -z "$agent" ]; then
   echo "Error: --agent is required." >&2
@@ -293,24 +310,35 @@ else
   insert=0
 fi
 
+# The rewrite loop mirrors the retired awk version, but reads lines into a
+# variable instead of awk's whole-line positional (another dollar-digit
+# token the client would substitute): drop any "model:" line inside the
+# frontmatter (between the first two "---" lines), and optionally insert
+# the new model line directly after the "description:" line.
 tmp=$(mktemp)
-awk -v newline="$newline" -v insert="$insert" '
-  BEGIN { dashes = 0 }
-  {
-    if ($0 == "---") {
-      dashes++
-      print
-      next
-    }
-    if (dashes == 1 && $0 ~ /^model:/) {
-      next
-    }
-    print
-    if (dashes == 1 && insert == 1 && $0 ~ /^description:/) {
-      print newline
-    }
-  }
-' "$dest" > "$tmp"
+dashes=0
+while IFS= read -r line || [ -n "$line" ]; do
+  if [ "$line" = "---" ]; then
+    dashes=$((dashes + 1))
+    printf '%s\n' "$line"
+    continue
+  fi
+  if [ "$dashes" -eq 1 ]; then
+    case "$line" in
+      model:*)
+        continue
+        ;;
+      description:*)
+        printf '%s\n' "$line"
+        if [ "$insert" -eq 1 ]; then
+          printf '%s\n' "$newline"
+        fi
+        continue
+        ;;
+    esac
+  fi
+  printf '%s\n' "$line"
+done < "$dest" > "$tmp"
 cat "$tmp" > "$dest"
 rm -f "$tmp"
 

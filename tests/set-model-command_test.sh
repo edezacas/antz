@@ -10,7 +10,7 @@
 # repo has no package manager or build system). Run directly:
 #   ./tests/set-model-command_test.sh
 #
-# Each reported test name embeds its scenario id (command-install-01..05,
+# Each reported test name embeds its scenario id (command-install-01..06,
 # set-model-cmd-01..12, picker-render-01..05) from the feature files above,
 # so a failure maps straight back to the scenario it covers. Every test that
 # touches the filesystem runs against an isolated $HOME (a fresh temp dir
@@ -258,6 +258,41 @@ test_command_install_05() {
 
   [ -f "$home/.claude/commands/antz-set-model.md" ] || { echo "  claude copy not installed via flag-less detection"; ok=1; }
   [ -f "$home/.config/opencode/commands/antz-set-model.md" ] && { echo "  opencode copy was unexpectedly installed"; ok=1; }
+
+  rm -rf "$home"
+  return $ok
+}
+
+# =============================================================================
+# command-install-06: the emitted command body must be free of client-
+# substitutable tokens -- both clients template the command body at invocation
+# time, replacing every dollar-digit token plus the ARGUMENTS placeholder
+# (OpenCode rewrites /\$\d+/g matches and turns missing positionals into the
+# literal string "undefined"; Claude Code rewrites $1/$2/.../$ARGUMENTS) --
+# code fences included. The embedded script's original positional-param/awk
+# form was corrupted exactly this way before it ever ran, so the emitted body
+# may contain no dollar-digit token at all, and the ARGUMENTS placeholder
+# only where it is the intended injection point (the flow head's
+# "Arguments:" line).
+# =============================================================================
+test_command_install_06() {
+  home=$(new_home)
+  ok=0
+
+  ( cd "$SCRIPT_DIR" && HOME="$home" "$INSTALL_SH" --all >/dev/null 2>&1 )
+
+  for dest in "$home/.claude/commands/antz-set-model.md" "$home/.config/opencode/commands/antz-set-model.md"; do
+    if grep -qE '\$[0-9]' "$dest"; then
+      echo "  $dest contains a dollar-digit token the client would substitute at invocation time:"
+      grep -nE '\$[0-9]' "$dest" | head -n5
+      ok=1
+    fi
+    arg_lines=$(grep -c 'ARGUMENTS' "$dest")
+    [ "$arg_lines" -eq 1 ] \
+      || { echo "  $dest expected exactly the one intended ARGUMENTS placeholder line, found $arg_lines"; ok=1; }
+    grep -q '^Arguments: \$ARGUMENTS$' "$dest" \
+      || { echo "  $dest missing the intended 'Arguments: \$ARGUMENTS' injection line"; ok=1; }
+  done
 
   rm -rf "$home"
   return $ok
@@ -728,6 +763,7 @@ run_test "command-install-02: installs the OpenCode copy with no agent: field, s
 run_test "command-install-03: re-running install.sh --claude is idempotent (no backup file)" test_command_install_03
 run_test "command-install-04: a pre-existing non-antz-managed file at the same path is backed up" test_command_install_04
 run_test "command-install-05: flag-less install.sh installs only for the detected client" test_command_install_05
+run_test "command-install-06: emitted bodies carry no client-substitutable dollar-digit tokens; ARGUMENTS placeholder appears exactly once, as the injection point" test_command_install_06
 
 run_test "picker-render-01: claude body embeds the full documented alias vocabulary, refreshed only by re-running install.sh" test_picker_render_01
 run_test "picker-render-02: opencode body enumerates via 'opencode models' through the Bash tool, with no embedded catalog" test_picker_render_02

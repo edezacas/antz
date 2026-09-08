@@ -18,6 +18,16 @@ antz addresses that with:
 
 Run `/antz <your request>` in Claude Code or OpenCode after installing. It delegates to `antz-orchestrator`, which sequences `specifier -> coder -> verifier` for one change, picking up correctly even if interrupted and resumed later. The three underlying roles remain directly invokable for manual/expert use.
 
+`/antz-set-model` configures or clears the `model:` frontmatter line of one installed antz agent file, per agent and per client (`--agent` is one of `specifier|coder|verifier|orchestrator`). It edits the file directly in the invoking session and never delegates to any `antz-*` subagent:
+
+```sh
+/antz-set-model --agent coder --model anthropic/claude-opus-4-5  # set the model explicitly (value written verbatim)
+/antz-set-model --agent coder                                    # omit --model/--clear: interactive model picker
+/antz-set-model --agent coder --clear                            # remove the model: line (client's default model)
+```
+
+Omitting `--model`/`--clear` opens the interactive picker: on OpenCode it enumerates models at invocation time via `opencode models`; on Claude Code it offers the documented alias vocabulary (`sonnet`, `opus`, `haiku`, ...). Both pickers always offer a free-form entry and a revert-to-default option, and argument/install-state validation happens before any question is asked.
+
 ## Agent Compatibility
 
 Currently compatible with:
