@@ -2,6 +2,8 @@
 
 Three-role spec-driven development workflow (specifier / coder / verifier) as portable agent definitions. See `CLAUDE.md` / `AGENTS.md` for the workflow itself.
 
+Installed agent names are prefixed (`antz-specifier`, `antz-coder`, `antz-verifier`) to avoid colliding with other agents you may already have.
+
 ## Agent Compatibility
 
 Currently compatible with:

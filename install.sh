@@ -1,6 +1,7 @@
 #!/bin/sh
-# Installs the antz agents (specifier, coder, verifier) as native subagents
-# for whichever of Claude Code / OpenCode are detected on this machine.
+# Installs the antz agents (antz-specifier, antz-coder, antz-verifier) as
+# native subagents for whichever of Claude Code / OpenCode are detected on
+# this machine.
 #
 # Usage:
 #   ./install.sh [--claude] [--opencode] [--all]
