@@ -7,6 +7,17 @@ and this project uses [Semantic Versioning](https://semver.org/): patch for
 non-behavioral wording tweaks, minor for behavior changes, major for breaking
 changes to the workflow contract (directory layout, access model, etc).
 
+## [1.0.0] - 2026-09-08
+
+### Added
+- Fourth role, `orchestrator` (`agents/prompts/orchestrator.prompt`, `agents/meta/orchestrator.yaml`), sequencing `specifier -> coder -> verifier` for one change. Its entire Process is a stateless reconciliation routine: every invocation reconstructs the full picture from `spdd/` alone (numbered sub-spec filenames, scenario-id test tags, `BLOCKED:` stubs, `REJECTED.md` entry count — see the `0.3.0`-`0.5.0` entries above) and takes the one next action needed, so it can resume after any interruption with no memory of what it already did.
+
+### Changed
+- `access` gains a third value, `orchestrateonly` (readonly plus a delegation capability), used only by `orchestrator`. This breaks the previously-documented binary `readonly`/`readwrite` access contract, hence the major bump — `specifier`, `coder`, and `verifier` keep their existing `readonly`/`readwrite` access unchanged.
+
+### Known Limitations
+- On Claude Code, the orchestrator's delegation to `specifier`/`coder`/`verifier` is scoped by a prompt-level rule ("What you don't do"), not by the tool grant — see `CLAUDE.md` Gotchas.
+
 ## [0.5.0] - 2026-09-08
 
 ### Added

@@ -1,0 +1,3 @@
+name: antz-orchestrator
+description: Recommended entry point (via /antz). Sequences specifier -> coder -> verifier for one change, reconstructing state from spdd/ alone on every invocation so it can resume after any interruption. Never writes to spdd/ itself.
+access: orchestrateonly
