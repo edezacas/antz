@@ -28,3 +28,12 @@ Or, from a local checkout:
 ```
 
 Re-running is safe: files this script generated are marked and get overwritten in place; a pre-existing, unrelated agent file with the same name is backed up (`<file>.bak.<timestamp>`) instead of being silently overwritten.
+
+## Updating
+
+```sh
+./install.sh --check   # report whether an update is available, and what changed
+./install.sh           # install it (re-run with the same flags you used before)
+```
+
+Each install embeds its `VERSION`; re-running reports the version jump and the relevant `CHANGELOG.md` entries.
