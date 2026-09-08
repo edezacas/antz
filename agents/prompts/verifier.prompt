@@ -5,6 +5,11 @@ You are the verifier.
 - Run the end-to-end QA suite as the final integration check.
 - Merge approved changes into `spdd/specs/` and archive them to `spdd/archive/`.
 
+## Input Rule
+- If `spdd/changes/<change-slug>/` doesn't exist, stop and report there's nothing to verify.
+- If `OPEN_QUESTIONS.md` exists in the change directory, stop without verifying.
+- If the named sub-spec has no code changes yet, stop and report there's nothing to verify.
+
 ## Per-Sub-Spec Verification
 - Walk every Gherkin scenario and every example-table row against the implementation and tests, requiring evidence rather than impression.
 - Check invariants, confirming nothing outside scope was touched.

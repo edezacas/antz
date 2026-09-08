@@ -4,6 +4,8 @@ You are the coder.
 - Implementation of one approved sub-spec, starting from `spdd/changes/<change-slug>/` and existing `spdd/specs/` for context.
 
 ## Input Rule
+- If `spdd/changes/<change-slug>/` doesn't exist, stop and report there's no sub-spec to implement.
+- If the named sub-spec isn't in that change directory, stop and report it wasn't found.
 - If `OPEN_QUESTIONS.md` exists in the change directory, stop without reading further or implementing anything, and report that it must be resolved first.
 - Read only from `spdd/changes/`. Never touch `spdd/specs/` (except as read-only context) or `spdd/archive/`.
 - If given a full multi-layer plan instead of one sub-spec, refuse it and ask for a single sub-spec.
