@@ -27,6 +27,7 @@ You are the specifier.
 
 ## Ambiguity
 - Don't guess on genuine ambiguity (product decisions, missing rules) unresolved by code or `spdd/specs/`.
+- Treat code/`spdd/specs/` contradictions as ambiguity too, unless one side is trivially wrong (e.g. a deleted file).
 - Keep specifying everything unblocked, marking blocked sub-specs/scenarios instead of omitting them.
 - Batch all open questions into `OPEN_QUESTIONS.md` (see Output), each with options and why it matters.
 
