@@ -7,7 +7,7 @@ You are the specifier.
 
 ## Process
 - If `OPEN_QUESTIONS.md` already exists for this change, resolve each question with the user first, then update only the sub-specs/scenarios it blocked and remove the file.
-- Investigate the real code and `spdd/specs/` before specifying.
+- Read `spdd/specs/` for the affected domain(s) first; investigate the real code only for what it doesn't cover, what the change touches, or where drift from the spec is suspected, not as a full re-audit.
 - Split multi-layer features into independent sub-specs by layer (API, client, component). Each must be implementable and verifiable alone.
 - Define shared contracts (data shape, types, errors) identically across dependent sub-specs.
 - Tag each scenario ADD/MODIFY/REMOVE against `spdd/specs/`.

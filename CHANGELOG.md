@@ -7,6 +7,11 @@ and this project uses [Semantic Versioning](https://semver.org/): patch for
 non-behavioral wording tweaks, minor for behavior changes, major for breaking
 changes to the workflow contract (directory layout, access model, etc).
 
+## [1.1.0] - 2026-09-08
+
+### Changed
+- Specifier now reads `spdd/specs/` for the affected domain(s) before investigating the real code, and scopes that code investigation to what the spec doesn't cover, what the change touches, or suspected drift — instead of a full code-plus-specs sweep every time. Intent: specs exist to save tokens on redundant code review, not just to store behavior.
+
 ## [1.0.0] - 2026-09-08
 
 ### Added
