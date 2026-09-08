@@ -37,3 +37,15 @@ Re-running is safe: files this script generated are marked and get overwritten i
 ```
 
 Each install embeds its `VERSION`; re-running reports the version jump and the relevant `CHANGELOG.md` entries.
+
+Without a local checkout, run the same check remotely:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/edezacas/antz/master/install.sh | sh -s -- --check
+```
+
+Or just fetch the current published version number:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/edezacas/antz/master/VERSION
+```
