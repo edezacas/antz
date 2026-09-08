@@ -1,11 +1,16 @@
 # Changelog
 
-All notable changes to the antz agent definitions (`agents/prompts/`, `agents/meta/`) are documented here.
+All notable changes to the antz agent definitions (`agents/prompts/`, `agents/meta/`) and to `install.sh` (which renders and installs them) are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project uses [Semantic Versioning](https://semver.org/): patch for
 non-behavioral wording tweaks, minor for behavior changes, major for breaking
 changes to the workflow contract (directory layout, access model, etc).
+
+## [1.3.0] - 2026-09-08
+
+### Changed
+- `/antz-set-model` (Claude Code and OpenCode) now offers an interactive model picker when invoked without `--model` or `--clear`: the invoking session asks the user which model to assign via its native question mechanism (embedded documented alias vocabulary in Claude Code; invocation-time enumeration through `opencode models` in OpenCode), then runs the same embedded script with the chosen value as `--model`. Argument validation, install-state checks, and the `antz:generated` marker check now all happen before any question is asked. Explicit `--model`/`--clear` invocations behave exactly as before, and the script's one-of/verbatim-write contract is unchanged.
 
 ## [1.2.0] - 2026-09-08
 

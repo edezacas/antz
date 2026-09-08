@@ -2,18 +2,27 @@
 # Unit tests for install.sh's /antz-set-model command (rendering/install
 # side) and the self-contained script embedded in its body (invocation
 # side), covering every scenario in
-# spdd/changes/set-model-native-command/01-set-model-command.feature.
+# spdd/changes/set-model-native-command/01-set-model-command.feature and the
+# unit-testable (rendering-level) scenarios in
+# spdd/changes/set-model-interactive-picker/01-interactive-picker.feature.
 #
 # Self-contained bash test harness (no external framework/dependency -- this
 # repo has no package manager or build system). Run directly:
 #   ./tests/set-model-command_test.sh
 #
 # Each reported test name embeds its scenario id (command-install-01..05,
-# set-model-cmd-01..12) from the feature file above, so
-# a failure maps straight back to the scenario it covers. Every test that
+# set-model-cmd-01..12, picker-render-01..05) from the feature files above,
+# so a failure maps straight back to the scenario it covers. Every test that
 # touches the filesystem runs against an isolated $HOME (a fresh temp dir
 # per test), so tests never touch the real ~/.claude or ~/.config/opencode
 # directories and never interfere with each other.
+#
+# The command-level interactive-picker scenarios (picker-cmd-01..13,
+# picker-claude-01..03, picker-opencode-01..04) are observable only in a
+# live client session (question-asking), so the sub-spec's Verification
+# levels assign them to end-to-end verification (e2e-qa.feature, run by the
+# verifier), not to this suite. They appear below as explicit SKIP stubs so
+# no scenario id is silently unaccounted for.
 
 set -u
 
@@ -22,6 +31,7 @@ INSTALL_SH="$SCRIPT_DIR/install.sh"
 
 pass_count=0
 fail_count=0
+skip_count=0
 
 # ---- tiny test runner ------------------------------------------------------
 
@@ -35,6 +45,15 @@ run_test() {
     echo "FAIL: $name"
     fail_count=$((fail_count + 1))
   fi
+}
+
+skip_test() {
+  # $1 = reported test name (must contain its scenario id), $2 = reason.
+  # An explicit, accounted-for stub for a scenario that is out of scope for
+  # unit-level TDD (never a silent omission).
+  name="$1"; reason="$2"
+  echo "SKIP: $name ($reason)"
+  skip_count=$((skip_count + 1))
 }
 
 new_home() {
@@ -130,8 +149,12 @@ setup_extracted_scripts() {
 }
 
 # =============================================================================
-# command-install-01: install.sh installs the Claude Code copy with the
-# expected frontmatter shape, mirroring how it already installs /antz.
+# command-install-01 (MODIFIED by set-model-interactive-picker): install.sh
+# installs the Claude Code copy with the expected frontmatter shape -- the
+# argument-hint now shows the --model/--clear group as optional (the no-flag
+# form is the interactive picker), the description says so, and the body
+# carries the pre-flight + interactive-picker instructions alongside the
+# embedded script and the relay rule.
 # =============================================================================
 test_command_install_01() {
   home=$(new_home)
@@ -143,8 +166,13 @@ test_command_install_01() {
   [ -f "$dest" ] || { echo "  $dest was not created"; ok=1; }
   grep -q 'antz:generated version=' "$dest" || { echo "  missing antz:generated marker with version"; ok=1; }
   grep -q '^description:' "$dest" || { echo "  missing description: field"; ok=1; }
-  grep -qxF 'argument-hint: --agent <specifier|coder|verifier|orchestrator> (--model <value>|--clear)' "$dest" \
-    || { echo "  missing expected argument-hint line"; ok=1; }
+  grep -qi 'interactive model picker' "$dest" || { echo "  description does not mention the interactive picker"; ok=1; }
+  grep -qxF 'argument-hint: --agent <specifier|coder|verifier|orchestrator> [--model <value>|--clear]' "$dest" \
+    || { echo "  missing expected argument-hint line (--model/--clear group shown as optional)"; ok=1; }
+  grep -q 'Pre-flight' "$dest" || { echo "  body missing the pre-flight instructions"; ok=1; }
+  grep -q 'AskUserQuestion' "$dest" || { echo "  body missing the interactive-picker instructions (AskUserQuestion)"; ok=1; }
+  grep -q '^```sh$' "$dest" || { echo "  body missing the embedded script fence"; ok=1; }
+  grep -qF 'exactly what the script printed' "$dest" || { echo "  body missing the relay rule"; ok=1; }
   grep -qi 'opencode' "$dest" && { echo "  body/frontmatter references OpenCode"; ok=1; }
 
   rm -rf "$home"
@@ -230,6 +258,143 @@ test_command_install_05() {
 
   [ -f "$home/.claude/commands/antz-set-model.md" ] || { echo "  claude copy not installed via flag-less detection"; ok=1; }
   [ -f "$home/.config/opencode/commands/antz-set-model.md" ] && { echo "  opencode copy was unexpectedly installed"; ok=1; }
+
+  rm -rf "$home"
+  return $ok
+}
+
+# =============================================================================
+# picker-render-01: the Claude Code copy embeds the full documented alias
+# vocabulary at install time (refreshed only by re-running install.sh, never
+# queried at runtime), and does not instruct any runtime enumeration.
+# =============================================================================
+test_picker_render_01() {
+  home=$(new_home)
+  ok=0
+
+  ( cd "$SCRIPT_DIR" && HOME="$home" "$INSTALL_SH" --claude >/dev/null 2>&1 )
+  dest="$home/.claude/commands/antz-set-model.md"
+
+  for alias in 'best' 'fable' 'opus' 'sonnet' 'haiku' 'sonnet[1m]' 'opus[1m]' 'opusplan'; do
+    grep -qF "$alias" "$dest" || { echo "  body missing embedded alias vocabulary value: $alias"; ok=1; }
+  done
+  grep -qF 'refreshed only by re-running install.sh' "$dest" || { echo "  body does not state the list is refreshed only by re-running install.sh"; ok=1; }
+  grep -qF 'never queried at runtime' "$dest" || { echo "  body does not state the list is never queried at runtime"; ok=1; }
+  if grep -qi 'opencode models' "$dest"; then echo "  body references OpenCode's enumeration command"; ok=1; fi
+  if grep -qi 'enumerate' "$dest"; then echo "  body instructs (or mentions) runtime enumeration"; ok=1; fi
+
+  rm -rf "$home"
+  return $ok
+}
+
+# =============================================================================
+# picker-render-02: the OpenCode copy embeds no model catalog; it instructs
+# the session to enumerate models at invocation time via "opencode models"
+# through the Bash tool.
+# =============================================================================
+test_picker_render_02() {
+  home=$(new_home)
+  ok=0
+
+  ( cd "$SCRIPT_DIR" && HOME="$home" "$INSTALL_SH" --opencode >/dev/null 2>&1 )
+  dest="$home/.config/opencode/commands/antz-set-model.md"
+
+  grep -qF 'opencode models' "$dest" || { echo "  body does not instruct running 'opencode models'"; ok=1; }
+  grep -qF 'Bash tool' "$dest" || { echo "  body does not run the enumeration via the Bash tool"; ok=1; }
+  grep -qF 'provider/model' "$dest" || { echo "  body does not describe the enumerated provider/model ids"; ok=1; }
+  # No embedded, hardcoded model list: none of the Claude Code vocabulary may leak in.
+  for alias in 'fable' 'opusplan' 'sonnet[1m]' 'haiku'; do
+    if grep -qF "$alias" "$dest"; then echo "  body embeds hardcoded model vocabulary: $alias"; ok=1; fi
+  done
+
+  rm -rf "$home"
+  return $ok
+}
+
+# =============================================================================
+# picker-render-03: each copy instructs its own client's native question
+# mechanism, and the never-delegate rule is preserved verbatim in both.
+# =============================================================================
+test_picker_render_03() {
+  home=$(new_home)
+  ok=0
+
+  ( cd "$SCRIPT_DIR" && HOME="$home" "$INSTALL_SH" --all >/dev/null 2>&1 )
+  claude_dest="$home/.claude/commands/antz-set-model.md"
+  opencode_dest="$home/.config/opencode/commands/antz-set-model.md"
+
+  grep -qF 'AskUserQuestion' "$claude_dest" || { echo "  claude body does not instruct asking via AskUserQuestion"; ok=1; }
+  grep -qF 'in this session' "$claude_dest" || { echo "  claude body does not ask in this session"; ok=1; }
+  grep -qF '`question` tool' "$opencode_dest" || { echo "  opencode body does not instruct asking via the session's question tool"; ok=1; }
+  for dest in "$claude_dest" "$opencode_dest"; do
+    grep -qF 'does not delegate to any of the four antz-* subagents' "$dest" \
+      || { echo "  $dest lost the never-delegate rule"; ok=1; }
+  done
+
+  rm -rf "$home"
+  return $ok
+}
+
+# =============================================================================
+# picker-render-04: the embedded script's exactly-one contract survives
+# untouched (backstop for direct invocation), and the body instructs the
+# session to invoke the script only with one of --model/--clear.
+# =============================================================================
+test_picker_render_04() {
+  home=$(new_home)
+  dest="$home/.claude/agents/antz-coder.md"
+  write_claude_fixture "$dest" coder
+  cp "$dest" "$dest.orig"
+  ok=0
+
+  # The embedded script from the installed claude copy still refuses the
+  # script-level "neither" and "both" invocations with a usage message.
+  out=$(HOME="$home" "$CLAUDE_SCRIPT" --agent coder 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || { echo "  script accepted neither --model nor --clear"; ok=1; }
+  case "$out" in *Usage*) ;; *) echo "  'neither' refusal is not a usage message: $out"; ok=1 ;; esac
+
+  out=$(HOME="$home" "$CLAUDE_SCRIPT" --agent coder --model opus --clear 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || { echo "  script accepted both --model and --clear"; ok=1; }
+  case "$out" in *Usage*) ;; *) echo "  'both' refusal is not a usage message: $out"; ok=1 ;; esac
+  cmp -s "$dest.orig" "$dest" || { echo "  file was written by a refused invocation"; ok=1; }
+
+  # The body instructs the session to invoke the script only with exactly one
+  # of the two flags.
+  ( cd "$SCRIPT_DIR" && HOME="$home" "$INSTALL_SH" --claude >/dev/null 2>&1 )
+  command_dest="$home/.claude/commands/antz-set-model.md"
+  grep -qF 'Never invoke the script without exactly one of' "$command_dest" \
+    || { echo "  body missing the exactly-one invocation rule"; ok=1; }
+  grep -qFe '--agent <agent> --model <chosen>' "$command_dest" \
+    || { echo "  body missing the '--agent <agent> --model <chosen>' invocation form"; ok=1; }
+  grep -qFe '--agent <agent> --clear' "$command_dest" \
+    || { echo "  body missing the '--agent <agent> --clear' invocation form"; ok=1; }
+
+  rm -rf "$home"
+  return $ok
+}
+
+# =============================================================================
+# picker-render-05: each client's body states the fail-fast ordering --
+# validate arguments, confirm the target file exists and carries the marker,
+# read the current model: line -- all before any question, with refusal and
+# no question when validation or the pre-flight fails.
+# =============================================================================
+test_picker_render_05() {
+  home=$(new_home)
+  ok=0
+
+  ( cd "$SCRIPT_DIR" && HOME="$home" "$INSTALL_SH" --all >/dev/null 2>&1 )
+
+  for dest in "$home/.claude/commands/antz-set-model.md" "$home/.config/opencode/commands/antz-set-model.md"; do
+    grep -qF 'before asking any question' "$dest" || { echo "  $dest missing the before-asking ordering"; ok=1; }
+    grep -qF 'usage error' "$dest" || { echo "  $dest missing the argument validation list"; ok=1; }
+    grep -qF 'unknown options' "$dest" || { echo "  $dest missing unknown options among the usage errors"; ok=1; }
+    grep -qF 'carries the `antz:generated` marker' "$dest" || { echo "  $dest missing the marker pre-flight check"; ok=1; }
+    grep -qF 'current frontmatter `model:` line' "$dest" || { echo "  $dest missing the current-model read"; ok=1; }
+    grep -qF 'without asking any question' "$dest" || { echo "  $dest missing the refuse-without-asking rule"; ok=1; }
+  done
 
   rm -rf "$home"
   return $ok
@@ -558,11 +723,17 @@ test_set_model_cmd_12() {
 
 setup_extracted_scripts
 
-run_test "command-install-01: installs the Claude Code copy with expected frontmatter, scoped to claude only" test_command_install_01
+run_test "command-install-01: installs the Claude Code copy with expected frontmatter (optional --model/--clear group, picker body), scoped to claude only" test_command_install_01
 run_test "command-install-02: installs the OpenCode copy with no agent: field, scoped to opencode only" test_command_install_02
 run_test "command-install-03: re-running install.sh --claude is idempotent (no backup file)" test_command_install_03
 run_test "command-install-04: a pre-existing non-antz-managed file at the same path is backed up" test_command_install_04
 run_test "command-install-05: flag-less install.sh installs only for the detected client" test_command_install_05
+
+run_test "picker-render-01: claude body embeds the full documented alias vocabulary, refreshed only by re-running install.sh" test_picker_render_01
+run_test "picker-render-02: opencode body enumerates via 'opencode models' through the Bash tool, with no embedded catalog" test_picker_render_02
+run_test "picker-render-03: each body instructs its own native question mechanism; never-delegate rule preserved in both" test_picker_render_03
+run_test "picker-render-04: embedded script's exactly-one contract unchanged; body invokes the script only with --model or --clear" test_picker_render_04
+run_test "picker-render-05: both bodies state the fail-fast ordering (validate, marker pre-flight, read current model) before any question" test_picker_render_05
 
 run_test "set-model-cmd-01: adds model: line after description, before tools (Claude Code, no existing model)" test_set_model_cmd_01
 run_test "set-model-cmd-02: adds model: line after description, before mode (OpenCode, no existing model)" test_set_model_cmd_02
@@ -578,8 +749,37 @@ run_test "set-model-cmd-10: invoking the claude copy never touches the opencode 
 run_test "set-model-cmd-11: invoking for one agent never touches another agent's file" test_set_model_cmd_11
 run_test "set-model-cmd-12: the supplied model value is written verbatim, unvalidated" test_set_model_cmd_12
 
+# ---- command-level interactive-picker scenarios: e2e-only -------------------
+# Observable only in a live client session (question-asking); the sub-spec's
+# Verification levels assign them to the verifier's end-to-end QA suite
+# (spdd/changes/set-model-interactive-picker/e2e-qa.feature), not to this
+# unit suite. Explicit SKIP stubs so every scenario id is accounted for.
+
+E2E_REASON="e2e-only: observable only in a live client session (verifier's e2e-qa.feature)"
+
+skip_test "picker-cmd-01: interactive request for a not-installed agent is refused before any question" "$E2E_REASON"
+skip_test "picker-cmd-02: interactive request targeting a non-antz-managed file is refused before any question" "$E2E_REASON"
+skip_test "picker-cmd-03: unknown agent name is a usage error before any question" "$E2E_REASON"
+skip_test "picker-cmd-04: malformed arguments are usage errors before any question (4 example rows: empty, --bogus, dangling --model, dangling --agent)" "$E2E_REASON"
+skip_test "picker-cmd-05: both --model and --clear is a usage error before any question" "$E2E_REASON"
+skip_test "picker-cmd-06: explicit --model bypasses the picker, script runs with the given value" "$E2E_REASON"
+skip_test "picker-cmd-07: explicit --clear bypasses the picker" "$E2E_REASON"
+skip_test "picker-cmd-08: picker question states the currently configured model and marks the matching option" "$E2E_REASON"
+skip_test "picker-cmd-09: picker question states when no model is configured, marks no option" "$E2E_REASON"
+skip_test "picker-cmd-10: chosen listed option feeds the same embedded script as --model, reply relayed verbatim" "$E2E_REASON"
+skip_test "picker-cmd-11: 'revert to default (clear)' option maps to the script's --clear" "$E2E_REASON"
+skip_test "picker-cmd-12: free-form answer passed to the script verbatim, unvalidated" "$E2E_REASON"
+skip_test "picker-cmd-13: dismissed/empty answer cancels; nothing written, reply states nothing changed" "$E2E_REASON"
+skip_test "picker-claude-01: question asked via AskUserQuestion in the invoking main session; no antz-* subagent" "$E2E_REASON"
+skip_test "picker-claude-02: exactly four explicit options (sonnet, opus, haiku, clear) in order; remaining vocabulary named for free-form entry" "$E2E_REASON"
+skip_test "picker-claude-03: clear option maps to the script's --clear, removing the model: line" "$E2E_REASON"
+skip_test "picker-opencode-01: models enumerated at invocation time via 'opencode models'; question via the question tool" "$E2E_REASON"
+skip_test "picker-opencode-02: large catalog may be filtered/grouped, free-form and clear options always remain offered" "$E2E_REASON"
+skip_test "picker-opencode-03: explicit 'type another value' free-form option alongside the clear option" "$E2E_REASON"
+skip_test "picker-opencode-04: enumeration failure degrades to free-form + clear, question states no models could be enumerated" "$E2E_REASON"
+
 rm -f "$CLAUDE_SCRIPT" "$OPENCODE_SCRIPT"
 
 echo ""
-echo "$pass_count passed, $fail_count failed"
+echo "$pass_count passed, $fail_count failed, $skip_count skipped (e2e-only, see e2e-qa.feature)"
 [ "$fail_count" -eq 0 ]
