@@ -7,6 +7,11 @@ and this project uses [Semantic Versioning](https://semver.org/): patch for
 non-behavioral wording tweaks, minor for behavior changes, major for breaking
 changes to the workflow contract (directory layout, access model, etc).
 
+## [1.2.0] - 2026-09-08
+
+### Added
+- `/antz-set-model`, a client-native command (Claude Code and OpenCode) installed by `install.sh` alongside the four role agents and `/antz`. Lets a user configure or clear an already-installed antz agent's `model:` frontmatter, per agent and per client, by editing that agent's file directly in the invoking session — never delegating to any `antz-*` subagent. `install.sh`'s own agent-rendering logic gains no concept of `model:`: no agent ships with a configured model by default, before or after this change.
+
 ## [1.1.1] - 2026-09-08
 
 ### Changed

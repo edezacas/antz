@@ -170,6 +170,194 @@ render_opencode_command() {
     "$MARKER" "$1"
 }
 
+set_model_script() {
+  # $1 = client ("claude" or "opencode"). Emits the self-contained POSIX sh
+  # script embedded verbatim in that client's installed /antz-set-model
+  # command body. A client session runs this script (via its own Bash tool)
+  # to add, replace, or remove one already-installed agent file's "model:"
+  # frontmatter line -- the same deterministic file-editing contract the
+  # retired set-model.sh implemented, but permanently bound to one client
+  # (no --claude/--opencode flag; see README Client binding). $HOME below is
+  # left as a literal token in the emitted script, resolved by the shell
+  # that later runs it, not by install.sh.
+  client="$1"
+  case "$client" in
+    claude) agents_dir='$HOME/.claude/agents' ;;
+    opencode) agents_dir='$HOME/.config/opencode/agents' ;;
+    *) echo "Unknown client: $1" >&2; exit 1 ;;
+  esac
+  script=$(cat <<'SCRIPT'
+#!/bin/sh
+set -eu
+
+MARKER="antz:generated"
+VALID_AGENTS="specifier coder verifier orchestrator"
+CLIENT="__CLIENT__"
+AGENTS_DIR="__AGENTS_DIR__"
+
+usage() {
+  echo "Usage: /antz-set-model --agent <specifier|coder|verifier|orchestrator> (--model <value>|--clear)" >&2
+}
+
+agent=""
+model_value=""
+have_model=0
+have_clear=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --agent)
+      if [ $# -lt 2 ]; then
+        echo "Error: --agent requires a value." >&2
+        usage
+        exit 1
+      fi
+      agent="$2"
+      shift 2
+      ;;
+    --model)
+      if [ $# -lt 2 ]; then
+        echo "Error: --model requires a value." >&2
+        usage
+        exit 1
+      fi
+      have_model=1
+      model_value="$2"
+      shift 2
+      ;;
+    --clear)
+      have_clear=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Error: unknown option: $1" >&2
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+if [ -z "$agent" ]; then
+  echo "Error: --agent is required." >&2
+  usage
+  exit 1
+fi
+
+case " $VALID_AGENTS " in
+  *" $agent "*) ;;
+  *)
+    echo "Error: unknown agent '$agent'. Must be one of: $VALID_AGENTS." >&2
+    usage
+    exit 1
+    ;;
+esac
+
+if [ "$have_model" -eq 1 ] && [ "$have_clear" -eq 1 ]; then
+  echo "Error: --model and --clear are mutually exclusive; use exactly one." >&2
+  usage
+  exit 1
+fi
+
+if [ "$have_model" -eq 0 ] && [ "$have_clear" -eq 0 ]; then
+  echo "Error: exactly one of --model/--clear is required." >&2
+  usage
+  exit 1
+fi
+
+dest="$AGENTS_DIR/antz-$agent.md"
+
+if [ ! -f "$dest" ]; then
+  echo "Error: antz-$agent is not installed for $CLIENT yet (no file at $dest); install it first, e.g. ./install.sh --$CLIENT. No file was written." >&2
+  exit 1
+fi
+
+if ! grep -q "$MARKER" "$dest" 2>/dev/null; then
+  echo "Error: $dest is not antz-managed (missing the '$MARKER' marker); refusing to modify it. No file was written." >&2
+  exit 1
+fi
+
+if [ "$have_clear" -eq 1 ] && ! grep -q '^model:' "$dest" 2>/dev/null; then
+  echo "antz-$agent ($CLIENT) has no model configured; nothing to clear. $dest is unchanged."
+  exit 0
+fi
+
+if [ "$have_model" -eq 1 ]; then
+  newline="model: $model_value"
+  insert=1
+else
+  newline=""
+  insert=0
+fi
+
+tmp=$(mktemp)
+awk -v newline="$newline" -v insert="$insert" '
+  BEGIN { dashes = 0 }
+  {
+    if ($0 == "---") {
+      dashes++
+      print
+      next
+    }
+    if (dashes == 1 && $0 ~ /^model:/) {
+      next
+    }
+    print
+    if (dashes == 1 && insert == 1 && $0 ~ /^description:/) {
+      print newline
+    }
+  }
+' "$dest" > "$tmp"
+cat "$tmp" > "$dest"
+rm -f "$tmp"
+
+if [ "$have_model" -eq 1 ]; then
+  echo "antz-$agent ($CLIENT) now has model: $model_value ($dest)"
+else
+  echo "Cleared the model for antz-$agent ($CLIENT); $dest no longer has a model: line."
+fi
+SCRIPT
+)
+  printf '%s\n' "$script" | sed "s|__CLIENT__|$client|; s|__AGENTS_DIR__|$agents_dir|"
+}
+
+render_set_model_command() {
+  # $1 = client ("claude" or "opencode"), $2 = version. Renders the
+  # /antz-set-model command file for that client: unlike /antz, this command
+  # never delegates to any antz-* subagent -- its body instructs the
+  # invoking session to run the embedded script itself via its own Bash
+  # tool. Each rendered copy is scoped to exactly one client (see README
+  # Client binding); the two bodies never mention the other client's
+  # directory or frontmatter position.
+  client="$1"
+  version="$2"
+  script=$(set_model_script "$client")
+
+  case "$client" in
+    claude)
+      short_desc='Configure or clear an installed antz agent'"'"'s model in Claude Code. Edits the target file directly in this session; never delegates to a subagent.'
+      intro='Configure or clear the model: line in an already-installed Claude Code antz agent file'"'"'s frontmatter (`~/.claude/agents/antz-<agent>.md`).'
+      extra_frontmatter='argument-hint: --agent <specifier|coder|verifier|orchestrator> (--model <value>|--clear)
+'
+      ;;
+    opencode)
+      short_desc='Configure or clear an installed antz agent'"'"'s model in OpenCode. Edits the target file directly in this session; never delegates to a subagent.'
+      intro='Configure or clear the model: line in an already-installed OpenCode antz agent file'"'"'s frontmatter (`~/.config/opencode/agents/antz-<agent>.md`).'
+      extra_frontmatter=''
+      ;;
+    *) echo "Unknown client: $client" >&2; exit 1 ;;
+  esac
+
+  body=$(printf '%s\n\nArguments: $ARGUMENTS\n\nThis command does not delegate to any of the four antz-* subagents -- perform the edit yourself, in this session, using the Bash tool and only the arguments above. Save the script below to a temp file and run it with `sh <tempfile>`, passing the arguments above exactly as given (e.g. `sh /tmp/antz-set-model.sh --agent coder --model opus`). Then reply to the user using exactly what the script printed: on success, which file changed and what its `model:` line now is (or that it was cleared); on failure, the specific reason and that no file was written. Do not reinterpret, add to, or omit that message.\n\n```sh\n%s\n```\n' \
+    "$intro" "$script")
+
+  printf -- '---\n# %s version=%s -- do not edit by hand; regenerate with install.sh\ndescription: %s\n%s---\n\n%s\n' \
+    "$MARKER" "$version" "$short_desc" "$extra_frontmatter" "$body"
+}
+
 install_file() {
   # $1 destination path, $2 content
   dest="$1"
@@ -260,9 +448,11 @@ done
 if [ "$want_claude" -eq 1 ]; then
   mkdir -p "$HOME/.claude/commands"
   install_file "$HOME/.claude/commands/antz.md" "$(render_claude_command "$version")"
+  install_file "$HOME/.claude/commands/antz-set-model.md" "$(render_set_model_command claude "$version")"
 fi
 
 if [ "$want_opencode" -eq 1 ]; then
   mkdir -p "$HOME/.config/opencode/commands"
   install_file "$HOME/.config/opencode/commands/antz.md" "$(render_opencode_command "$version")"
+  install_file "$HOME/.config/opencode/commands/antz-set-model.md" "$(render_set_model_command opencode "$version")"
 fi
