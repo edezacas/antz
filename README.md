@@ -49,3 +49,7 @@ Or just fetch the current published version number:
 ```sh
 curl -fsSL https://raw.githubusercontent.com/edezacas/antz/master/VERSION
 ```
+
+## License
+
+Code in this repository is licensed under [Apache-2.0](LICENSE)
