@@ -7,6 +7,11 @@ and this project uses [Semantic Versioning](https://semver.org/): patch for
 non-behavioral wording tweaks, minor for behavior changes, major for breaking
 changes to the workflow contract (directory layout, access model, etc).
 
+## [0.3.0] - 2026-09-08
+
+### Changed
+- Specifier now prefixes sub-spec filenames with a numeric dependency-order index (`01-api.feature`, `02-client.feature`, ...), so implementation order is readable from a plain directory listing without a separate ordering file.
+
 ## [0.2.0] - 2026-09-08
 
 ### Added

@@ -33,6 +33,7 @@ You are the specifier.
 
 ## Output, written to `spdd/changes/<change-slug>/`
 - Sub-specs covering goal, contract, tagged Gherkin scenarios, invariants, and out-of-scope.
+- Name sub-spec files with a numeric prefix reflecting dependency order (`01-api.feature`, `02-client.feature`, ...).
 - Relevant files found during investigation, per sub-spec, as pointers only rather than a code walkthrough, so the coder doesn't have to re-discover them.
 - Shared-contracts section.
 - End-to-end QA suite.
