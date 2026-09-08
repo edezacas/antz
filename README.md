@@ -1,8 +1,12 @@
 # antz
 
-Three-role spec-driven development workflow (specifier / coder / verifier) as portable agent definitions. See `CLAUDE.md` / `AGENTS.md` for the workflow itself.
+Spec-driven development workflow (specifier / coder / verifier) as portable agent definitions, plus an `orchestrator` role that sequences the three for one change and is the recommended entry point via `/antz`. See `CLAUDE.md` / `AGENTS.md` for the workflow itself, and `docs/orchestrator.md` for the design reasoning behind the orchestrator and its conventions.
 
-Installed agent names are prefixed (`antz-specifier`, `antz-coder`, `antz-verifier`) to avoid colliding with other agents you may already have.
+Installed agent names are prefixed (`antz-specifier`, `antz-coder`, `antz-verifier`, `antz-orchestrator`) to avoid colliding with other agents you may already have.
+
+## Usage
+
+Run `/antz <your request>` in Claude Code or OpenCode after installing. It delegates to `antz-orchestrator`, which sequences `specifier -> coder -> verifier` for one change, picking up correctly even if interrupted and resumed later. The three underlying roles remain directly invokable for manual/expert use.
 
 ## Agent Compatibility
 
