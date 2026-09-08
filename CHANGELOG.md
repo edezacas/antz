@@ -7,6 +7,12 @@ and this project uses [Semantic Versioning](https://semver.org/): patch for
 non-behavioral wording tweaks, minor for behavior changes, major for breaking
 changes to the workflow contract (directory layout, access model, etc).
 
+## [0.4.0] - 2026-09-08
+
+### Changed
+- Coder now tags every test's name with its scenario's `<feature>-<index>` id (not just a comment), writes an explicit `skip`/`pending` stub for a scenario it won't automate instead of omitting it silently, and checks for already-passing/skipped tests before planning so a resumed session doesn't redo finished work.
+- When coder refuses or escalates a sub-spec instead of finishing it, it now leaves a stub reasoned `BLOCKED: <why>` (scenario-scoped, or tagged with the sub-spec's first scenario id if refused at the planning stage) instead of leaving no trace on disk.
+
 ## [0.3.0] - 2026-09-08
 
 ### Changed
