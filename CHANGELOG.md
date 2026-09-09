@@ -7,6 +7,11 @@ and this project uses [Semantic Versioning](https://semver.org/): patch for
 non-behavioral wording tweaks, minor for behavior changes, major for breaking
 changes to the workflow contract (directory layout, access model, etc).
 
+## [1.7.0] - 2026-09-09
+
+### Added
+- Specifier prompt: the "## Output" section now documents an optional Entities/Operations table the specifier may include in a change's `README.md` when the change introduces a new data shape (entity, model, or interface) or multiple named operations (endpoints, CLI commands/flags, steps, events) — an entities table (Name, Path, New-or-Existing, Notes) and/or an operations table (Type, Identifier, Description), pruned per the existing example-table pruning rule. The table is a scannable complement only: never mandatory, and never a substitute for the tagged Gherkin scenarios, which remain the actual testable behavior spec. A change with no new data shape and only one operation is not forced to produce a near-empty table, and no section is required to be marked "not applicable" when empty — only the table format itself is adopted as an available tool, not the rigid always-fill-every-section convention of the `open-spdd` `spdd-canvas` skill this was compared against.
+
 ## [1.6.0] - 2026-09-09
 
 ### Changed
