@@ -7,6 +7,11 @@ and this project uses [Semantic Versioning](https://semver.org/): patch for
 non-behavioral wording tweaks, minor for behavior changes, major for breaking
 changes to the workflow contract (directory layout, access model, etc).
 
+## [1.8.0] - 2026-09-09
+
+### Changed
+- Specifier prompt: the "## Output" section now fixes `README.md` as the name of the change's overview file (goal, contract, shared contracts, invariants, out-of-scope, relevant-files pointers) in its own dedicated bullet, instead of only implying that name via the one existing bullet that mentions it in passing (the optional Entities/Operations table). The Entities/Operations table bullet no longer repeats the file name itself — it now relies on this new bullet, so `README.md` is stated exactly once across the whole "## Output" section.
+
 ## [1.7.0] - 2026-09-09
 
 ### Added

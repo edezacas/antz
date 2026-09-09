@@ -80,13 +80,39 @@ awk '
 # =============================================================================
 # entities-table-01: the Output section states the option to include a
 # structured Entities/Operations table when a change introduces a new data
-# shape or multiple named operations.
+# shape or multiple named operations. MODIFIED by
+# spdd/changes/specifier-readme-fixed-name/01-readmefile.feature: the bullet
+# introducing the table no longer names `README.md` itself -- it relies on
+# the Output section's own fixed-file bullet instead (see
+# readmefile_test.sh's readmefile-01).
 # =============================================================================
 test_entities_table_01() {
   ok=0
   require "$OUTPUT_SECTION" 'a new data shape (entity, model, or interface)' || ok=1
   require "$OUTPUT_SECTION" 'multiple named operations (endpoints, CLI commands/flags, steps, events)' || ok=1
-  require "$OUTPUT_SECTION" "may optionally include a structured table in the change's \`README.md\`" || ok=1
+  require "$OUTPUT_SECTION" 'you may optionally include a structured table' || ok=1
+  return $ok
+}
+
+# =============================================================================
+# entities-table-01 (MODIFY, continued): the bullet introducing the table
+# does not itself contain the literal string "README.md" anymore.
+# =============================================================================
+test_entities_table_01_no_readme_mention() {
+  ok=0
+  # Extract just the Entities/Operations table bullet (the line starting
+  # with "- When a change introduces a new data shape").
+  TABLE_BULLET=$(grep -F -- '- When a change introduces a new data shape' "$OUTPUT_SECTION")
+  if [ -z "$TABLE_BULLET" ]; then
+    echo "  could not find the Entities/Operations table bullet"
+    return 1
+  fi
+  case "$TABLE_BULLET" in
+    *README.md*)
+      echo "  found forbidden text: README.md (in the table bullet)"
+      ok=1
+      ;;
+  esac
   return $ok
 }
 
@@ -142,6 +168,7 @@ test_entities_table_05() {
 # ---- run everything ---------------------------------------------------------
 
 run_test "entities-table-01: Output section states the optional Entities/Operations table for a new data shape or multiple named operations" test_entities_table_01
+run_test "entities-table-01: the table-introducing bullet no longer contains the literal string README.md" test_entities_table_01_no_readme_mention
 run_test "entities-table-02: exact column sets stated for the entities table and the operations table" test_entities_table_02
 run_test "entities-table-03: table is a scannable complement, Gherkin scenarios remain the actual testable behavior spec" test_entities_table_03
 run_test "entities-table-04: table is not mandatory; a single-operation, no-new-data-shape change is not forced to produce a near-empty table" test_entities_table_04
