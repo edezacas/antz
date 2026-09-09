@@ -9,9 +9,10 @@ implied by the one existing bullet that happens to name it in passing (the
 optional Entities/Operations table bullet added by the sibling change
 `specifier-entities-operations-table`).
 
-**Why now.** Two of `## Output`'s existing fixed-file conventions
-(`OPEN_QUESTIONS.md`, `REJECTED.md` — the latter owned by `verifier.prompt`)
-are each stated once, plainly, in their own dedicated bullet. The change's
+**Why now.** Two existing fixed-file conventions in this repo's role
+prompts (`OPEN_QUESTIONS.md` in the specifier's `## Output`, `REJECTED.md`
+in the verifier's rejection-reporting instructions) are each stated once,
+plainly, in their own dedicated bullet. The change's
 overview file has no such bullet: the string `` `README.md` `` appears exactly
 once in the whole section today, inside the Entities/Operations table
 bullet, as an incidental example rather than a rule. Nothing else pins the
@@ -157,10 +158,10 @@ commit(s).
   `spdd/changes/<change-slug>/OPEN_QUESTIONS.md` `` — the existing,
   one-bullet, name-it-once style this change's new bullet follows for
   `README.md`.
-- `/home/edezacas/Projects/edezacas/antz/pending/specifier-freshness-check/`
-  — independent sibling change, disjoint `## Process` section of the same
-  file; no dependency in either direction (noted only so the coder doesn't
-  confuse the two when touching `specifier.prompt`).
+- the independent sibling change `specifier-freshness-check` — disjoint
+  `## Process` section of the same file; no dependency in either direction
+  (noted only so the coder doesn't confuse the two when touching
+  `specifier.prompt`).
 
 ## Verification levels
 - Unit-testable (coder's suite): `01-readmefile.feature` in full — every

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Unit tests for the fixed-overview-file-name bullet added to the "## Output"
 # section of agents/prompts/specifier.prompt, covering every scenario in
-# spdd/changes/specifier-readme-fixed-name/01-readmefile.feature
+# spdd/archive/specifier-readme-fixed-name/01-readmefile.feature
 # (readmefile-01..03). The accompanying MODIFY of entities-table-01 (the
 # Entities/Operations table bullet no longer names README.md itself) is
 # covered in tests/entities-operations-table_test.sh, not here.
@@ -14,9 +14,11 @@
 # Every scenario here is a deterministic content assertion against the
 # static text of agents/prompts/specifier.prompt's "## Output" section
 # (grep-style), not a live LLM invocation -- per the sub-spec's Verification
-# levels. e2e-qa.feature covers the live-session behavior this instruction
-# produces and belongs to the verifier's end-to-end suite, not this unit
-# suite.
+# levels. The change's e2e-readmefile-01/02 scenarios (e2e-qa.feature)
+# require a live specifier session and inspecting the artifacts it produces
+# -- not reducible to a static grep on specifier.prompt. They belong to the
+# verifier's end-to-end suite, not this unit suite; they appear below as
+# explicit SKIP stubs so no scenario id is silently unaccounted for.
 
 set -u
 
@@ -146,10 +148,23 @@ test_readmefile_03() {
   refuse "$OUTPUT_SECTION" 'OVERVIEW.md' || ok=1
   refuse "$OUTPUT_SECTION" 'SUMMARY.md' || ok=1
   refuse "$OUTPUT_SECTION" 'NOTES.md' || ok=1
-  # No justification/discussion wording for the choice of README.md.
-  refuse "$OUTPUT_SECTION" 'instead of' || ok=1
-  refuse "$OUTPUT_SECTION" 'rather than using' || ok=1
-  refuse "$OUTPUT_SECTION" 'chosen over' || ok=1
+  # No justification/discussion wording for the choice of README.md --
+  # checked only on lines that name README.md, so an unrelated future use
+  # of these common phrases elsewhere in the section doesn't trip the test.
+  while IFS= read -r line; do
+    case "$line" in
+      *README.md*)
+        for phrase in 'instead of' 'rather than using' 'chosen over'; do
+          case "$line" in
+            *"$phrase"*)
+              echo "  justification-style wording on a README.md-naming line: $phrase"
+              ok=1
+              ;;
+          esac
+        done
+        ;;
+    esac
+  done < "$OUTPUT_SECTION"
   return $ok
 }
 
@@ -159,8 +174,20 @@ run_test "readmefile-01: a dedicated bullet states the change's overview is writ
 run_test "readmefile-02: README.md appears exactly once in the Output section and no bullet repeats it" test_readmefile_02
 run_test "readmefile-03: no rejected alternative file name is enumerated or discussed" test_readmefile_03
 
+# ---- e2e-only scenarios: explicit SKIP stubs ---------------------------------
+# e2e-readmefile-01/02 (spdd/archive/specifier-readme-fixed-name/e2e-qa.feature)
+# require a live specifier session and inspecting the artifacts it produces --
+# not reducible to a static grep on specifier.prompt. They belong to the
+# verifier's end-to-end suite, not this unit suite. Explicit stubs so every
+# scenario id is accounted for.
+
+E2E_REASON="e2e-only: observable only in a live specifier session (verifier's e2e-qa.feature)"
+
+skip_test "e2e-readmefile-01: two differently-shaped requests both produce their overview under the fixed name README.md, never any other name" "$E2E_REASON"
+skip_test "e2e-readmefile-02: when present, the Entities/Operations table lives inside README.md, never in a separate file" "$E2E_REASON"
+
 rm -f "$OUTPUT_SECTION"
 
 echo ""
-echo "$pass_count passed, $fail_count failed, $skip_count skipped"
+echo "$pass_count passed, $fail_count failed, $skip_count skipped (e2e-only, see e2e-qa.feature)"
 [ "$fail_count" -eq 0 ]

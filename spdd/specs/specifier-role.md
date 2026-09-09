@@ -158,7 +158,7 @@ defined once, identically, within its own Feature.
       entities table with columns Name, Path, New-or-Existing, Notes,
       and/or an operations table with columns Type, Identifier, Description,
       pruning columns per the Specification Rules' example-table rule. This
-      table is a scannable complement to the prose contract sections — the
+      table is a scannable complement to the prose contract sections. The
       tagged Gherkin scenarios remain the actual testable behavior spec,
       never replaced by the table."
     And its open-questions bullet already fixes a different file the same
@@ -298,8 +298,8 @@ invocation produced, read back.
   self-contained bash test harness, one test per scenario in the
   fixed-overview-file-name Feature above (readmefile-01..03), tagged with
   scenario ids in each test's reported name; the e2e-only ids
-  (e2e-readmefile-01/02) are verified live by the verifier instead (see
-  End-to-end QA suite above), not stubbed in this unit suite.
+  (e2e-readmefile-01/02) appear there as explicit SKIP stubs, verified live
+  by the verifier instead (see End-to-end QA suite above).
 - `/home/edezacas/Projects/edezacas/antz/spdd/archive/specifier-readme-fixed-name/`
   — the change that delivered the fixed-overview-file-name Feature above
   (ADD `readmefile-01..03`, MODIFY `entities-table-01`), preserved for

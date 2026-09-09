@@ -81,7 +81,7 @@ awk '
 # entities-table-01: the Output section states the option to include a
 # structured Entities/Operations table when a change introduces a new data
 # shape or multiple named operations. MODIFIED by
-# spdd/changes/specifier-readme-fixed-name/01-readmefile.feature: the bullet
+# spdd/archive/specifier-readme-fixed-name/01-readmefile.feature: the bullet
 # introducing the table no longer names `README.md` itself -- it relies on
 # the Output section's own fixed-file bullet instead (see
 # readmefile_test.sh's readmefile-01).
