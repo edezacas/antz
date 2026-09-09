@@ -17,6 +17,11 @@ Run this in full on every invocation, no "first run" vs. "resume" branching: rec
 
    : "${CHANGE_DIR:?CHANGE_DIR must be set to the spdd/changes/<slug> path}"
 
+   if [ ! -d "$CHANGE_DIR" ]; then
+     echo "change_dir=missing"
+     exit 1
+   fi
+
    if [ -f "$CHANGE_DIR/OPEN_QUESTIONS.md" ]; then
      echo "open_questions=yes"
      exit 0
@@ -25,25 +30,29 @@ Run this in full on every invocation, no "first run" vs. "resume" branching: rec
 
    rejected_count=0
    if [ -f "$CHANGE_DIR/REJECTED.md" ]; then
-     rejected_count=$(grep -c '^## Rejection [0-9][0-9]*$' "$CHANGE_DIR/REJECTED.md" || true)
+     rejected_count=$(grep -c '^## Rejection [0-9][0-9]*[[:space:]]*$' "$CHANGE_DIR/REJECTED.md" || true)
    fi
    echo "rejected_count=$rejected_count"
 
    for f in "$CHANGE_DIR"/[0-9][0-9]-*.feature; do
      [ -e "$f" ] || continue
-     ids=$(grep -E '^[[:space:]]*#' "$f" | grep -oE '[A-Za-z][A-Za-z0-9_]*-[0-9]+' | sort -u | tr '\n' ',' | sed 's/,$//')
+     ids=$(awk '/^[[:space:]]*#/ { if (buf == "") first = $0; buf = buf $0 "\n"; next }
+                /^[[:space:]]*Scenario([[:space:]]+Outline)?:/ { print first }
+                { buf = ""; first = "" }' "$f" | grep -oE '[A-Za-z][A-Za-z0-9_-]*-[0-9]+' | sort -u | tr '\n' ',' | sed 's/,$//')
      printf 'subspec=%s ids=%s\n' "$(basename "$f")" "$ids"
    done
    ```
 
    | Output | Meaning |
    |---|---|
+   | `change_dir=missing` | `CHANGE_DIR` isn't an existing directory — the slug is wrong. Stop, re-check the slug (ask the user), and don't route on. |
    | `open_questions=yes` | `OPEN_QUESTIONS.md` exists. Stop, surface it to the user, don't resolve it. |
    | `open_questions=no` | proceed to the rest of the output |
    | `rejected_count=N` | entries in `REJECTED.md` (0 if absent) — routes step 4 |
-   | `subspec=<file> ids=<id,id,...>` | one line per sub-spec, in filename (dependency) order, with its declared scenario ids (from the comment tag immediately above each scenario) |
+   | `subspec=<file> ids=<id,id,...>` | one line per sub-spec, in filename (dependency) order, with its declared scenario ids (from the first line of the comment tag immediately above each `Scenario:`/`Scenario Outline:` — continuation lines are description, not ids) |
 
 3. **Classify each sub-spec**, in the printed order. Discover the unit-suite's run command the way any contributor would (`package.json` `test` script, a `Makefile` `test` target, the language's standard convention); if genuinely ambiguous, ask the user once rather than guessing. Run it, then classify each sub-spec from its `ids`: presence alone isn't enough — the actual run result resolves each id into red vs. green/skip.
+   - An empty `ids` list can't be classified at all — the sub-spec's scenarios aren't tagged per the specifier's convention. Stop and ask the user; never treat it as vacuously `done`.
    - Any id backed by a skip reasoned `BLOCKED: <why>` (plain colon) — distinct from an ordinary "not unit-testable" skip — makes the sub-spec `blocked`. Stop at the first one found: relay the reason and ask the user to route it to `specifier`, before looking at any other sub-spec.
    - Otherwise, any id not yet green or ordinary-skip makes it `in_progress`: delegate to a fresh `coder` session (one session per sub-spec).
    - All ids green or ordinary-skip makes it `done`.

@@ -246,6 +246,192 @@ test_probe_no_subspecs() {
 }
 
 # =============================================================================
+# probe-rejected-count-trailing-space: trailing whitespace (a stray space, or
+# CRLF's \r) on the heading line is invisible to a human and still counts --
+# unlike trailing text, which does not.
+# =============================================================================
+test_probe_rejected_count_trailing_space() {
+  dir=$(new_change_dir)
+  printf '## Rejection 1 \n\nblocker\n' > "$dir/REJECTED.md"
+  ok=0
+  out=$(run_probe "$dir")
+  echo "$out" | grep -qxF 'rejected_count=1' || { echo "  trailing-space heading was not counted: $out"; ok=1; }
+  rm -rf "$dir"
+  return $ok
+}
+
+# =============================================================================
+# probe-subspec-ids-ignore-loose-comments: an id-shaped token in a comment that
+# is NOT the tag immediately above a Scenario must NOT be picked up -- only the
+# comment tag immediately above each Scenario: line counts. A phantom id (one
+# no test will ever satisfy) would keep a sub-spec perpetually in_progress and
+# re-delegate coder forever.
+# =============================================================================
+test_probe_subspec_ids_ignore_loose_comments() {
+  dir=$(new_change_dir)
+  cat > "$dir/01-api.feature" <<'EOF'
+Feature: API
+
+# NOTE: implements invariant-2 of the versioning spec
+
+# api-1
+Scenario: creates a resource
+  Given a valid payload
+  When the request is sent
+  Then a 201 is returned
+EOF
+  ok=0
+  out=$(run_probe "$dir")
+  echo "$out" | grep -qxF 'subspec=01-api.feature ids=api-1' \
+    || { echo "  expected exactly ids=api-1, got: $out"; ok=1; }
+  echo "$out" | grep -q 'invariant-2' && { echo "  phantom id invariant-2 leaked: $out"; ok=1; }
+  rm -rf "$dir"
+  return $ok
+}
+
+# =============================================================================
+# probe-subspec-ids-tag-reset: a Scenario directly following another Scenario
+# (no tag of its own) gets no id -- the tag must be immediately above each
+# scenario, never inherited from a previous one.
+# =============================================================================
+test_probe_subspec_ids_tag_reset() {
+  dir=$(new_change_dir)
+  cat > "$dir/01-api.feature" <<'EOF'
+Feature: API
+
+# api-1
+Scenario: first
+  Given a
+Scenario: second
+  Given b
+EOF
+  ok=0
+  out=$(run_probe "$dir")
+  echo "$out" | grep -qxF 'subspec=01-api.feature ids=api-1' \
+    || { echo "  expected exactly ids=api-1, got: $out"; ok=1; }
+  rm -rf "$dir"
+  return $ok
+}
+
+# =============================================================================
+# probe-subspec-ids-hyphenated-feature: a hyphenated feature name survives the
+# extraction whole (user-profile-1, not the split-off profile-1 the old regex
+# produced), so the probe stays in sync with the ids the coder tags tests with
+# even when the specifier's one-word naming rule is violated.
+# =============================================================================
+test_probe_subspec_ids_hyphenated_feature() {
+  dir=$(new_change_dir)
+  printf 'Feature: User profile\n\n# user-profile-1\nScenario: shows the profile\n  Given a user\n' > "$dir/01-user-profile.feature"
+  ok=0
+  out=$(run_probe "$dir")
+  echo "$out" | grep -qxF 'subspec=01-user-profile.feature ids=user-profile-1' \
+    || { echo "  hyphenated id was split: $out"; ok=1; }
+  rm -rf "$dir"
+  return $ok
+}
+
+# =============================================================================
+# probe-change-dir-missing-path: CHANGE_DIR set but pointing at a nonexistent
+# directory must fail fast with change_dir=missing and a non-zero exit --
+# reporting a clean state (no open questions, 0 rejections, no sub-specs) would
+# invite routing straight to verifier on a mistyped slug.
+# =============================================================================
+test_probe_change_dir_missing_path() {
+  root=$(mktemp -d)
+  ok=0
+  out=$(CHANGE_DIR="$root/spdd/changes/no-such-slug" sh "$PROBE_SCRIPT" 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || { echo "  expected non-zero exit for a missing change dir, got 0"; ok=1; }
+  echo "$out" | grep -qxF 'change_dir=missing' || { echo "  missing change_dir=missing marker: $out"; ok=1; }
+  rm -rf "$root"
+  return $ok
+}
+
+# =============================================================================
+# probe-subspec-ids-scenario-outline: the tag above a `Scenario Outline:` (the
+# specifier's documented way to express example tables, and what the repo's
+# own archived sub-specs use) must be picked up exactly like a plain
+# `Scenario:` -- an empty ids list there would make the orchestrator stop and
+# ask the user on every example-table sub-spec.
+# =============================================================================
+test_probe_subspec_ids_scenario_outline() {
+  dir=$(new_change_dir)
+  cat > "$dir/01-api.feature" <<'EOF'
+Feature: API
+
+# api-1
+Scenario Outline: creates a resource
+  Given a "<status>" payload
+  When the request is sent
+  Then a <code> is returned
+
+  Examples:
+    | status | code |
+    | valid  | 201  |
+    | invalid | 400 |
+EOF
+  ok=0
+  out=$(run_probe "$dir")
+  echo "$out" | grep -qxF 'subspec=01-api.feature ids=api-1' \
+    || { echo "  Scenario Outline: tag was not picked up: $out"; ok=1; }
+  rm -rf "$dir"
+  return $ok
+}
+
+# =============================================================================
+# probe-subspec-ids-multiline-tag: the tag comment immediately above a
+# Scenario may span several lines (the repo's own convention:
+# `# ADD - <id>: description` with the description wrapping), with the id on
+# the first line -- the whole comment block counts, not just its last line.
+# =============================================================================
+test_probe_subspec_ids_multiline_tag() {
+  dir=$(new_change_dir)
+  cat > "$dir/01-install.feature" <<'EOF'
+Feature: install.sh installs the command
+
+  # ADD - command-install-01: install.sh installs the Claude Code copy with
+  # the expected frontmatter shape, mirroring how it already installs /antz.
+  Scenario: command-install-01
+    Given a clean commands directory
+    When the user runs the installer
+    Then the command file is created
+EOF
+  ok=0
+  out=$(run_probe "$dir")
+  echo "$out" | grep -qxF 'subspec=01-install.feature ids=command-install-01' \
+    || { echo "  multi-line tag id was missed: $out"; ok=1; }
+  rm -rf "$dir"
+  return $ok
+}
+
+# =============================================================================
+# probe-subspec-ids-ignore-tag-crossrefs: another scenario's id mentioned in a
+# tag's description continuation line (a cross-reference like "same refusal
+# message as set-model-cmd-06", present in the repo's own archived specs) is
+# NOT a declared id -- only the tag's first line carries the id.
+# =============================================================================
+test_probe_subspec_ids_ignore_tag_crossrefs() {
+  dir=$(new_change_dir)
+  cat > "$dir/01-picker.feature" <<'EOF'
+Feature: picker
+
+  # ADD - picker-cmd-01: an unknown agent is refused before any question is
+  # asked -- same refusal message as set-model-cmd-06.
+  Scenario: picker-cmd-01
+    Given no file exists
+    When the command is invoked
+    Then the reply explains the refusal
+EOF
+  ok=0
+  out=$(run_probe "$dir")
+  echo "$out" | grep -qxF 'subspec=01-picker.feature ids=picker-cmd-01' \
+    || { echo "  expected exactly ids=picker-cmd-01, got: $out"; ok=1; }
+  echo "$out" | grep -q 'set-model-cmd-06' && { echo "  cross-reference leaked as id: $out"; ok=1; }
+  rm -rf "$dir"
+  return $ok
+}
+
+# =============================================================================
 # probe-missing-change-dir: CHANGE_DIR unset fails fast with a clear message,
 # per the script's set -u guard.
 # =============================================================================
@@ -266,11 +452,19 @@ run_test "probe-no-open-questions: prints open_questions=no and rejected_count=0
 run_test "probe-rejected-count-one: counts a single exact '## Rejection 1' heading" test_probe_rejected_count_one
 run_test "probe-rejected-count-two: counts two exact '## Rejection N' headings" test_probe_rejected_count_two
 run_test "probe-rejected-count-malformed: a heading with trailing text on the line is not counted" test_probe_rejected_count_malformed_not_counted
+run_test "probe-rejected-count-trailing-space: a heading with trailing whitespace still counts" test_probe_rejected_count_trailing_space
 run_test "probe-subspec-ids-from-comments: ids are read from the comment tag above each scenario, in filename order" test_probe_subspec_ids_from_comments
 run_test "probe-subspec-ids-ignore-prose: an id-shaped token in ordinary prose (not a comment) is not picked up" test_probe_subspec_ids_ignore_prose
+run_test "probe-subspec-ids-ignore-loose-comments: an id-shaped token in a comment not above a Scenario is not picked up" test_probe_subspec_ids_ignore_loose_comments
+run_test "probe-subspec-ids-tag-reset: a tagless Scenario following a tagged one inherits no id" test_probe_subspec_ids_tag_reset
+run_test "probe-subspec-ids-hyphenated-feature: a hyphenated feature name survives extraction whole" test_probe_subspec_ids_hyphenated_feature
+run_test "probe-subspec-ids-scenario-outline: the tag above a Scenario Outline is picked up like a plain Scenario" test_probe_subspec_ids_scenario_outline
+run_test "probe-subspec-ids-multiline-tag: an id on the first line of a multi-line tag comment is picked up" test_probe_subspec_ids_multiline_tag
+run_test "probe-subspec-ids-ignore-tag-crossrefs: another scenario's id in a tag description line is not picked up" test_probe_subspec_ids_ignore_tag_crossrefs
 run_test "probe-subspec-empty-ids: an untagged sub-spec reports an empty ids list without crashing" test_probe_subspec_empty_ids
 run_test "probe-no-subspecs: no sub-spec files yet still succeeds, with no subspec= lines" test_probe_no_subspecs
 run_test "probe-missing-change-dir: unset CHANGE_DIR fails fast with a clear message" test_probe_missing_change_dir
+run_test "probe-change-dir-missing-path: a CHANGE_DIR pointing at a nonexistent directory fails fast with change_dir=missing" test_probe_change_dir_missing_path
 
 rm -f "$PROBE_SCRIPT"
 

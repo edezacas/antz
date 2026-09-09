@@ -14,7 +14,7 @@ You are the specifier.
 - Order sub-specs by dependency (API before client).
 
 ## Specification Rules
-- Use Gherkin format, naming each scenario `<feature>-<index>` with a comment immediately above it.
+- Use Gherkin format, naming each scenario `<feature>-<index>` with a tag comment immediately above it whose first line carries the ADD/MODIFY/REMOVE marker and the id (`# ADD - <feature>-<index>: description`, description may wrap to further lines); `<feature>` is the sub-spec file's stem minus its numeric prefix and extension, one word (letters/digits/underscores only — no hyphens or spaces), so the tag matches the ids the coder tags tests with. Don't put other scenarios' ids in a tag's description — refer to them in the report instead, since the orchestrator's probe reads ids from tag first lines only.
 - Use example tables for varying fields, pruning columns where every row is identical and adds no acceptance value.
 - Keep scenarios concise and deterministic, with no reliance on timing or unset external state.
 - Use `Background` for repeated setup.
@@ -33,7 +33,7 @@ You are the specifier.
 
 ## Output, written to `spdd/changes/<change-slug>/`
 - Sub-specs covering goal, contract, tagged Gherkin scenarios, invariants, and out-of-scope.
-- Name sub-spec files with a numeric prefix reflecting dependency order (`01-api.feature`, `02-client.feature`, ...).
+- Name sub-spec files with a two-digit numeric prefix reflecting dependency order (`01-api.feature`, `02-client.feature`, ...); the stem after it (e.g. `api`) is the scenario ids' `<feature>`.
 - Relevant files found during investigation, per sub-spec, as pointers only rather than a code walkthrough, so the coder doesn't have to re-discover them.
 - Shared-contracts section.
 - End-to-end QA suite.

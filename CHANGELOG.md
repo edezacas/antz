@@ -7,6 +7,13 @@ and this project uses [Semantic Versioning](https://semver.org/): patch for
 non-behavioral wording tweaks, minor for behavior changes, major for breaking
 changes to the workflow contract (directory layout, access model, etc).
 
+## [1.6.0] - 2026-09-09
+
+### Changed
+- Orchestrator probe script: hardened against the failure modes a review of 1.5.0 surfaced. (1) Scenario ids are now extracted only from the first line of the comment tag immediately above each `Scenario:`/`Scenario Outline:` line (an awk pass tracks the tag block and emits its first line on the scenario keyword), so an id-shaped token anywhere else — a loose comment (`invariant-2` in a `# NOTE:` line) or a tag description's cross-reference to another scenario (`same refusal message as set-model-cmd-06`, as the repo's own archived specs do) — can no longer become a phantom id whose never-existing test keeps a sub-spec perpetually `in_progress` and re-delegates `coder` forever. `Scenario Outline:` (the specifier's documented example-table form) is matched alongside `Scenario:`, and a hyphenated feature name (`user-profile-1`) extracts whole instead of splitting into the unmatchable `profile-1`. (2) A `CHANGE_DIR` that isn't an existing directory prints `change_dir=missing` and exits nonzero, instead of reporting the cleanest possible state (no open questions, 0 rejections, no sub-specs) that invited routing straight to `verifier` on a mistyped slug; the prompt's output table gains the matching stop-and-recheck-slug row. (3) The `## Rejection <n>` heading count tolerates trailing whitespace on the line (a stray trailing space or CRLF) while headings with trailing text still don't count.
+- Orchestrator prompt: a sub-spec whose `ids` list is empty is unclassifiable — stop and ask the user, never treat it as vacuously `done` (previously "all ids green or ordinary-skip" held vacuously over an empty list).
+- Specifier prompt: the `<feature>-<index>` scenario-naming convention is pinned — `<feature>` is the sub-spec file's stem minus its numeric prefix and extension, one word (letters/digits/underscores, no hyphens or spaces), so spec tags and the coder's test-name ids agree; the tag comment's first line carries the ADD/MODIFY/REMOVE marker and the id, with the description wrapping below it, and tag descriptions must not cite other scenarios' ids (the orchestrator's probe reads ids from tag first lines only); sub-spec filenames now explicitly require a two-digit numeric prefix, matching the probe's `[0-9][0-9]-*` glob.
+
 ## [1.5.0] - 2026-09-09
 
 ### Changed
