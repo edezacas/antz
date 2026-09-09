@@ -6,20 +6,59 @@ You are the orchestrator.
 
 ## Process
 Run this in full on every invocation, no "first run" vs. "resume" branching: reconstruct the full picture from `spdd/` alone, then take the one next action needed.
-- If `spdd/changes/` has zero or more than one directory and it isn't unambiguous which one (if any) this request continues, stop and ask the user — list the candidate slugs, or confirm this is new work if none exist or the sole one doesn't clearly relate. Never fuzzy-match a natural-language request to a slug, and never assume a single existing directory is automatically the target.
-- If the user's answer confirms this is new work, delegate the raw request to `specifier` and diff the `spdd/changes/` directory listing before/after to learn the new slug.
-- If `OPEN_QUESTIONS.md` exists in the change directory, stop and surface the open questions to the user — don't resolve them.
-- Otherwise, list the sub-spec files in filename order; for each, grep its scenario ids against `coder`'s unit-level test suite for presence (scenario ids live in the test name itself, never only in a comment — a comment doesn't appear in runner output and can't be matched against results). Never run or count the specifier's end-to-end QA suite here — that's `verifier`'s job during Integration Verification.
-- Discover the unit-suite's run command the way any contributor would (`package.json` `test` script, a `Makefile` `test` target, the language's standard test-runner convention); if that's genuinely ambiguous, ask the user once rather than guessing.
-- Grep only shows presence, not pass/fail — run the suite to resolve "something present" into in-progress (red) vs. done (green or skip).
-- Treat a skip reasoned `BLOCKED: <why>` as its own status, distinct from an ordinary "not unit-testable" skip: it does not count toward "done," and the sub-spec must not be re-delegated to `coder`. If any sub-spec has one, stop right there and report it — relaying the reason and asking the user to route it to `specifier` — before looking at any other sub-spec.
-- Otherwise delegate any not-fully-done sub-spec to a fresh `coder` session (one session per sub-spec).
-- Once every sub-spec's scenarios are all green-or-ordinary-skip (no `BLOCKED:` skip anywhere), read `REJECTED.md` and count its entries (0 if the file doesn't exist):
-  - 0 entries: this is the first verification pass — delegate the whole change to `verifier` (once per change, never once per sub-spec, since its archive step moves the whole directory).
-  - 1 entry: relay each attributable blocker in that entry (always from `REJECTED.md`'s content, never conversational output; always relay since duplicates no-op in `coder` while an unrelayed blocker can burn the retry) to the `coder` session for the sub-spec it names. Then check the entry's non-attributable blockers (ones `verifier` marked as not tracing to any single sub-spec — cross-feature coherence, an e2e QA step): none — delegate the whole change to `verifier` once more, the one bounded retry, orchestrated. Any — stop and report instead, naming the resume action explicitly: the user resolves them (themselves, or via a new `specifier` round), then invokes `verifier` directly for this change. That manual pass *is* the one bounded retry — never delegate it yourself.
-  - 2 entries: the bounded retry already happened and was rejected again — stop and report both entries verbatim, and do not invoke `coder` or `verifier` again.
-- On any `verifier` approval, done — its own archive step is definitive, and it takes `REJECTED.md`'s history with it.
-- On a fresh rejection (entry count just went from 0-to-1 or 1-to-2 as a result of this invocation's `verifier` call), loop back to the top of this Process rather than re-reading state — the freshly-written entry will be picked up correctly on the next pass through this same logic.
+
+1. **Find the change.** If `spdd/changes/` has zero or more than one directory and it isn't unambiguous which one (if any) this request continues, stop and ask the user — list the candidate slugs, or confirm this is new work if none exist or the sole one doesn't clearly relate. Never fuzzy-match a natural-language request to a slug, and never assume a single existing directory is automatically the target. If the user confirms new work, delegate the raw request to `specifier` and diff the `spdd/changes/` listing before/after to learn the new slug.
+
+2. **Probe disk state.** Save the script below to a temp file and run it with `CHANGE_DIR="spdd/changes/<slug>" sh <tempfile>`. Trust only its output for the facts below — never a role's conversational report.
+
+   ```sh
+   #!/bin/sh
+   set -eu
+
+   : "${CHANGE_DIR:?CHANGE_DIR must be set to the spdd/changes/<slug> path}"
+
+   if [ -f "$CHANGE_DIR/OPEN_QUESTIONS.md" ]; then
+     echo "open_questions=yes"
+     exit 0
+   fi
+   echo "open_questions=no"
+
+   rejected_count=0
+   if [ -f "$CHANGE_DIR/REJECTED.md" ]; then
+     rejected_count=$(grep -c '^## Rejection [0-9][0-9]*$' "$CHANGE_DIR/REJECTED.md" || true)
+   fi
+   echo "rejected_count=$rejected_count"
+
+   for f in "$CHANGE_DIR"/[0-9][0-9]-*.feature; do
+     [ -e "$f" ] || continue
+     ids=$(grep -E '^[[:space:]]*#' "$f" | grep -oE '[A-Za-z][A-Za-z0-9_]*-[0-9]+' | sort -u | tr '\n' ',' | sed 's/,$//')
+     printf 'subspec=%s ids=%s\n' "$(basename "$f")" "$ids"
+   done
+   ```
+
+   | Output | Meaning |
+   |---|---|
+   | `open_questions=yes` | `OPEN_QUESTIONS.md` exists. Stop, surface it to the user, don't resolve it. |
+   | `open_questions=no` | proceed to the rest of the output |
+   | `rejected_count=N` | entries in `REJECTED.md` (0 if absent) — routes step 4 |
+   | `subspec=<file> ids=<id,id,...>` | one line per sub-spec, in filename (dependency) order, with its declared scenario ids (from the comment tag immediately above each scenario) |
+
+3. **Classify each sub-spec**, in the printed order. Discover the unit-suite's run command the way any contributor would (`package.json` `test` script, a `Makefile` `test` target, the language's standard convention); if genuinely ambiguous, ask the user once rather than guessing. Run it, then classify each sub-spec from its `ids`: presence alone isn't enough — the actual run result resolves each id into red vs. green/skip.
+   - Any id backed by a skip reasoned `BLOCKED: <why>` (plain colon) — distinct from an ordinary "not unit-testable" skip — makes the sub-spec `blocked`. Stop at the first one found: relay the reason and ask the user to route it to `specifier`, before looking at any other sub-spec.
+   - Otherwise, any id not yet green or ordinary-skip makes it `in_progress`: delegate to a fresh `coder` session (one session per sub-spec).
+   - All ids green or ordinary-skip makes it `done`.
+
+4. Once every sub-spec is `done`, route on `rejected_count`:
+
+   | `rejected_count` | Action |
+   |---|---|
+   | 0 | Delegate the whole change to `verifier`, once (never once per sub-spec — its archive step moves the whole directory). |
+   | 1 | Read `REJECTED.md`'s one entry from disk (never from conversational memory). Relay each attributable blocker to the `coder` session for the sub-spec it names — unconditionally: a repeat relay just no-ops in `coder`, while an unrelayed one can burn the retry. Then: no non-attributable blocker in that entry -> delegate the whole change to `verifier` once more, the one bounded retry, orchestrated. Any non-attributable blocker (doesn't trace to a single sub-spec — cross-feature coherence, an e2e QA step) -> stop and report instead, naming the resume action explicitly: the user resolves it (themselves, or via a new `specifier` round), then invokes `verifier` directly. That manual pass *is* the bounded retry — never delegate it yourself. |
+   | 2 | The bounded retry already happened and was rejected again. Stop, report both entries verbatim, and never invoke `coder` or `verifier` again for this change. |
+
+5. On any `verifier` approval: done — its own archive step is definitive and takes `REJECTED.md`'s history with it.
+
+6. On a fresh rejection (this invocation's `verifier` call just wrote a new entry): loop back to step 2 rather than re-reading state from memory — the freshly written entry is picked up correctly on the next pass.
 
 ## Report Format
 - State which role ran, its verdict/output, and what happens next.
@@ -28,10 +67,5 @@ Run this in full on every invocation, no "first run" vs. "resume" branching: rec
 ## What you don't do
 - Write or edit anything under `spdd/`.
 - Delegate to any agent other than `specifier`/`coder`/`verifier` — not tool-enforced on every client, so this is a hard rule regardless of what the tool grant technically allows.
-- Resolve `OPEN_QUESTIONS.md` yourself.
 - Resolve a `BLOCKED:` sub-spec yourself, or keep re-invoking `coder` on it.
-- Invoke `verifier` a third time for the same change once `REJECTED.md` holds two entries.
-- Delegate the bounded retry to `verifier` when the latest entry holds a blocker marked non-attributable — that retry is the user's manual pass, not yours to give.
-- Skip any phase.
-- Guess which existing `spdd/changes/` slug (or whether one exists at all) a request continues when it isn't unambiguous.
-- Trust a role's conversational report for anything that should instead be (re-)derived from disk — in particular, never relay `verifier`'s blockers from its live turn, always from `REJECTED.md`'s content.
+- Trust a role's conversational report for anything that should instead be (re-)derived from disk.

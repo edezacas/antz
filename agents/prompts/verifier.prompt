@@ -27,7 +27,7 @@ You are the verifier.
 - Never archive a rejected change, leaving it in `spdd/changes/` for the coder.
 
 ## On Rejection
-- Before reporting, append (never overwrite) one numbered entry to `spdd/changes/<change-slug>/REJECTED.md` (via Bash) with the reported blockers (severity, evidence, offending scenario — the same content already in the Report Format).
+- Before reporting, append (never overwrite) one entry to `spdd/changes/<change-slug>/REJECTED.md` (via Bash), headed by its own line reading exactly `## Rejection <n>` and nothing else (`<n>` = 1 for the first entry in the file, incrementing by one per further entry) — the orchestrator's probe script counts this exact heading, so it must be literal, not just numbered in spirit. Put the reported blockers (severity, evidence, offending scenario — the same content already in the Report Format) on the lines that follow.
 - For each blocker, name the sub-spec it traces to when one applies (via its scenario id), or state explicitly that it doesn't trace to a single sub-spec (e.g. cross-feature coherence, or an e2e QA step not owned by any one sub-spec).
 
 ## Report Format

@@ -7,6 +7,12 @@ and this project uses [Semantic Versioning](https://semver.org/): patch for
 non-behavioral wording tweaks, minor for behavior changes, major for breaking
 changes to the workflow contract (directory layout, access model, etc).
 
+## [1.5.0] - 2026-09-09
+
+### Changed
+- Orchestrator prompt: reduced rule/context load by (1) deduplicating "What you don't do" bullets already implied by `Process`, (2) turning the `REJECTED.md`-count and probe-output branching into compact tables instead of nested prose, and (3) offloading the mechanical parts of disk-state computation (`OPEN_QUESTIONS.md` presence, `REJECTED.md`'s entry count, each sub-spec's declared scenario ids) to a small embedded POSIX `sh` probe script, following the same embedded-script convention as `/antz-set-model`. Discovering the project's test command and classifying pass/fail/`BLOCKED` per id remain the orchestrator's own judgment call, since that stays language/framework-specific. Net decisions are unchanged; only the mechanism moved from prose to a deterministic script the orchestrator runs itself.
+- Verifier's `REJECTED.md` entries must now be headed by an exact `## Rejection <n>` line (nothing else on that line) instead of an informally "numbered" entry, so the orchestrator's probe script can count them by exact match rather than by an LLM re-reading free-form prose — the same "cheap insurance" rationale as the `BLOCKED: <why>` colon convention.
+
 ## [1.4.0] - 2026-09-08
 
 ### Fixed
