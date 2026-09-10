@@ -406,6 +406,46 @@ EOF
     || { echo "  worktree was removed despite the gate"; return 1; }
 }
 
+# =============================================================================
+# flow-18: git missing from PATH fail-closes with state=no_git, whatever the
+# subcommand (the preflight runs before any of them).
+# =============================================================================
+test_flow_no_git_on_path() {
+  # PATH must contain no git; look up sh beforehand — with a sanitized PATH
+  # the subshell can't find the interpreter itself.
+  dashsh=$(command -v sh)
+  new_repo flow-no-git
+  fakebin=$(mktemp -d)
+  out=$( ( cd "$REPO_ROOT" && PATH="$fakebin" "$dashsh" "$SCRIPT" discover ) 2>&1 )
+  status=$?
+  rm -rf "$fakebin"
+  [ "$status" = 1 ] || { echo "  expected exit 1, got: $status"; return 1; }
+  [ "$out" = "state=no_git" ] \
+    || { echo "  expected one state=no_git line, got: $out"; return 1; }
+  # ensure must be equally covered: the preflight sits before arg handling's
+  # backtracking into slug-specific git calls.
+  fakebin=$(mktemp -d)
+  out=$( ( cd "$REPO_ROOT" && PATH="$fakebin" "$dashsh" "$SCRIPT" ensure "$SLUG" ) 2>&1 )
+  rm -rf "$fakebin"
+  [ "$out" = "state=no_git" ] \
+    || { echo "  ensure unexpected output: $out"; return 1; }
+}
+
+# =============================================================================
+# flow-19: a directory that is not inside a git repository fail-closes with
+# state=no_repo (git's own fatal: noise on stderr must not leak into the
+# machine-output contract).
+# =============================================================================
+test_flow_no_git_repo() {
+  NOREPO=$(mktemp -d)
+  out=$( ( cd "$NOREPO" && sh "$SCRIPT" discover ) 2>/dev/null )
+  status=$?
+  rm -rf "$NOREPO"
+  [ "$status" = 1 ] || { echo "  expected exit 1, got: $status"; return 1; }
+  [ "$out" = "state=no_repo" ] \
+    || { echo "  expected one state=no_repo line, got: $out"; return 1; }
+}
+
 # ---- run everything ---------------------------------------------------------
 
 run_test "flow-extracted: the embedded flow script is found and looks correct" test_flow_extracted
@@ -426,6 +466,8 @@ run_test "flow-14: discover lists the registered candidate with branch state" te
 run_test "flow-15: discover post-release reports an orphan branch, formal archived change" test_flow_discover_after_release_is_orphan
 run_test "flow-16: concurrent-ensure reuse reports exactly one state= line" test_flow_ensure_racing_reuse_is_single_line
 run_test "flow-17: multi-line git stderr collapses to one git_error line in release" test_flow_release_git_error_is_single_line
+run_test "flow-18: git missing from PATH fail-closes with state=no_git" test_flow_no_git_on_path
+run_test "flow-19: a non-git directory fail-closes with state=no_repo" test_flow_no_git_repo
 
 echo ""
 echo "$pass_count passed, $fail_count failed"

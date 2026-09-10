@@ -21,6 +21,12 @@ Run this in full on every invocation, no "first run" vs. "resume" branching: rec
    cmd=${1:-}
    [ -n "$cmd" ] || { echo 'usage: sh <tempfile> discover | ensure <slug> | state <slug> <probe-path> | release <slug> <path>'; exit 1; }
 
+   # Preflight: the flow needs git on PATH and a git repository at or above
+   # the caller's directory. Both are stop-and-report states with their own
+   # machine line; there is no non-isolated fallback mode.
+   command -v git >/dev/null 2>&1 || { echo 'state=no_git'; exit 1; }
+   git rev-parse --show-toplevel >/dev/null 2>&1 || { echo 'state=no_repo'; exit 1; }
+
    wt_path() { printf '%s/.worktrees/%s\n' "$(git rev-parse --show-toplevel)" "$1"; }
 
    wt_is_registered() {
@@ -157,6 +163,8 @@ Run this in full on every invocation, no "first run" vs. "resume" branching: rec
    | `candidate=conflict ...` | plain directory exists where the worktree would go — fail-closed: stop, report the path, never remove or overwrite it |
    | empty output | no isolated change exists yet — derive the slug |
    | `state=no_commits` | the repo has no commits yet — stop and ask the human to make the initial commit; never scaffold it |
+   | `state=no_git` | the git executable is not on PATH — stop and tell the user to install git; there is no non-isolated fallback mode |
+   | `state=no_repo` | the directory (or any parent) is not a git repository — stop and ask the human to run `git init` (and make an initial commit) themselves; never scaffold either one |
 
    - Continue this request only when exactly one `ready` candidate unambiguously matches, or the user confirms which one (list candidates with their `change=` field and slugs when listing). Never fuzzy-match a natural-language request to a slug, and never assume a sole existing candidate is automatically the target.
    - For new work: derive a short kebab-case slug from the raw request, checked against `spdd/changes/`, `spdd/archive/`, and `git branch --list 'antz/*'` for collisions — suffix (`-2`, ... ) only if the request continues an existing change and thus the slug is claimed; when the request's continuation of an already-claimed slug is semantically unclear, stop and ask the user.

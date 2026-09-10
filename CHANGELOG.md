@@ -7,6 +7,11 @@ and this project uses [Semantic Versioning](https://semver.org/): patch for
 non-behavioral wording tweaks, minor for behavior changes, major for breaking
 changes to the workflow contract (directory layout, access model, etc).
 
+## [2.3.0] - 2026-09-10
+
+### Changed
+- Orchestrator prompt (`antz-flow.sh`): an explicit preflight fail-closes every subcommand (`discover`/`ensure`/`state`/`release`) with its own machine line when git is absent from the environment — `state=no_git` (the git executable is not on PATH) or `state=no_repo` (the directory, or any parent, is not a git repository, git's `fatal:` stderr suppressed in favor of the machine line). Previously both surfaced only as `set -eu`'s silent git invocation failure (exit 127/128, stdout empty, no `state=`/`candidate=` line), so the orchestrator's output contract had no defined action for them; per the user's decision there is no non-isolated fallback mode — `no_git` stops with an install-git report and `no_repo` (like `state=no_commits`) asks the human to `git init` themselves, never scaffolding either. Both rows added to step 1's action table. New flow tests 18–19 cover `discover` and `ensure` under a sanitized PATH and a non-repo directory.
+
 ## [2.2.0] - 2026-09-10
 
 ### Fixed
