@@ -1,3 +1,5 @@
+> **Historical design docs, describing the `worktree` branch variant of antz (worktree isolation + per-role commits). On `master` — the variant without worktrees and without per-role commits — this plan no longer applies.
+
 # Anexo al plan: scriptear el flujo git (agilidad, tokens, determinismo)
 
 Anexo a `docs/worktree-isolation-plan.md`, que queda intacto. Misma decisión

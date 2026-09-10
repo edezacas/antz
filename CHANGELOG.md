@@ -7,6 +7,16 @@ and this project uses [Semantic Versioning](https://semver.org/): patch for
 non-behavioral wording tweaks, minor for behavior changes, major for breaking
 changes to the workflow contract (directory layout, access model, etc).
 
+This branch (`master`) carries the branch-marked, no-commit variant of antz; the `worktree` branch carries the worktree-isolated variant (worktree isolation + gated per-role commits), whose `install.sh` binds its remote install to its own ref.
+
+## [3.0.0] - 2026-09-10
+
+### Changed
+- **Breaking (workflow contract): no role commits anything, in any phase.** The per-role `antz-commit.sh` fences and their `## Committing` sections are gone from the specifier, coder, and verifier prompts, and the verifier's Merge & Archive move is via `git mv` (or a plain `mv` — the release gate only reads the working tree now), so every invocation, orchestrated or manual, leaves its artifacts uncommitted; committing the finished work is always the human's follow-up.
+- **Breaking (workflow contract): the flow is branch-marked, not worktree-isolated.** The orchestrator's embedded `antz-flow.sh` was rewritten: `ensure` just creates the marker branch `antz/<slug>` at the main checkout's HEAD (never checked out, no `-B`/`--force`, `state=reused`/`state=created`, `state=no_commits` on an unborn repo); `state` verifies the marker branch and points `CHANGE_DIR` at the working tree's `spdd/changes/<slug>` (the resumable state — branch trees stay identical to the flow's base commit since nothing is ever committed); `release` gates only on the working tree (`spdd/archive/<slug>` present, `spdd/changes/<slug>` absent, marker branch present) and removes nothing, ever. `discover` lists `candidate=branch` markers (worktree plumbing and candidate classes: orphan/missing/conflict are gone) plus `candidate=on-disk` change dirs. The orchestrator prints the human follow-ups as `git add -A && git commit` / `git branch -d antz/<slug>` instead of merge commands
+  (the marker branch never carries new commits, so there is nothing to merge). The coder's sequential-only rule now reasons about the shared working tree instead of the shared git index. The worktree-isolated flavor of all of this lives on in the `worktree` branch.
+- tests: `tests/antz-flow_test.sh` rewritten for the branch-only script (16 tests: branch creation/reuse/no-checkout, probe state routing, release gates and no-removal, a never-commits guarantee, and the no_git/no_repo preflight); `tests/antz-commit_test.sh` deleted with the fence it guarded.
+
 ## [2.4.0] - 2026-09-10
 
 ### Fixed

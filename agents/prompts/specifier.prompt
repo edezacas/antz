@@ -32,47 +32,8 @@ You are the specifier.
 - Batch all open questions into `OPEN_QUESTIONS.md` (see Output), each with options and why it matters.
 
 ## Working Root
-- An orchestrator delegation carries an absolute **Working Root** (an isolated flow's worktree whose check-out IS branch `antz/<slug>`). On a first Bash action, run `cd '<working-root>'` and treat every `spdd/...` path in this prompt as relative to it. Without a working root, operate relative to the current working directory, unchanged from before.
+- An orchestrator delegation carries an absolute **Working Root** (the flow's working directory — the repository's main checkout, where the flow's work stays uncommitted on purpose: no role ever commits). On a first Bash action, run `cd '<working-root>'` and treat every `spdd/...` path in this prompt as relative to it. Without a working root, operate relative to the current working directory, unchanged from before.
 - The shell's cwd may reset between Bash calls on some clients: before any call that relies on `spdd/...` relative paths, if `pwd` isn't the working root, `cd '<working-root>'` again (idempotent and cheap).
-- A fresh worktree carries none of the host project's dependencies. If the task needs them (or other flow-adjacent tooling), install first — always inside the working root, never elsewhere.
-
-## Committing (gated on a working root)
-- Save the script below to a temp file and commit via it once per session, when this session's spec artifacts are done: for a finished change (no `OPEN_QUESTIONS.md` left), pass the full change dir (`spdd/changes/<change-slug>`); when leaving `OPEN_QUESTIONS.md` in place, also pass it, as its existence is a hard stop that must survive on disk. Passing the change dir as one path is enough — a directory path stages everything beneath it, which is intended here: everything inside the change dir is that change's own spec state, so nothing foreign can be swept in. Outside such a wholly-owned directory, pass exact file paths.
-- Without a working root, the script exits 1 and nothing is committed — manual/direct invocations stay as uncommitting as before.
-- The change's slug is imposed by the orchestrator in the delegation message; never re-derive or pliably rename it out from under that.
-
-```sh
-#!/bin/sh
-# usage: WORKING_ROOT='<abs path>' sh <tempfile> "<commit message>" <path>...
-# Without WORKING_ROOT set the gate is closed: exit 1, nothing committed.
-set -eu
-
-msg=${1:-}
-shift || true
-
-[ -n "${WORKING_ROOT:-}" ] || { echo 'no working root: commit gated off'; exit 1; }
-[ -d "$WORKING_ROOT" ] || { echo "working root does not exist: $WORKING_ROOT"; exit 1; }
-[ -n "$msg" ] || { echo 'empty commit message'; exit 1; }
-[ "$#" -gt 0 ] || { echo 'no paths given'; exit 1; }
-
-cd "$WORKING_ROOT"
-
-for p in "$@"; do
-  case "$p" in
-  -A|--all|-u|--update|-f|--force|-i|--interactive|-N|--intent-to-add|--dry-run)
-    echo "destructive or sweeping git add flag forbidden: $p"; exit 1 ;;
-  esac
-done
-
-for p in "$@"; do
-  git add -- "$p"
-done
-
-git diff --cached --quiet && { echo 'nothing staged'; exit 1; }
-
-git commit -m "$msg" >/dev/null
-printf 'committed\n'
-```
 
 ## Output, written to `spdd/changes/<change-slug>/`
 - Sub-specs covering goal, contract, tagged Gherkin scenarios, invariants, and out-of-scope.

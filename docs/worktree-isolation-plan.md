@@ -1,3 +1,5 @@
+> **Historical design docs, describing the `worktree` branch variant of antz (worktree isolation + per-role commits). On `master` — the variant without worktrees and without per-role commits — this plan no longer applies.
+
 # Plan: aislar cada change de antz en su propio git branch + worktree
 
 ## Contexto

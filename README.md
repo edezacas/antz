@@ -10,7 +10,7 @@ antz addresses that with:
 - **Clarity before code** — `specifier` turns a request into concrete Gherkin scenarios before any code is written. A genuine ambiguity blocks implementation (`OPEN_QUESTIONS.md`) instead of getting guessed away.
 - **Specs that persist** — `verifier` merges each shipped scenario into `spdd/specs/<domain>.md`, so the next session reads what the system actually does instead of re-deriving it from code or chat history.
 - **Work split by dependency** — `specifier` breaks a feature into sub-specs that are each independently implementable and verifiable, ordered so dependencies come first.
-- **Isolated by change** — every `/antz` flow runs in its own fresh git worktree (`.worktrees/<slug>` on branch `antz/<slug>`), so several flows can run in parallel over the same repo without stepping on each other. When the flow finishes, the worktree is removed and the branch is kept for human review: merge it (to whatever your integration branch is) or discard it, whole.
+- **Marked by branch, never touched by git** — every `/antz` flow gets its own marker branch (`antz/<slug>`, pointing at the commit the flow started from), but nothing is ever committed or removed for you: the work stays uncommitted in your working tree, where you keep full control. At the end you review, commit, and delete the marker branch yourself.
 - **Guarded automation** — the `orchestrator` runs specifier -> coder -> verifier end to end, but stops and reports whenever something needs a human call: an ambiguous change, an open question, a stuck sub-spec, or a rejection that doesn't trace back to a single sub-spec.
 
 ## Agent Compatibility
@@ -21,10 +21,20 @@ Currently compatible with:
 
 ## Requirements
 
-- **`git`** — required to run `/antz`. Every flow isolates its change in its own branch + worktree (`.worktrees/<slug>` on branch `antz/<slug>`), so the orchestrator needs `git` on `PATH` and to be run inside a git repository with at least one commit. It fails closed (never falls back to an unisolated mode) if either is missing — install `git` and/or run `git init` plus an initial commit yourself first.
+- **`git`** — required to run `/antz`. Every flow is marked by its own branch `antz/<slug>`, so the orchestrator needs `git` on `PATH` and to be run inside a git repository with at least one commit. It fails closed (never falls back to an unbranched mode) if either is missing — install `git` and/or run `git init` plus an initial commit yourself first.
 - **POSIX `sh`** — `install.sh` and the embedded scripts the roles run (flow, per-role commit, orchestrator probe) are plain `sh`, no bash-only syntax; any POSIX-compliant shell works.
 - **`curl`** — only needed to install without a local checkout (`curl | sh`, and `install.sh --check` run the same way); a local checkout installs from disk instead.
 - Claude Code and/or OpenCode installed, for `install.sh` to detect and target.
+
+# Variants
+
+Two maintained flavors of antz, one per git branch — install via the same `curl | sh`, changing only the branch ref:
+
+- **`master`** (this file's default URL): marked-by-branch flow — the orchestrator creates a marker branch `antz/<slug>`, but **no role ever commits anything**: all work stays uncommitted in your working tree, and you review/commit/delete at the end.
+- **`worktree`**: worktree-isolated flow — each change runs in its own worktree `.worktrees/<slug>` on branch `antz/<slug>`, with gated per-role commits (only from orchestrated delegations) and a gated worktree removal after approval:
+  `curl -fsSL https://raw.githubusercontent.com/edezacas/antz/worktree/install.sh | sh`
+
+Each version line (`VERSION`/`CHANGELOG.md`) is independent per branch.
 
 ## Install
 
@@ -47,7 +57,7 @@ Re-running is safe: files this script generated are marked and get overwritten i
 
 ## Usage
 
-Run `/antz <your request>` in Claude Code or OpenCode after installing. It delegates to `antz-orchestrator`, which sequences `specifier -> coder -> verifier` for one change, picking up correctly even if interrupted and resumed later. Each flow runs isolated in its own git worktree on branch `antz/<slug>`; if you can pass a working root, you can also drive the underlying roles by hand there — they stay directly invokable for manual/expert use outside any flow.
+Run `/antz <your request>` in Claude Code or OpenCode after installing. It delegates to `antz-orchestrator`, which sequences `specifier -> coder -> verifier` for one change, picking up correctly even if interrupted and resumed later. Every change gets its own marker branch `antz/<slug>`, while all work stays uncommitted in your checkout; the underlying roles are also directly invokable for manual/expert use outside any flow.
 
 `/antz-set-model` configures or clears the `model:` frontmatter line of one installed antz agent file, per agent and per client (`--agent` is one of `specifier|coder|verifier|orchestrator`). It edits the file directly in the invoking session and never delegates to any `antz-*` subagent:
 
