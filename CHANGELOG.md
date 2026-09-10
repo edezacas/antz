@@ -7,6 +7,16 @@ and this project uses [Semantic Versioning](https://semver.org/): patch for
 non-behavioral wording tweaks, minor for behavior changes, major for breaking
 changes to the workflow contract (directory layout, access model, etc).
 
+## [2.1.0] - 2026-09-10
+
+### Changed
+- Orchestrator prompt: the per-sub-spec `coder` sessions of one change (step 3) are now explicitly sequential, never parallel — they share the working root's single git index, so a concurrent pair's commits envelope into whichever session commits last (one commit sweeps both sessions' files under its message; the other then fails its empty-staging check despite having done real work).
+- Orchestrator prompt (`ensure`): a concurrent `ensure` of the same slug no longer surfaces as a spurious `state=conflict`. When `git worktree add -b` fails, the script falls back to attaching (the branch may have just been created by the concurrent call) and, before reporting `conflict`, re-checks for the valid reused state (`path` present and registered) and reports `state=reused` instead; the same reused-recheck applies to the `state=attached` path's failure arm via a shared `reuse_or_conflict` helper. The non-atomic grep-then-append on `.git/info/exclude` (two concurrent ensures may duplicate the line) stays as is — the exclusion is idempotent, so the race is harmless and now noted in a script comment.
+- Orchestrator prompt (`discover` → `ensure` consistency): `candidate=orphan` (branch registered nowhere, no directory at its path) and ensure's branch-without-worktree case describe the same disk state, so the old "report the restore command and stop; never recreate it" row is gone — attaching is non-destructive (verbatim re-checkout of the branch, no `-B`/`--force`), so an orphan with `change=in-changes`/`none` resumes via `ensure` (`state=attached`); an orphan with `change=archived` is merged-approved and must not be re-attached. `candidate=missing` (registered-but-dir-missing) keeps its stop-and-report action and now states why ensure must not run against it.
+- Orchestrator prompt (`state`): the flow script's `worktree=missing` output (working root vanished mid-session) is now documented — stop, re-run step 1, route on the fresh state.
+- Orchestrator prompt (`release`): git's stderr on a refused `git worktree remove` is no longer forwarded raw — it is captured and emitted as an explicit `git_error: <message>` line after `gate=refused reason=remove-failed`, documented in the release-output table.
+- Verifier prompt: the mover commit now passes the exact `spdd/specs/` domain file(s) it merged into instead of the whole `spdd/specs` directory (shared across changes — a directory add there is recursive and could sweep an interrupted session's leftovers under this change's message); `spdd/archive` stays a directory arg and the rejection reporter keeps passing the change dir, both now documented as the authorized directory exception (whole subtree is this flow's own artifact). Same rule added to the specifier prompt for the change dir; the unqualified "never sweeping" claim is scoped accordingly.
+
 ## [2.0.0] - 2026-09-10
 
 ### Changed

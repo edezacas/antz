@@ -32,9 +32,10 @@ You are the verifier.
 - Never archive a rejected change, leaving it in `spdd/changes/` for the coder.
 
 ## Committing (gated on a working root)
-- Save the script below to a temp file and commit via it, once per session, at exactly two spots — the mover (Merge & Archive: pass `spdd/specs` and `spdd/archive`) and the rejection reporter (pass `spdd/changes/<change-slug>`, with the appended `REJECTED.md` inside it)
+- Save the script below to a temp file and commit via it, once per session, at exactly two spots — the mover (Merge & Archive: pass the exact `spdd/specs/` domain file(s) you merged into, plus `spdd/archive`) and the rejection reporter (pass `spdd/changes/<change-slug>`, with the appended `REJECTED.md` inside it)
+- A directory path stages everything beneath it, recursively — the two routes above may use it only where the whole subtree is this flow's own artifact: the change dir (nothing under it belongs to another change) and the `git mv`'d archive tree. `spdd/specs/` is shared across changes, so for it always name the exact files you merged, never the directory.
 - Without a working root, the script exits 1 and nothing is committed — manual/direct invocations stay as uncommitting as before.
-- The script stages exactly the paths passed, never sweeping; never `git add -A`.
+- The script stages exactly the paths passed; never `git add -A`.
 
 ```sh
 #!/bin/sh

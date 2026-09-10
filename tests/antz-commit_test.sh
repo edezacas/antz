@@ -55,6 +55,7 @@ WORKING_ROOT=""
 
 new_repo_with_worktree() {
   REPO_ROOT=$(mktemp -d)
+  add_tmp_repo "$REPO_ROOT"
   git -C "$REPO_ROOT" init -q
   echo hello > "$REPO_ROOT/a.txt"
   git -C "$REPO_ROOT" add .
@@ -62,11 +63,21 @@ new_repo_with_worktree() {
   git -C "$REPO_ROOT" worktree add -q -b "antz/commit-test" "$REPO_ROOT/.worktrees/commit-test" HEAD >/dev/null 2>&1
 }
 
+# Every tmp repo ever created, space-separated (POSIX sh: no arrays). cleanup
+# removes them all on EXIT — without the accumulation, only the last repo
+# would be deleted and each test would orphan its mktemp dir.
+TMP_REPOS=""
+
+add_tmp_repo() {
+  TMP_REPOS="$TMP_REPOS $1"
+}
+
 cleanup() {
-  if [ -n "${REPO_ROOT:-}" ] && [ -d "$REPO_ROOT" ]; then
-    ( git -C "$REPO_ROOT" worktree remove --force "$REPO_ROOT/.worktrees/commit-test" >/dev/null 2>&1 ) || true
-    rm -rf "$REPO_ROOT"
-  fi
+  for d in $TMP_REPOS; do
+    # The whole temp dir is the test's own fixture, not a user's: don't rely
+    # on git state beyond it, just remove it file-level.
+    [ -d "$d" ] && rm -rf "$d"
+  done
   REPO_ROOT=""
   WORKING_ROOT=""
 }

@@ -59,6 +59,7 @@ SLUG=""
 
 new_repo() {
   REPO_ROOT=$(mktemp -d)
+  add_tmp_repo "$REPO_ROOT"
   git -C "$REPO_ROOT" init -q
   # A work-tree creation needs at least one commit (the script itself
   # fail-closes on a repo with no commits -- tested explicitly via
@@ -72,6 +73,7 @@ new_repo() {
 
 new_repo_no_commit() {
   REPO_ROOT=$(mktemp -d)
+  add_tmp_repo "$REPO_ROOT"
   git -C "$REPO_ROOT" init -q
   SLUG="$1"
   WORKING_ROOT="$REPO_ROOT/.worktrees/$SLUG"
@@ -95,14 +97,24 @@ mk_archive() {
   git -C "$WORKING_ROOT" -c user.email=t@t -c user.name=t commit -q -m archive
 }
 
-# ---- fixture teardown, run between tests via TRAP ---------------------------
+# ---- fixture teardown --------------------------------------------------------
+
+# Every tmp repo ever created, space-separated (POSIX sh: no arrays). cleanup
+# removes them all on EXIT — without the accumulation, only the last repo
+# would be deleted and each test would orphan its mktemp dir.
+TMP_REPOS=""
+
+add_tmp_repo() {
+  TMP_REPOS="$TMP_REPOS $1"
+}
 
 cleanup() {
-  if [ -n "${REPO_ROOT:-}" ] && [ -d "$REPO_ROOT" ]; then
+  rm -f "$SCRIPT" "$PROBE_EXTRACT"
+  for d in $TMP_REPOS; do
     # Never rely on git state beyond the throwaway repo; force-remove the
     # whole temp dir (this is the test's own repo, not a user's).
-    rm -rf "$REPO_ROOT"
-  fi
+    [ -d "$d" ] && rm -rf "$d"
+  done
   REPO_ROOT=""
   WORKING_ROOT=""
   SLUG=""
@@ -163,7 +175,8 @@ test_flow_ensure_attaches_deleted_branch() {
   run_flow ensure "$SLUG" >/dev/null
   git -C "$REPO_ROOT" worktree remove --force "$WORKING_ROOT" # leaves a stale entry
   # Prune stale registrations so the branch is branch-only, then ensure = attach.
-  git -C "$REPO_ROOT" worktree prune -q
+  # (No -q: `git worktree prune` doesn't support --quiet.)
+  git -C "$REPO_ROOT" worktree prune
   out=$(run_flow ensure "$SLUG")
   case "$out" in
     "state=attached path=$WORKING_ROOT") ;;

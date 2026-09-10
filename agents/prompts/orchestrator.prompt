@@ -24,10 +24,23 @@ Run this in full on every invocation, no "first run" vs. "resume" branching: rec
    wt_path() { printf '%s/.worktrees/%s\n' "$(git rev-parse --show-toplevel)" "$1"; }
 
    wt_is_registered() {
-     git worktree list --porcelain | awk -v p="$1" '
-       /^worktree / { wtp = substr($0, 10) }
-       wtp == p { found = 1 }
-       END { exit found ? 0 : 1 }'
+      git worktree list --porcelain | awk -v p="$1" '
+        /^worktree / { wtp = substr($0, 10) }
+        wtp == p { found = 1 }
+        END { exit found ? 0 : 1 }'
+   }
+
+   reuse_or_conflict() {
+     # $1 = worktree path, $2 = reason=... A concurrent ensure of the same
+     # slug may have created the worktree after this call's existence checks
+     # passed — re-check for that valid reused state before reporting a
+     # spurious conflict.
+     if [ -e "$1" ] && wt_is_registered "$1"; then
+       printf 'state=reused path=%s\n' "$1"
+     else
+       printf 'state=conflict path=%s %s\n' "$1" "$2"
+       exit 1
+     fi
    }
 
    case "$cmd" in
@@ -60,6 +73,9 @@ Run this in full on every invocation, no "first run" vs. "resume" branching: rec
      excl=$(git rev-parse --git-path info/exclude)
      mkdir -p "$(dirname "$excl")"
      touch "$excl"
+     # Grep-then-append on info/exclude is not atomic; two concurrent
+     # ensures of different slugs may duplicate the line. Harmless: the
+     # exclusion is idempotent.
      grep -qx '.worktrees/' "$excl" || printf '\n.worktrees/\n' >> "$excl"
      if ! git rev-parse HEAD >/dev/null 2>&1; then
        echo 'state=no_commits'
@@ -79,14 +95,20 @@ Run this in full on every invocation, no "first run" vs. "resume" branching: rec
          printf 'state=attached path=%s\n' "$path"
          exit 0
        fi
-       printf 'state=conflict path=%s reason=registered-worktree-directory-missing\n' "$path"
-       exit 1
+       reuse_or_conflict "$path" 'reason=registered-worktree-directory-missing'
      fi
      if git worktree add -b "antz/$slug" "$path" HEAD >/dev/null 2>&1; then
        printf 'state=created path=%s\n' "$path"
      else
-       printf 'state=conflict path=%s reason=worktree-add-failed\n' "$path"
-       exit 1
+       # The branch may have just been created by a concurrent ensure
+       # (between this call's show-ref and worktree add): fall back to
+       # attaching, then report reused or conflict.
+       if git show-ref --verify --quiet "refs/heads/antz/$slug" \
+         && git worktree add "$path" "antz/$slug" >/dev/null 2>&1; then
+         printf 'state=attached path=%s\n' "$path"
+       else
+         reuse_or_conflict "$path" 'reason=worktree-add-failed'
+       fi
      fi
      ;;
    state)
@@ -110,8 +132,9 @@ Run this in full on every invocation, no "first run" vs. "resume" branching: rec
      [ "$path" = "$expected" ] || { echo 'gate=refused reason=path-mismatch'; exit 1; }
      [ -d "$path/spdd/archive/$slug" ] || { echo 'gate=refused reason=archive-missing'; exit 1; }
      [ ! -d "$path/spdd/changes/$slug" ] || { echo 'gate=refused reason=change-still-present'; exit 1; }
-     if ! git worktree remove "$path" 2>&1; then
-       echo 'gate=refused reason=remove-failed'
+     if ! git_err=$(git worktree remove "$path" 2>&1); then
+       printf 'gate=refused reason=remove-failed\n'
+       [ -z "$git_err" ] || printf 'git_error: %s\n' "$git_err"
        exit 1
      fi
      printf 'released path=%s\n' "$path"
@@ -126,8 +149,8 @@ Run this in full on every invocation, no "first run" vs. "resume" branching: rec
    | discover output | Meaning / action |
    |---|---|
    | `candidate=ready ...` | valid resume (worktree registered, dir present) |
-   | `candidate=orphan ...` | branch exists with no worktree registered — report the restore command (`git worktree add .worktrees/<slug> antz/<slug>`) and stop; never recreate it |
-   | `candidate=missing ...` | registered but dir missing (differs from `ready` only in dir presence) — same stop-and-report action as `orphan` |
+   | `candidate=orphan ...` | branch exists with no worktree registered and no directory at its path — the same state ensure's attach handles. For `change=in-changes` (or `none`), resuming is safe — attaching re-checks out the branch verbatim, non-destructively: proceed via `ensure <slug>` (it reports `state=attached`). For `change=archived`, the change is already merged — do not attach; merging and branch deletion are the human's follow-ups |
+   | `candidate=missing ...` | registered but dir missing (differs from `ready` only in dir presence) — same stop-and-report action as `conflict`; ensure must not run against it (git refuses, the registration is stale and only a `worktree prune` clears it — out of your hands) |
    | `candidate=conflict ...` | plain directory exists where the worktree would go — fail-closed: stop, report the path, never remove or overwrite it |
    | empty output | no isolated change exists yet — derive the slug |
    | `state=no_commits` | the repo has no commits yet — stop and ask the human to make the initial commit; never scaffold it |
@@ -178,6 +201,7 @@ Run this in full on every invocation, no "first run" vs. "resume" branching: rec
 
    | Output | Meaning |
    |---|---|
+   | `worktree=missing` | printed by the flow script itself, before the probe runs — this slug's worktree is no longer registered on disk (the working root vanished mid-session). Stop; re-run step 1 (`discover`, then `ensure <slug>` if the branch still exists) and route on the fresh state. |
    | `change_dir=missing` | `CHANGE_DIR` isn't an existing directory — the slug is wrong. Stop, re-check the slug (ask the user), and don't route on. |
    | `open_questions=yes` | `OPEN_QUESTIONS.md` exists. Stop, surface it to the user, don't resolve it. |
    | `open_questions=no` | proceed to the rest of the output |
@@ -187,7 +211,7 @@ Run this in full on every invocation, no "first run" vs. "resume" branching: rec
 3. **Classify each sub-spec**, in the printed order, all runs inside the working root (`cd '<working-root>'` before anything). Discover the unit-suite's run command the way any contributor would (`package.json` `test` script, a `Makefile` `test` target, the language's standard convention); if genuinely ambiguous, ask the user once rather than guessing. A fresh worktree doesn't carry host-project dependencies — install them first (inside the working root), then run the suite. Run it, then classify each sub-spec from its `ids`: presence alone isn't enough — the actual run result resolves each id into red vs. green/skip.
    - An empty `ids` list can't be classified at all — the sub-spec's scenarios aren't tagged per the specifier's convention. Stop and ask the user; never treat it as vacuously `done`.
    - Any id backed by a skip reasoned `BLOCKED: <why>` (plain colon) — distinct from an ordinary "not unit-testable" skip — makes the sub-spec `blocked`. Stop at the first one found: relay the reason and ask the user to route it to `specifier`, before looking at any other sub-spec.
-   - Otherwise, any id not yet green or ordinary-skip makes it `in_progress`: delegate to a fresh `coder` session (one session per sub-spec), carrying the Working Root lines.
+   - Otherwise, any id not yet green or ordinary-skip makes it `in_progress`: delegate to a fresh `coder` session (one session per sub-spec), carrying the Working Root lines. These coder sessions run **sequentially, never in parallel**: they share the working root's single git index, so a concurrent pair's `git add`/commit envelope into whichever session commits last — one commit sweeps both sessions' files under its message and the other then fails its empty-staging check despite having done real work.
    - All ids green or ordinary-skip makes it `done`.
 
 4. Once every sub-spec is `done`, route on `rejected_count`:
@@ -205,7 +229,7 @@ Run this in full on every invocation, no "first run" vs. "resume" branching: rec
    | `gate=refused reason=archive-missing` | the approved state isn't on disk where it must be (`spdd/archive/<slug>` absent) — stop, report, don't force |
    | `gate=refused reason=change-still-present` | `spdd/changes/<slug>` still exists — the verifier's move didn't finish; stop, report |
    | `gate=refused reason=path-mismatch` | the given path doesn't match `.worktrees/<slug>` under this repo's root — stop, report (they should never disagree) |
-   | `gate=refused reason=remove-failed` (or `git worktree remove` nonzero for a dirty/uncommitted worktree) | stop, report, never `--force` |
+   | `gate=refused reason=remove-failed` (or `git worktree remove` nonzero for a dirty/uncommitted worktree) | stop, report, never `--force`. A following `git_error: <message>` line relays git's own stderr for this failure — report it as the explanation, never act on it beyond that |
    | `released path=<abs>` | done with the worktree — keep the branch, never delete it |
 
    The branch `antz/<slug>` is never merged and never deleted by you — merging to the human-chosen integration branch and deleting the branch are the human's manual follow-ups, printed as:
