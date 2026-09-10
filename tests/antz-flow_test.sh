@@ -342,6 +342,70 @@ test_flow_discover_after_release_is_orphan() {
   esac
 }
 
+# =============================================================================
+# flow-16: the concurrent-ensure race yields exactly ONE state= line. Forced
+# deterministically: ensure once (branch + registered worktree), delete the
+# worktree dir (registration + branch intact), then shim git so the attach
+# attempt re-creates the dir and "fails" — like a losing concurrent ensure
+# whose existence checks preceded its worktree add. reuse_or_conflict must
+# report one single state=reused (not fall through and print it twice).
+# =============================================================================
+test_flow_ensure_racing_reuse_is_single_line() {
+  new_repo flow-ensure-race-reuse
+  run_flow ensure "$SLUG" >/dev/null || { echo "  initial ensure failed"; return 1; }
+  rm -rf "$WORKING_ROOT"
+  fakebin=$(mktemp -d)
+  real_git=$(command -v git)
+  cat > "$fakebin/git" <<EOF
+#!/bin/sh
+if [ "\$1" = worktree ] && [ "\$2" = add ]; then
+  for a in "\$3" "\$4"; do
+    case "\$a" in
+    */.worktrees/*) mkdir -p "\$a"; break ;;
+    esac
+  done
+  echo 'shim: simulated losing concurrent worktree add' >&2
+  exit 1
+fi
+exec "$real_git" "\$@"
+EOF
+  chmod +x "$fakebin/git"
+  out=$( ( cd "$REPO_ROOT" && PATH="$fakebin:$PATH" sh "$SCRIPT" ensure "$SLUG" ) )
+  rm -rf "$fakebin"
+  [ "$out" = "state=reused path=$WORKING_ROOT" ] \
+    || { echo "  expected exactly one state=reused line, got: $out"; return 1; }
+}
+
+# =============================================================================
+# flow-17: a multi-line git stderr on a refused `git worktree remove` comes
+# out as ONE collapsed git_error line (never raw multi-line output).
+# =============================================================================
+test_flow_release_git_error_is_single_line() {
+  new_repo flow-release-git-error
+  run_flow ensure "$SLUG" >/dev/null
+  mk_archive
+  fakebin=$(mktemp -d)
+  real_git=$(command -v git)
+  cat > "$fakebin/git" <<EOF
+#!/bin/sh
+if [ "\$1" = worktree ] && [ "\$2" = remove ]; then
+  printf 'fatal: %s is dirty\nhint: commit or stash first\n' "\$3" >&2
+  exit 1
+fi
+exec "$real_git" "\$@"
+EOF
+  chmod +x "$fakebin/git"
+  out=$( ( cd "$REPO_ROOT" && PATH="$fakebin:$PATH" sh "$SCRIPT" release "$SLUG" "$WORKING_ROOT" ) )
+  rm -rf "$fakebin"
+  [ "$(printf '%s\n' "$out" | wc -l)" = 2 ] \
+    || { echo "  expected exactly 2 lines, got: $out"; return 1; }
+  second=$(printf '%s\n' "$out" | sed -n 2p)
+  [ "$second" = "git_error: fatal: $WORKING_ROOT is dirty hint: commit or stash first" ] \
+    || { echo "  expected one collapsed git_error line, got: $second"; return 1; }
+  [ -d "$WORKING_ROOT" ] \
+    || { echo "  worktree was removed despite the gate"; return 1; }
+}
+
 # ---- run everything ---------------------------------------------------------
 
 run_test "flow-extracted: the embedded flow script is found and looks correct" test_flow_extracted
@@ -360,6 +424,8 @@ run_test "flow-12: release removes the worktree after the gate holds and keeps t
 run_test "flow-13: release refuses a mistyped path (path-mismatch)" test_flow_release_refused_on_path_mismatch
 run_test "flow-14: discover lists the registered candidate with branch state" test_flow_discover_reports_candidate
 run_test "flow-15: discover post-release reports an orphan branch, formal archived change" test_flow_discover_after_release_is_orphan
+run_test "flow-16: concurrent-ensure reuse reports exactly one state= line" test_flow_ensure_racing_reuse_is_single_line
+run_test "flow-17: multi-line git stderr collapses to one git_error line in release" test_flow_release_git_error_is_single_line
 
 echo ""
 echo "$pass_count passed, $fail_count failed"

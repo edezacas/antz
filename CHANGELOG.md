@@ -7,6 +7,12 @@ and this project uses [Semantic Versioning](https://semver.org/): patch for
 non-behavioral wording tweaks, minor for behavior changes, major for breaking
 changes to the workflow contract (directory layout, access model, etc).
 
+## [2.1.1] - 2026-09-10
+
+### Fixed
+- Orchestrator prompt (`ensure`): `reuse_or_conflict`'s reused branch now exits 0 like ensure's direct reused path — previously it only printed and fell through, so the racing call re-entered the `worktree add -b` and attach attempts (two git invocations doomed to fail) and printed a second `state=reused` line, breaking any caller expecting exactly one `state=` line. A new flow test forces that path deterministically (registered worktree with branch intact, dir deleted, and a git shim that re-creates the dir and fails the attach, simulating the losing concurrent ensure) and asserts a single `state=reused` line.
+- Orchestrator prompt (`release`): git's stderr on a refused `git worktree remove` is collapsed to spaces before emission, so the documented `git_error: <message>` output is always a single line even for multi-line git errors (e.g. a `fatal:` with a trailing `hint:`); the release-output table's wording now states the single-line contract.
+
 ## [2.1.0] - 2026-09-10
 
 ### Changed
