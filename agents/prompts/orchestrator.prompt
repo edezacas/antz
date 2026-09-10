@@ -35,10 +35,10 @@ Run this in full on every invocation, no "first run" vs. "resume" branching: rec
      # slug may have created the worktree after this call's existence checks
      # passed — re-check for that valid reused state before reporting a
      # spurious conflict.
-      if [ -e "$1" ] && wt_is_registered "$1"; then
-        printf 'state=reused path=%s\n' "$1"
-        exit 0
-      else
+     if [ -e "$1" ] && wt_is_registered "$1"; then
+       printf 'state=reused path=%s\n' "$1"
+       exit 0
+     else
        printf 'state=conflict path=%s %s\n' "$1" "$2"
        exit 1
      fi

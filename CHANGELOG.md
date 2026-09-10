@@ -7,7 +7,7 @@ and this project uses [Semantic Versioning](https://semver.org/): patch for
 non-behavioral wording tweaks, minor for behavior changes, major for breaking
 changes to the workflow contract (directory layout, access model, etc).
 
-## [2.1.1] - 2026-09-10
+## [2.2.0] - 2026-09-10
 
 ### Fixed
 - Orchestrator prompt (`ensure`): `reuse_or_conflict`'s reused branch now exits 0 like ensure's direct reused path — previously it only printed and fell through, so the racing call re-entered the `worktree add -b` and attach attempts (two git invocations doomed to fail) and printed a second `state=reused` line, breaking any caller expecting exactly one `state=` line. A new flow test forces that path deterministically (registered worktree with branch intact, dir deleted, and a git shim that re-creates the dir and fails the attach, simulating the losing concurrent ensure) and asserts a single `state=reused` line.

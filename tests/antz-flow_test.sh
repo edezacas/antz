@@ -397,7 +397,7 @@ EOF
   chmod +x "$fakebin/git"
   out=$( ( cd "$REPO_ROOT" && PATH="$fakebin:$PATH" sh "$SCRIPT" release "$SLUG" "$WORKING_ROOT" ) )
   rm -rf "$fakebin"
-  [ "$(printf '%s\n' "$out" | wc -l)" = 2 ] \
+  [ "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" = 2 ] \
     || { echo "  expected exactly 2 lines, got: $out"; return 1; }
   second=$(printf '%s\n' "$out" | sed -n 2p)
   [ "$second" = "git_error: fatal: $WORKING_ROOT is dirty hint: commit or stash first" ] \
