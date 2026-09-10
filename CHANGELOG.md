@@ -7,6 +7,11 @@ and this project uses [Semantic Versioning](https://semver.org/): patch for
 non-behavioral wording tweaks, minor for behavior changes, major for breaking
 changes to the workflow contract (directory layout, access model, etc).
 
+## [2.4.0] - 2026-09-10
+
+### Fixed
+- install.sh no longer kills the documented `curl | sh` install on macOS: bash 3.2 (the `/bin/sh` of macOS, in POSIX mode) mis-parses a heredoc whose body is captured inside a command substitution (`script=$(cat <<'SCRIPT' …)`), so the first `;;` inside the emitted `/antz-set-model` script surfaced as `syntax error near unexpected token ';;'` at line 230 and the install aborted before writing anything. All three offending heredocs (the embedded set-model script and the two per-client interactive-picker paragraphs) are now carried by top-level, no-argument emitter functions and captured via plain POSIX function-capture syntax, which every shell parses. Rendered output — all agent files, both `/antz` and `/antz-set-model` command copies, markers, VERSION embedding, flags, install paths — is verified byte-identical to the 2.3.0 render, and the plain-POSIX-sh parse/execute behavior is asserted unchanged. New mechanical regression guard plus a bash 3.2 reproduction helper under `tests/` (see `install.sh`'s comments and change `fix-install-sh-syntax`).
+
 ## [2.3.0] - 2026-09-10
 
 ### Changed
