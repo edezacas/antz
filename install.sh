@@ -201,7 +201,20 @@ set_model_script() {
     opencode) agents_dir='$HOME/.config/opencode/agents' ;;
     *) echo "Unknown client: $1" >&2; exit 1 ;;
   esac
-  script=$(cat <<'SCRIPT'
+  script=$(emit_set_model_script)
+  printf '%s\n' "$script" | sed "s|__CLIENT__|$client|; s|__AGENTS_DIR__|$agents_dir|"
+}
+
+# Emits the verbatim body of the set-model script. This lives in its own
+# top-level, no-argument emitter function -- instead of being written inline
+# as a heredoc captured by a command substitution -- because bash 3.2 (macOS
+# /bin/sh in POSIX mode) mis-parses a heredoc whose body sits inside $( ... ):
+# it keeps reading the body as command text, so the first `;;` inside it
+# surfaces as a syntax error (see change fix-install-sh-syntax, posixsh-01).
+# Capturing a function's stdout inside $(...) is plain POSIX and parses under
+# bash 3.2.
+emit_set_model_script() {
+  cat <<'SCRIPT'
 #!/bin/sh
 set -eu
 
@@ -348,8 +361,6 @@ else
   echo "Cleared the model for antz-$agent ($CLIENT); $dest no longer has a model: line."
 fi
 SCRIPT
-)
-  printf '%s\n' "$script" | sed "s|__CLIENT__|$client|; s|__AGENTS_DIR__|$agents_dir|"
 }
 
 set_model_flow_head() {
@@ -421,17 +432,7 @@ render_set_model_command() {
       # is the three stable family aliases plus the mandated clear option;
       # the rest of the vocabulary is named verbatim in the question text so
       # free-form entry of it carries no typo risk.
-      picker=$(cat <<'PICKER'
-Step 4 -- Ask the user which model to assign to antz-<agent>, via `AskUserQuestion` in this session (it is a main-session tool; never from or via a subagent). Ask ONE question. Its text must state the current state from Step 3 -- either "the currently configured model is <value>" or "no model is currently configured" -- and, when the current value exactly equals one of the offered options' value strings, that option is marked as the current one; otherwise no option is marked. Offer exactly these explicit options, in this order:
-1. `sonnet`
-2. `opus`
-3. `haiku`
-4. `Revert to default (clear)` -- choosing it runs the script with `--clear`
-`AskUserQuestion` automatically appends a built-in free-text row, so the user can enter any other value via free-form input; do not spend an option slot on a separate "type another value" entry. Also name these further documented alias values verbatim in the question text, so they can be entered via free-form input without typo risk: `best`, `fable`, `sonnet[1m]`, `opus[1m]`, `opusplan`.
-
-The full documented alias vocabulary (source: https://code.claude.com/docs/es/model-config) is embedded in this command at install time: `best`, `fable`, `opus`, `sonnet`, `haiku`, `sonnet[1m]`, `opus[1m]`, `opusplan`. This list is embedded and refreshed only by re-running install.sh; it is never queried at runtime.
-PICKER
-)
+      picker=$(emit_picker_claude)
       ;;
     opencode)
       short_desc='Configure or clear an installed antz agent'"'"'s model in OpenCode. Omitting --model/--clear opens an interactive model picker; the explicit flags edit the target file directly in this session; never delegates to a subagent.'
@@ -445,12 +446,7 @@ PICKER
       # EXPLICIT free-form option here (no built-in free-text row is
       # assumed), and the picker degrades to free-form + clear when the
       # enumeration fails or returns nothing.
-      picker=$(cat <<'PICKER'
-Step 4 -- Ask the user which model to assign to antz-<agent>, via the session's `question` tool. First, enumerate the available models at invocation time: run `opencode models` via the Bash tool; its output lists `provider/model` ids (for example `anthropic/claude-opus-4-5`). No model catalog is embedded in this command. Offer the enumerated `provider/model` ids as the question options; when the catalog is too large to present in one question, you may filter, group, or paginate the presentation sensibly (for example, the current session provider's models first) -- but the free-form option and the revert-to-default (clear) option must always remain offered, so no value is unreachable. If `opencode models` fails or returns no model ids, degrade instead of failing: still ask the question, with the question text stating that no models could be enumerated, offering only the free-form option and the revert-to-default (clear) option.
-
-Alongside any enumerated ids, ALWAYS offer an explicit `Type another value` free-form option (the `question` tool has no built-in free-text row) and the `Revert to default (clear)` option (choosing it runs the script with `--clear`). The question text must state the current state from Step 3 -- either "the currently configured model is <value>" or "no model is currently configured" -- and, when the current value exactly equals one of the offered options' value strings, that option is marked as the current one; otherwise no option is marked. A free-form answer is passed to the script verbatim, never validated or translated.
-PICKER
-)
+      picker=$(emit_picker_opencode)
       ;;
     *) echo "Unknown client: $client" >&2; exit 1 ;;
   esac
@@ -463,6 +459,35 @@ PICKER
 
   printf -- '---\n# %s version=%s -- do not edit by hand; regenerate with install.sh\ndescription: %s\n%s---\n\n%s\n' \
     "$MARKER" "$version" "$short_desc" "$extra_frontmatter" "$body"
+}
+
+# The two picker paragraphs below live in their own top-level, no-argument
+# emitter functions -- instead of being written inline as heredocs captured
+# by command substitutions inside render_set_model_command's case branches --
+# because bash 3.2 (macOS /bin/sh in POSIX mode) mis-parses a heredoc whose
+# body sits inside $( ... ) (see change fix-install-sh-syntax, posixsh-01).
+# Capturing a function's stdout inside $(...) is plain POSIX and parses under
+# bash 3.2. The bodies are verbatim: relocating them must not change the
+# rendered command files byte-for-byte (posixsh-04).
+emit_picker_claude() {
+  cat <<'PICKER'
+Step 4 -- Ask the user which model to assign to antz-<agent>, via `AskUserQuestion` in this session (it is a main-session tool; never from or via a subagent). Ask ONE question. Its text must state the current state from Step 3 -- either "the currently configured model is <value>" or "no model is currently configured" -- and, when the current value exactly equals one of the offered options' value strings, that option is marked as the current one; otherwise no option is marked. Offer exactly these explicit options, in this order:
+1. `sonnet`
+2. `opus`
+3. `haiku`
+4. `Revert to default (clear)` -- choosing it runs the script with `--clear`
+`AskUserQuestion` automatically appends a built-in free-text row, so the user can enter any other value via free-form input; do not spend an option slot on a separate "type another value" entry. Also name these further documented alias values verbatim in the question text, so they can be entered via free-form input without typo risk: `best`, `fable`, `sonnet[1m]`, `opus[1m]`, `opusplan`.
+
+The full documented alias vocabulary (source: https://code.claude.com/docs/es/model-config) is embedded in this command at install time: `best`, `fable`, `opus`, `sonnet`, `haiku`, `sonnet[1m]`, `opus[1m]`, `opusplan`. This list is embedded and refreshed only by re-running install.sh; it is never queried at runtime.
+PICKER
+}
+
+emit_picker_opencode() {
+  cat <<'PICKER'
+Step 4 -- Ask the user which model to assign to antz-<agent>, via the session's `question` tool. First, enumerate the available models at invocation time: run `opencode models` via the Bash tool; its output lists `provider/model` ids (for example `anthropic/claude-opus-4-5`). No model catalog is embedded in this command. Offer the enumerated `provider/model` ids as the question options; when the catalog is too large to present in one question, you may filter, group, or paginate the presentation sensibly (for example, the current session provider's models first) -- but the free-form option and the revert-to-default (clear) option must always remain offered, so no value is unreachable. If `opencode models` fails or returns no model ids, degrade instead of failing: still ask the question, with the question text stating that no models could be enumerated, offering only the free-form option and the revert-to-default (clear) option.
+
+Alongside any enumerated ids, ALWAYS offer an explicit `Type another value` free-form option (the `question` tool has no built-in free-text row) and the `Revert to default (clear)` option (choosing it runs the script with `--clear`). The question text must state the current state from Step 3 -- either "the currently configured model is <value>" or "no model is currently configured" -- and, when the current value exactly equals one of the offered options' value strings, that option is marked as the current one; otherwise no option is marked. A free-form answer is passed to the script verbatim, never validated or translated.
+PICKER
 }
 
 install_file() {
