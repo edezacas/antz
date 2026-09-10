@@ -12,11 +12,12 @@ antz addresses that with:
 - **Clarity before code** — `specifier` turns a request into concrete Gherkin scenarios before any code is written. A genuine ambiguity blocks implementation (`OPEN_QUESTIONS.md`) instead of getting guessed away.
 - **Specs that persist** — `verifier` merges each shipped scenario into `spdd/specs/<domain>.md`, so the next session reads what the system actually does instead of re-deriving it from code or chat history.
 - **Work split by dependency** — `specifier` breaks a feature into sub-specs that are each independently implementable and verifiable, ordered so dependencies come first.
+- **Isolated by change** — every `/antz` flow runs in its own fresh git worktree (`.worktrees/<slug>` on branch `antz/<slug>`), so several flows can run in parallel over the same repo without stepping on each other. When the flow finishes, the worktree is removed and the branch is kept for human review: merge it (to whatever your integration branch is) or discard it, whole.
 - **Guarded automation** — the `orchestrator` runs specifier -> coder -> verifier end to end, but stops and reports whenever something needs a human call: an ambiguous change, an open question, a stuck sub-spec, or a rejection that doesn't trace back to a single sub-spec.
 
 ## Usage
 
-Run `/antz <your request>` in Claude Code or OpenCode after installing. It delegates to `antz-orchestrator`, which sequences `specifier -> coder -> verifier` for one change, picking up correctly even if interrupted and resumed later. The three underlying roles remain directly invokable for manual/expert use.
+Run `/antz <your request>` in Claude Code or OpenCode after installing. It delegates to `antz-orchestrator`, which sequences `specifier -> coder -> verifier` for one change, picking up correctly even if interrupted and resumed later. Each flow runs isolated in its own git worktree on branch `antz/<slug>`; if you can pass a working root, you can also drive the underlying roles by hand there — they stay directly invokable for manual/expert use outside any flow.
 
 `/antz-set-model` configures or clears the `model:` frontmatter line of one installed antz agent file, per agent and per client (`--agent` is one of `specifier|coder|verifier|orchestrator`). It edits the file directly in the invoking session and never delegates to any `antz-*` subagent:
 
