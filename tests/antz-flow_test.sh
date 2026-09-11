@@ -697,13 +697,16 @@ test_orchestrator_05_unchanged_surface() {
   require "$PROSE_STEP1" 'candidate=branch slug=' || ok=1
   require "$PROSE_STEP1" 'candidate=on-disk slug=' || ok=1
   require "$ORCHESTRATOR_PROMPT" 'branch=missing' || ok=1
-  # Exactly four subcommands, and still exactly four fenced blocks (the
+  # Exactly four subcommands, and the four original fenced blocks (the
   # flow fence, the working-root lines block, the step-5 follow-up print
-  # block, and the probe fence) — eight fence lines, exactly one of them
-  # a ```sh opener.
+  # block, and the probe fence) survive untouched the three blocks the
+  # skills-activation delegation block adds (templates for none-matched and
+  # with-matches, plus the antz-skills.sh derivation snippet — see
+  # spdd/changes/skills-activation/02-orchestrator.feature): seven blocks,
+  # fourteen fence lines, still exactly one of them a ```sh opener.
   require "$ORCHESTRATOR_PROMPT" 'discover`/`ensure`/`state`/`release`' || ok=1
   fences=$(grep -cE '^   ```(sh)?$' "$ORCHESTRATOR_PROMPT")
-  [ "$fences" = "8" ] || { echo "  expected 8 fence lines (4 blocks), got: $fences"; ok=1; }
+  [ "$fences" = "14" ] || { echo "  expected 14 fence lines (7 blocks), got: $fences"; ok=1; }
   shfences=$(grep -c '^   ```sh$' "$ORCHESTRATOR_PROMPT")
   [ "$shfences" = "1" ] || { echo "  expected exactly 1 probe fence, got: $shfences"; ok=1; }
   # No new process step: the numbered steps still end at 6.

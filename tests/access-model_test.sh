@@ -294,13 +294,15 @@ agent_md() {
 }
 
 # render-01: the corrected roles render on Claude Code with Edit and Write
-# granted, in the unchanged marker format.
+# granted -- and, since the skills-activation change MODIFIED this contract,
+# the readwrite tools string now ends in Skill (tests/
+# skills-activation-render_test.sh owns that mapping's render-level tests).
 test_render_01() {
   role="$1"
   ensure_render_fixtures || return 1
   f=$(agent_md "$RENDER_HOME" claude "$role")
   [ -f "$f" ] || { echo "  missing rendered file: $f"; return 1; }
-  [ "$(sed -n 's/^tools: //p' "$f")" = "Read, Grep, Glob, Bash, Edit, Write" ] \
+  [ "$(sed -n 's/^tools: //p' "$f")" = "Read, Grep, Glob, Bash, Edit, Write, Skill" ] \
     || { echo "  tools line is: $(sed -n 's/^tools: //p' "$f")"; return 1; }
   grep -qF -- "${MARKER_LINE_PREFIX}" "$f" || { echo "  marker version prefix missing"; return 1; }
   grep -qF -- "$MARKER_LINE_SUFFIX" "$f" || { echo "  marker suffix missing"; return 1; }
@@ -351,8 +353,14 @@ test_render_03() {
 # marker format.
 test_render_04() {
   ok=0
-  byte_identical_to_head "$INSTALL_SH" \
-    || { echo "  install.sh differs from HEAD (mapping code must be unchanged)"; ok=1; }
+  # The skills-activation change legitimately modified only the readwrite
+  # branch of claude_tools_for_access; pin the unchanged branches
+  # functionally, line-anchored in install.sh (the old byte-identical-to-HEAD
+  # install.sh guard no longer applies to any post-skills-activation tree).
+  grep -qF 'readonly) printf '"'"'Read, Grep, Glob, Bash'"'"' ;;' "$INSTALL_SH" \
+    || { echo "  readonly mapping line changed in install.sh"; ok=1; }
+  grep -qF 'orchestrateonly) printf '"'"'Read, Grep, Glob, Bash, Agent'"'"' ;;' "$INSTALL_SH" \
+    || { echo "  orchestrateonly mapping line changed in install.sh"; ok=1; }
   ensure_render_fixtures || return 1
   cf=$(agent_md "$READONLY_HOME" claude specifier)
   of=$(agent_md "$READONLY_HOME" opencode specifier)
@@ -457,16 +465,27 @@ test_docs_04() {
 }
 
 # =============================================================================
-# bump-01: the bump is present -- VERSION reads exactly 4.1.0 (trailing
-# newline as before) and CHANGELOG.md gains a [4.1.0] - 2026-09-11 section
-# layered above the pending [4.0.0] section, describing the access-model
+# bump-01: the bump is present -- CHANGELOG.md gains a [4.1.0] - 2026-09-11
+# section layered above the [4.0.0] section, describing the access-model
 # correction, the unchanged coder/orchestrator render, the retained readonly
-# mapping, and the docs correction.
+# mapping, and the docs correction. VERSION is NOT a byte-pinned literal:
+# the repo recorded lesson (tests/docs-bump_test.sh comments) is that a
+# cross-change pin breaks on the next legitimate bump (it broke exactly here
+# when Change skills-activation bumped VERSION to 4.2.0), so the test instead
+# asserts VERSION is a semver agreeing with the newest (topmost) CHANGELOG
+# entry, which is this change's own [4.1.0] entry at bump time.
 # =============================================================================
 test_bump_01() {
   ok=0
-  # VERSION is the only content of the file, byte-exact (4.1.0 + newline).
-  printf '4.1.0\n' | cmp -s - "$VERSION_FILE" || { echo "  VERSION is not exactly '4.1.0\\n'"; ok=1; }
+  # VERSION is a semver (X.Y.Z) agreeing with the newest CHANGELOG entry.
+  version=$(cat "$VERSION_FILE")
+  if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+    echo "  VERSION reads '$version', not a semver (X.Y.Z)"; ok=1
+  fi
+  newest=$(sed -n 's/^## \[\([^]]*\)\].*/\1/p' "$CHANGELOG_MD" | head -n 1)
+  if [ "$version" != "$newest" ]; then
+    echo "  VERSION reads '$version' but the newest CHANGELOG entry is '$newest'"; ok=1
+  fi
   # The [4.1.0] section exists and sits above [4.0.0].
   line_410=$(grep -nF '## [4.1.0] - 2026-09-11' "$CHANGELOG_MD" | head -n 1 | cut -d: -f1)
   line_400=$(grep -nF '## [4.0.0]' "$CHANGELOG_MD" | head -n 1 | cut -d: -f1)
@@ -526,8 +545,8 @@ run_test "meta-01: agents/meta/specifier.yaml declares access: readwrite (name/d
 run_test "meta-02: agents/meta/verifier.yaml declares access: readwrite (name/description unchanged)" test_meta_02
 run_test "meta-03: coder.yaml stays access: readwrite and orchestrator.yaml stays access: orchestrateonly, byte-for-byte unchanged" test_meta_03
 
-run_test "render-01 (specifier): Claude render of agents/meta/specifier.yaml carries tools: Read, Grep, Glob, Bash, Edit, Write" test_render_01 specifier
-run_test "render-01 (verifier): Claude render of agents/meta/verifier.yaml carries tools: Read, Grep, Glob, Bash, Edit, Write" test_render_01 verifier
+run_test "render-01 (specifier): Claude render of agents/meta/specifier.yaml carries tools: Read, Grep, Glob, Bash, Edit, Write, Skill" test_render_01 specifier
+run_test "render-01 (verifier): Claude render of agents/meta/verifier.yaml carries tools: Read, Grep, Glob, Bash, Edit, Write, Skill" test_render_01 verifier
 run_test "render-02 (specifier): OpenCode render of agents/meta/specifier.yaml carries mode: subagent, edit: allow, task: deny" test_render_02 specifier
 run_test "render-02 (verifier): OpenCode render of agents/meta/verifier.yaml carries mode: subagent, edit: allow, task: deny" test_render_02 verifier
 run_test "render-03: coder and orchestrator renders are byte-identical to rendering the pre-change meta files, both clients" test_render_03
@@ -538,7 +557,7 @@ run_test "docs-02: CLAUDE.md states the identical corrected model -- the access-
 run_test "docs-03: the wrong claims are gone from both policy docs everywhere; Client Integration keeps the mapping levels with the no-role-declares-readonly note" test_docs_03
 run_test "docs-04: docs/orchestrator.md keeps the verified tools-allowlist fact and no longer states a specifier/verifier readonly boundary is real" test_docs_04
 
-run_test "bump-01: VERSION reads exactly 4.1.0 and CHANGELOG.md carries [4.1.0] - 2026-09-11 above [4.0.0]" test_bump_01
+run_test "bump-01: CHANGELOG.md carries [4.1.0] - 2026-09-11 above [4.0.0] and VERSION is a semver agreeing with the newest entry (never a pinned literal)" test_bump_01
 run_test "bump-02: the [4.1.0] entry grades minor (rendered-agent behavior change) and not major (taxonomy/mapping/marker/layout/locations unchanged)" test_bump_02
 run_test "bump-03: the shared-file edits are strictly additive -- flow-branch-checkout's pending [4.0.0] section, docs wording, orchestrator.prompt and antz-flow test all survive" test_bump_03
 

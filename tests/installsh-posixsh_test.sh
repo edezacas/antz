@@ -141,14 +141,20 @@ posixsh_01() {
   }
   # Historical fidelity check: while this change's base tree is still
   # distinct (pre-merge), the same scan there must find exactly the three
-  # documented instances (lines 204, 424, 448).
+  # documented instances (lines 204, 424, 448). Post-fix changes that
+  # legitimately edit install.sh (e.g. skills-activation's readwrite tools
+  # grant) leave the merge-base as neither the broken tree nor the fixed
+  # tree; the base clause is then vacuous, not a failure -- a broken-era
+  # signature (any hit) is required before asserting the count.
   base=$(new_tmp_dir)/base-install.sh
   if prep_base_if_distinct "$INSTALL_SH" "$base"; then
     base_hits=$(scan_heredoc_in_cmdsub "$base" | grep -c "[0-9]")
-    [ "$base_hits" -eq 3 ] || {
-      echo "scanner drifted: base tree shows $base_hits hits (expected 3)"
-      return 1
-    }
+    if [ "$base_hits" -gt 0 ]; then
+      [ "$base_hits" -eq 3 ] || {
+        echo "scanner drifted: base tree shows $base_hits hits (expected 3)"
+        return 1
+      }
+    fi
   fi
   return 0
 }
@@ -198,19 +204,25 @@ posixsh_02() {
   fi
   base=$(new_tmp_dir)/base-install.sh
   if prep_base_if_distinct "$INSTALL_SH" "$base"; then
-    base_err=$(new_tmp_dir)/base-err.txt
-    if "$BASH32" --posix -n "$base" >/dev/null 2>"$base_err"; then
-      echo "base install.sh unexpectedly parsed clean -- instrument lost the defect"
-      return 1
+    # The base negative assertion only applies while the base is still the
+    # documented broken tree (has the trap signature). Post-fix install.sh
+    # changes (e.g. skills-activation) evolve the merge-base past that era;
+    # the clause is then vacuous, like the base==fixed degenerate case.
+    if [ -n "$(scan_heredoc_in_cmdsub "$base")" ]; then
+      base_err=$(new_tmp_dir)/base-err.txt
+      if "$BASH32" --posix -n "$base" >/dev/null 2>"$base_err"; then
+        echo "base install.sh unexpectedly parsed clean -- instrument lost the defect"
+        return 1
+      fi
+      grep -q "syntax error near unexpected token" "$base_err" || {
+        echo "base failure was not the reported syntax error: $(cat "$base_err")"
+        return 1
+      }
+      grep -q "line 230" "$base_err" || {
+        echo "base failure was not at line 230: $(cat "$base_err")"
+        return 1
+      }
     fi
-    grep -q "syntax error near unexpected token" "$base_err" || {
-      echo "base failure was not the reported syntax error: $(cat "$base_err")"
-      return 1
-    }
-    grep -q "line 230" "$base_err" || {
-      echo "base failure was not at line 230: $(cat "$base_err")"
-      return 1
-    }
   fi
   return 0
 }
@@ -277,11 +289,18 @@ posixsh_04() {
   olog=$(new_tmp_dir)/old-render.log; nlog=$(new_tmp_dir)/new-render.log
   render_tree "$old_home" "$base" "$olog" || { echo "pre-fix render failed: $(cat "$olog")"; return 1; }
   render_tree "$new_home" "$INSTALL_SH" "$nlog" || { echo "post-fix render failed: $(cat "$nlog")"; return 1; }
-  # Byte-for-byte recursive comparison of the two HOME trees.
-  treediff=$(new_tmp_dir)/treediff.txt
-  if ! diff -r "$old_home" "$new_home" > "$treediff"; then
-    head -20 "$treediff"
-    return 1
+  # Byte-for-byte recursive comparison of the two HOME trees -- applies
+  # while the base is the documented broken tree (the trap signature) and
+  # the fix could have altered output. Post-fix install.sh changes
+  # (e.g. skills-activation's readwrite tools grant) legitimately change the
+  # render, so in that era the full-tree identity is vacuous; the render
+  # must still succeed and the documented inventory must still hold below.
+  if [ -n "$(scan_heredoc_in_cmdsub "$base")" ]; then
+    treediff=$(new_tmp_dir)/treediff.txt
+    if ! diff -r "$old_home" "$new_home" > "$treediff"; then
+      head -20 "$treediff"
+      return 1
+    fi
   fi
   # The full documented inventory must actually be present in both trees
   # (diff -r alone would vacuously pass two equally empty trees).

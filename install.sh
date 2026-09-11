@@ -102,7 +102,7 @@ meta_field() {
 claude_tools_for_access() {
   case "$1" in
     readonly) printf 'Read, Grep, Glob, Bash' ;;
-    readwrite) printf 'Read, Grep, Glob, Bash, Edit, Write' ;;
+    readwrite) printf 'Read, Grep, Glob, Bash, Edit, Write, Skill' ;;
     orchestrateonly) printf 'Read, Grep, Glob, Bash, Agent' ;;
     *) echo "Unknown access level: $1" >&2; exit 1 ;;
   esac

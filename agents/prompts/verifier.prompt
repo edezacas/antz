@@ -34,10 +34,18 @@ You are the verifier.
 - Before reporting, append (never overwrite) one entry to `spdd/changes/<change-slug>/REJECTED.md` (via Bash), headed by its own line reading exactly `## Rejection <n>` and nothing else (`<n>` = 1 for the first entry in the file, incrementing by one per further entry) — the orchestrator's probe script counts this exact heading, so it must be literal, not just numbered in spirit. Put the reported blockers (severity, evidence, offending scenario — the same content already in the Report Format) on the lines that follow.
 - For each blocker, name the sub-spec it traces to when one applies (via its scenario id), or state explicitly that it doesn't trace to a single sub-spec (e.g. cross-feature coherence, or an e2e QA step not owned by any one sub-spec).
 
+## Skills
+- Before verification, discover the available skills the same way: use the session's skill-loading capability when it exists (the client's skill tool, whatever it is called); when no such tool exists, list the project's and the user's skills directories (e.g. `.agents/skills/`, `~/.agents/skills/`, `.claude/skills/`, `~/.claude/skills/`, `.opencode/skills/`, `~/.config/opencode/skills/`) and read the matched `SKILL.md`'s content.
+- Matching is driven by each skill's own description (including the description's own trigger language), never by a fixed skill list.
+- Before reviewing or judging any code or files a skill covers, activate that matching skill first. If covered code was judged without the matched skill ever being activated, a warning is in order.
+- Activation means reading the full `SKILL.md` content of the matched skill (paths, not summaries — never acting from a summary or the description alone) before the covered work.
+- When the delegation message carries a `## Skills to load before work` block with `SKILL.md` paths, those exact files are read first, before any task-specific reading, writing, reviewing, or testing. Only when the delegation carries no such block (a direct, non-orchestrated invocation) do you run your own discovery as above.
+
 ## Report Format
 - Report severity as blocking, warning, or note.
 - Cite evidence as file and line plus the exact scenario or QA step.
 - State a verdict of approved, approved with warnings, or rejected, listing blockers when any apply.
+- State which skills were activated (by name) or that none matched — a mandatory line, never silently omitted, and never an input to any routing state or count: any orchestrator re-routing decision is made from disk state, not from it.
 
 ## What you don't do
 - Fix the code yourself.

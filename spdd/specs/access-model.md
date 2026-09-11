@@ -26,6 +26,13 @@
   describing the specifier's tool grant was touched up by this change's
   merge (readwrite grants) — that file's domain is the specifier prompt's
   Output behavior, not the access model.
+- Change `skills-activation` (merged 2026-09-11, archived in
+  `spdd/archive/skills-activation/`) merged its render/docs MODIFY edges
+  into this file's render-01 and docs-03 (the Claude `readwrite` grant
+  gains `Skill`; the Client Integration readwrite bullet corrected). Its
+  remaining scenarios (role skills activation, the orchestrator's
+  delegation skills block, the adoption/rejection register, the 4.2.0
+  bump) live in `spdd/specs/skills-activation.md`.
 
 ## Goal
 The role access model, as implemented by the four `agents/meta/*.yaml`
@@ -104,15 +111,19 @@ in AGENTS.md and CLAUDE.md (docs-02 pins the sync).
     And "agents/meta/coder.yaml" declares "access: readwrite" and "agents/meta/orchestrator.yaml" declares "access: orchestrateonly"
     And the pre-change (readonly) renders of specifier and verifier carried "tools: Read, Grep, Glob, Bash" on Claude Code and "edit: deny" on OpenCode
 
-  # ADD - render-01: the corrected roles render on Claude Code with Edit and
-  # Write granted.
+  # MODIFY - render-01 (originally delivered by specifier-write-access; the
+  # readwrite tools string was MODIFIED by change skills-activation, merged
+  # 2026-09-11 — the Claude readwrite grant gains the `Skill` tool): the
+  # corrected roles render on Claude Code with Edit, Write, and Skill
+  # granted.
   Scenario Outline: render-01
     When install.sh renders "agents/meta/<role>.yaml" for Claude Code
-    Then the rendered frontmatter carries "tools: Read, Grep, Glob, Bash, Edit, Write"
+    Then the rendered frontmatter carries "tools: Read, Grep, Glob, Bash, Edit, Write, Skill"
 
     Examples:
       | role       |
       | specifier  |
+      | coder      |
       | verifier   |
 
   # ADD - render-02: the corrected roles render on OpenCode with edit
@@ -177,12 +188,16 @@ in AGENTS.md and CLAUDE.md (docs-02 pins the sync).
     When the reader compares the access-model gotcha bullets of "AGENTS.md" and "CLAUDE.md"
     Then they state the identical corrected model: specifier/coder/verifier "readwrite", orchestrator "orchestrateonly", prompt-level boundary, never-commits law intact
 
-  # ADD - docs-03: the wrong claim is gone everywhere in both policy docs,
-  # not only from the gotcha bullet.
+  # MODIFY - docs-03 (originally delivered by specifier-write-access; the
+  # readwrite Client Integration mapping sentence was MODIFIED by change
+  # skills-activation, merged 2026-09-11 — readwrite now states full edit
+  # access plus, on Claude Code, the `Skill` tool grant, with the OpenCode
+  # side inheriting the native skill tool by default): the wrong claim is
+  # gone everywhere in both policy docs, not only from the gotcha bullet.
   Scenario: docs-03
     When the reader reads "AGENTS.md" and "CLAUDE.md" in full
     Then neither file anywhere states that the specifier or verifier role is "readonly", lacks edit/write capability, or that the coder is the only role that modifies files
-    And the "## Client Integration" mapping description still states the defined mapping levels ("access: readonly" maps to no edit/write capability, "readwrite" to full edit access, "orchestrateonly" to readonly plus delegation) -- now noting that after this change no role declares readonly, while install.sh keeps the mapping
+    And the "## Client Integration" mapping description states the defined mapping levels ("access: readonly" maps to no edit/write capability, "readwrite" to full edit access plus, on Claude Code, the "Skill" tool grant with OpenCode agents inheriting the client's native skill tool by default, "orchestrateonly" to readonly plus delegation) -- noting that after the access-model change no role declares readonly, while install.sh keeps the mapping
 
   # ADD - docs-04: docs/orchestrator.md's delegation-scoping paragraph is
   # corrected without weakening its verified platform claim.
