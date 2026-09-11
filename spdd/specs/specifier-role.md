@@ -24,6 +24,15 @@
   `entities-table-02..05` unaffected). This change's scenarios and
   end-to-end QA are preserved for history in
   `spdd/archive/specifier-readme-fixed-name/`, not reproduced here.
+- The e2e Background line of the End-to-end QA suite below was touched up
+  by change `specifier-write-access` (merged 2026-09-11): the specifier's
+  tool grant is now "Read, Grep, Glob, Bash, Edit, Write" (`readwrite`
+  access, per the `access-model` domain in `spdd/specs/access-model.md`)
+  instead of the pre-change readonly grant the line described. The line had
+  become stale drift when that change corrected
+  `agents/meta/specifier.yaml`; the verifier updated it during its merge
+  (the coder never edits `spdd/specs/`). No scenario of this domain file
+  changed meaning.
 
 ## Goal
 `agents/prompts/specifier.prompt`'s `## Output` section documents an
@@ -220,7 +229,7 @@ invocation produced, read back.
 
   Background:
     Given a local checkout of a test repo that is a git repository
-    And the specifier's own tool grant is "Read, Grep, Glob, Bash" (readonly access, no Write/Edit tool) -- it authors files under spdd/changes/ via Bash
+    And the specifier's own tool grant is "Read, Grep, Glob, Bash, Edit, Write" (readwrite access, corrected by change specifier-write-access) -- it authors files under spdd/changes/ directly
 
   ## Optional Entities/Operations table (live)
 

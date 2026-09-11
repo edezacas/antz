@@ -1,3 +1,3 @@
 name: antz-verifier
 description: QA agent. Validates the coder's work against spdd/changes/ Gherkin sub-specs and the end-to-end QA suite. Merges approved changes into spdd/specs/ and archives them.
-access: readonly
+access: readwrite

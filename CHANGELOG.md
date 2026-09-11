@@ -9,6 +9,12 @@ changes to the workflow contract (directory layout, access model, etc).
 
 This branch (`master`) carries the branch-marked, no-commit variant of antz; the `worktree` branch carries the worktree-isolated variant (worktree isolation + gated per-role commits), whose `install.sh` binds its remote install to its own ref.
 
+## [4.1.0] - 2026-09-11
+
+### Changed
+- **The specifier and verifier declared `access: readonly` while their own prompts required writing their core artifacts — corrected to `readwrite` for both.** `agents/meta/specifier.yaml` (authors `spdd/changes/<slug>/`: README.md, numbered `.feature` files, `OPEN_QUESTIONS.md`) and `agents/meta/verifier.yaml` (merges into `spdd/specs/`, owns `spdd/archive/` moves, appends `REJECTED.md`) now declare `access: readwrite`, so both clients render edit capability for them (Claude Code: `tools: Read, Grep, Glob, Bash, Edit, Write`; OpenCode: `mode: subagent`, `edit: allow`, `task: deny`) instead of silently completing with zero files written. The rendered output for `coder` and `orchestrator` is unchanged byte-for-byte. The safety boundary was never tool absence and still isn't: prompt-level path ownership per role plus the never-commits law, in the prompts. A path-restricted new access level was considered and dropped — neither client's permission layer can scope edits to paths, so it would have been an illusion of least privilege; `access: readonly` maps to no edit/write capability in both `install.sh` mappings, which are retained unchanged as a defined level (post-change no meta file declares readonly). Docs corrected to match: AGENTS.md and CLAUDE.md's access-model gotcha bullet (byte-identical between the two) and `docs/orchestrator.md`'s delegation-scoping paragraph.
+- This grades as **minor**, not major: the rendered agents' capability changed (behavior change to the roles), but the workflow contract's access model itself is unchanged — the `access` taxonomy (`readonly | readwrite | orchestrateonly`), the access-to-frontmatter mapping, the `antz:generated` marker format, the directory layout, and the install locations are all untouched, so no consumer breaks; the precedent is that adding `orchestrateonly` (3.0.0) was major because it broke the then-documented access contract, while this broadens capability to match what the prompts always required.
+
 ## [4.0.0] - 2026-09-11
 
 ### Changed

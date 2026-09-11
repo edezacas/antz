@@ -85,9 +85,9 @@ Both target clients were checked against their actual current docs before
 committing to a design, not assumed from memory:
 
 - **Claude Code** (confirmed via `code.claude.com/docs/en/sub-agents.md`):
-  a subagent's `tools:` list is a strict, enforced allowlist — the
-  `specifier`/`verifier` readonly boundary is real. But the *parenthesized*
-  form, `Agent(name1, name2, ...)`, which would scope *which* subagents a
+  a subagent's `tools:` list is a strict, enforced allowlist — the verified
+  platform fact, which is why the old readonly denial was real. But the
+  *parenthesized* form, `Agent(name1, name2, ...)`, which would scope *which* subagents a
   spawned agent can further spawn, only takes effect when the spawning
   agent runs as the main thread via `claude --agent`. `antz-orchestrator`
   is always invoked as a subagent itself (via `/antz` or auto-delegation),
