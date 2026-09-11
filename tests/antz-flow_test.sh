@@ -1,18 +1,28 @@
 #!/usr/bin/env bash
 # Unit tests for the antz-flow.sh fence embedded in
-# agents/prompts/orchestrator.prompt (step 1's discover/ensure and step 5's
-# release gate) — the branch-marked, never-committed variant: each change
-# gets its own marker branch antz/<slug> and nothing is ever committed or
-# removed, so the script computes purely mechanical, disk-derivable facts —
-# which antz/* branches exist in the main checkout, what change state sits
-# uncommitted in its working tree, and whether the release gate holds.
+# agents/prompts/orchestrator.prompt — the branch-marked, never-committed
+# variant: each change gets its own marker branch antz/<slug>, ensure
+# positions the session on that branch (create-then-switch fresh, plain
+# switch on resume, refused-checked when git would destroy uncommitted
+# work), and nothing is ever committed or removed, so the script computes
+# purely mechanical, disk-derivable facts — which antz/* branches exist in
+# the main checkout, what change state sits uncommitted in its working
+# tree, and whether the release gate holds.
+#
+# It also guards the orchestrator prompt's own prose that consumes the
+# script (sub-spec "orchestrator", scenarios orchestrator-01..05): the
+# step-1 ensure instructions' state meanings, the step-5 human follow-up
+# print with its placeholder merge target, the law wording, and the
+# unchanged surface — static assertions on the prompt text (precedent:
+# tests/versioning-rule_test.sh).
 #
 # Helpers are exercised against throwaway git repos under a temp dir; every
-# scenario id carries the flow-<n> prefix the sub-spec convention expects.
+# scenario id carries the ensure-<n> or orchestrator-<n> prefix (and each
+# example-table row is its own test), which the sub-spec convention expects.
 #
 # Self-contained bash test harness, mirroring the harness style of
 # tests/orchestrator-status-probe_test.sh. Run:
-#   ./tests/antz-flow_test.sh
+#   sh tests/antz-flow_test.sh
 
 set -u
 
@@ -21,6 +31,7 @@ ORCHESTRATOR_PROMPT="$SCRIPT_DIR/agents/prompts/orchestrator.prompt"
 
 pass_count=0
 fail_count=0
+skip_count=0
 
 SCRIPT=$(mktemp)
 PROBE_EXTRACT=$(mktemp)
@@ -34,6 +45,15 @@ run_test() {
     echo "FAIL: $name"
     fail_count=$((fail_count + 1))
   fi
+}
+
+skip_test() {
+  # $1 = reported test name (must contain its scenario id), $2 = reason.
+  # An explicit, accounted-for stub for a scenario that is out of scope for
+  # unit-level TDD (never a silent omission).
+  name="$1"; reason="$2"
+  echo "SKIP: $name ($reason)"
+  skip_count=$((skip_count + 1))
 }
 
 # ---- extracting the embedded scripts from the prompt ------------------------
@@ -52,21 +72,76 @@ extract_flow > "$SCRIPT"
 # flow script's state subcommand, so we do the same for the state tests.
 awk '/^   ```sh$/{p=1; next} /^   ```$/{p=0} p' "$ORCHESTRATOR_PROMPT" | sed 's/^   //' > "$PROBE_EXTRACT"
 
+# ---- prompt-prose extracts (sub-spec "orchestrator") -------------------------
+#
+# The prose scenarios assert on section-scoped extracts of the prompt, not
+# the whole file, so a stray mention elsewhere can't satisfy them. The flow
+# fence (script) is excluded from prose extracts — its comments are the
+# script's own law wording, asserted via the FLOW_SCRIPT extract.
+
+# ---- content-assertion helpers (precedent: tests/versioning-rule_test.sh) ----
+
+require() {
+  # $1 = file, $2 = fixed string that must appear in it
+  if grep -qF -- "$2" "$1"; then return 0; fi
+  echo "  missing required text: $2"
+  return 1
+}
+
+refuse() {
+  # $1 = file, $2 = fixed string that must NOT appear in it
+  if grep -qF -- "$2" "$1"; then
+    echo "  found forbidden text: $2"
+    return 1
+  fi
+  return 0
+}
+
+FLOW_SCRIPT=$(mktemp)
+cp "$SCRIPT" "$FLOW_SCRIPT"
+
+# Step 1's prose after the flow fence: from the flow fence's closing ```
+# (the second 3-space fence line) to the step-2 heading. Covers the
+# discover table, the bullet list, and the ensure-state-meaning bullet.
+PROSE_STEP1=$(mktemp)
+awk '/^   ```$/{n++; next} /^2\. \*\*Probe/{exit} n>=2' "$ORCHESTRATOR_PROMPT" > "$PROSE_STEP1"
+
+# Step 5's release section: from the step-5 heading to the step-6 heading.
+PROSE_STEP5=$(mktemp)
+awk '/^5\. On any/{s=1} /^6\. On a fresh/{s=0} s' "$ORCHESTRATOR_PROMPT" > "$PROSE_STEP5"
+
+# The "## Owns" section.
+PROSE_OWNS=$(mktemp)
+awk '/^## Owns/{s=1} s && /^## / && !/^## Owns/{s=0} s' "$ORCHESTRATOR_PROMPT" > "$PROSE_OWNS"
+
+# The "## What you don't do" section.
+PROSE_DONT=$(mktemp)
+awk '/^## What you don.t do/{s=1} s && /^## / && !/^## What/{s=0} s' "$ORCHESTRATOR_PROMPT" > "$PROSE_DONT"
+
 # ---- tiny git fixture --------------------------------------------------------
 
 REPO_ROOT=""
 SLUG=""
 
+add_tmp_repo() {
+  TMP_REPOS="$TMP_REPOS $1"
+}
+
 new_repo() {
   REPO_ROOT=$(mktemp -d)
   add_tmp_repo "$REPO_ROOT"
   git -C "$REPO_ROOT" init -q
-  # Branch creation needs at least one commit (the script itself
+  # Branch creation/positioning needs at least one commit (the script
   # fail-closes on a repo with no commits -- tested explicitly via
   # git rev-parse HEAD).
   echo hello > "$REPO_ROOT/a.txt"
   git -C "$REPO_ROOT" add .
   git -C "$REPO_ROOT" -c user.email=t@t -c user.name=t commit -q -m init
+  # New repos may default to any initial branch name; normalize to master
+  # (a pure fixture concern only — the script itself never renames).
+  if [ "$(git -C "$REPO_ROOT" branch --show-current)" != "master" ]; then
+    git -C "$REPO_ROOT" -c user.email=t@t -c user.name=t branch -m master
+  fi
   SLUG="$1"
 }
 
@@ -100,16 +175,19 @@ mk_archive() {
   echo ok > "$REPO_ROOT/spdd/archive/$SLUG/x.md"
 }
 
+# Full branch-ref snapshot: for the never-commits/no-destruction assertions,
+# the complete `git show-ref --heads` output is compared byte-identically
+# before and after.
+all_refs() {
+  git -C "$REPO_ROOT" show-ref --heads
+}
+
 # ---- fixture teardown --------------------------------------------------------
 
 # Every tmp repo ever created, space-separated (POSIX sh: no arrays). cleanup
 # removes them all on EXIT — without the accumulation, only the last repo
 # would be deleted and each test would orphan its mktemp dir.
 TMP_REPOS=""
-
-add_tmp_repo() {
-  TMP_REPOS="$TMP_REPOS $1"
-}
 
 cleanup() {
   rm -f "$SCRIPT" "$PROBE_EXTRACT"
@@ -124,152 +202,327 @@ cleanup() {
 trap cleanup EXIT
 
 # =============================================================================
-# flow-extracted: the script was actually found and extracted (guards every
+# extracted guard: the script was actually found and extracted (guards every
 # other test against a silent no-op if the fence markers ever change shape).
 # =============================================================================
-test_flow_extracted() {
+test_ensure_extracted() {
   grep -q 'br_exists' "$SCRIPT" || { echo "  flow script didn't extract"; return 1; }
   return 0
 }
 
 # =============================================================================
-# flow-01: discover with no antz/* branches and no change dirs prints nothing.
+# ensure-01: the fresh path creates the marker branch at the current HEAD and
+# positions the session on it, with zero new commits.
 # =============================================================================
-test_flow_discover_empty() {
+test_ensure_01_fresh_creates_and_positions() {
   new_repo fresh-slug
-  out=$(run_flow discover)
-  [ -z "$out" ] || { echo "  expected no candidates, got: $out"; return 1; }
+  base_head=$(git -C "$REPO_ROOT" rev-parse HEAD)
+  out=$(run_flow ensure "$SLUG"); st=$?
+  [ "$out" = "state=created" ] || { echo "  expected state=created, got: $out"; return 1; }
+  [ "$st" -eq 0 ] || { echo "  expected exit 0, got: $st"; return 1; }
+  [ "$(git -C "$REPO_ROOT" branch --show-current)" = "antz/$SLUG" ] \
+    || { echo "  session not positioned on antz/$SLUG"; return 1; }
+  [ "$(git -C "$REPO_ROOT" rev-parse "refs/heads/antz/$SLUG")" = "$base_head" ] \
+    || { echo "  marker branch not at pre-call HEAD"; return 1; }
+  [ "$(git -C "$REPO_ROOT" rev-list --count HEAD)" = "1" ] \
+    || { echo "  a commit happened"; return 1; }
 }
 
 # =============================================================================
-# flow-02: discover lists a marker branch (candidate=branch) and an on-disk
-# change dir (candidate=on-disk).
+# ensure-02: uncommitted working-tree work survives the positioning untouched
+# — carried over, not destroyed or stashed.
 # =============================================================================
-test_flow_discover_lists() {
-  new_repo listed-slug
-  git -C "$REPO_ROOT" branch -q antz/listed-slug
-  mk_change_dir
-  out=$(run_flow discover)
-  printf '%s\n' "$out" | grep -qx 'candidate=branch slug=listed-slug' \
-    || { echo "  missing candidate=branch in: $out"; return 1; }
-  printf '%s\n' "$out" | grep -qx 'candidate=on-disk slug=listed-slug' \
-    || { echo "  missing candidate=on-disk in: $out"; return 1; }
-}
-
-# =============================================================================
-# flow-03: ensure with no existing marker branch creates it (state=created),
-# pointing at the repo's current HEAD.
-# =============================================================================
-test_flow_ensure_creates() {
-  new_repo new-slug
+test_ensure_02_uncommitted_work_survives() {
+  new_repo carry-slug
+  printf 'first\n' > "$REPO_ROOT/a.txt"
+  git -C "$REPO_ROOT" add . && git -C "$REPO_ROOT" -c user.email=t@t -c user.name=t commit -q -m base
+  printf 'dirty\n' > "$REPO_ROOT/a.txt"
   out=$(run_flow ensure "$SLUG")
   [ "$out" = "state=created" ] || { echo "  expected state=created, got: $out"; return 1; }
-  git -C "$REPO_ROOT" show-ref --verify --quiet "refs/heads/antz/$SLUG" \
-    || { echo "  branch not created"; return 1; }
-  [ "$(git -C "$REPO_ROOT" rev-parse HEAD)" = "$(git -C "$REPO_ROOT" rev-parse "antz/$SLUG")" ] \
-    || { echo "  marker branch doesn't point at HEAD"; return 1; }
+  [ "$(git -C "$REPO_ROOT" branch --show-current)" = "antz/$SLUG" ] \
+    || { echo "  not positioned on the flow branch"; return 1; }
+  [ "$(cat "$REPO_ROOT/a.txt")" = "dirty" ] \
+    || { echo "  working-tree content changed"; return 1; }
+  git -C "$REPO_ROOT" status --porcelain -- a.txt | grep -q '^ M a.txt' \
+    || { echo "  a.txt no longer reported modified"; return 1; }
+  [ -z "$(git -C "$REPO_ROOT" stash list)" ] \
+    || { echo "  a stash entry was created"; return 1; }
 }
 
 # =============================================================================
-# flow-03-bis: nothing is ever checked out — the caller's branch is untouched.
+# ensure-03: the resume path positions the session onto the existing branch
+# without ever rewriting it.
 # =============================================================================
-test_flow_ensure_no_checkout() {
-  new_repo stay-slug
-  git -C "$REPO_ROOT" branch -q marker-baseHEAD
-  before=$(git -C "$REPO_ROOT" branch --show-current)
-  run_flow ensure "$SLUG" >/dev/null
-  after=$(git -C "$REPO_ROOT" branch --show-current)
-  [ "$before" = "$after" ] || { echo "  checkout moved: $before -> $after"; return 1; }
-}
-
-# =============================================================================
-# flow-04: ensure with an existing marker branch reports state=reused and
-# never rewrites it (no -B semantics on hidden refs).
-# =============================================================================
-test_flow_ensure_reused() {
+test_ensure_03_resume_positions_without_rewriting() {
   new_repo reuse-slug
-  git -C "$REPO_ROOT" branch -q "antz/$SLUG"
-  out=$(run_flow ensure "$SLUG")
+  base_head=$(git -C "$REPO_ROOT" rev-parse HEAD)
+  git -C "$REPO_ROOT" branch -q "antz/$SLUG" "$base_head"
+  # Advance the fixture's master past the flow's base commit (test-only
+  # commit; the branch antz/<slug> stays behind, like an earlier session's
+  # marker) — if ensure had -B semantics it would rewrite the ref.
+  git -C "$REPO_ROOT" -c user.email=t@t -c user.name=t commit -q --allow-empty -m later
+  out=$(run_flow ensure "$SLUG"); st=$?
   [ "$out" = "state=reused" ] || { echo "  expected state=reused, got: $out"; return 1; }
+  [ "$st" -eq 0 ] || { echo "  expected exit 0, got: $st"; return 1; }
+  [ "$(git -C "$REPO_ROOT" branch --show-current)" = "antz/$SLUG" ] \
+    || { echo "  not positioned on antz/$SLUG"; return 1; }
+  [ "$(git -C "$REPO_ROOT" rev-parse "refs/heads/antz/$SLUG")" = "$base_head" ] \
+    || { echo "  marker branch ref was rewritten"; return 1; }
 }
 
 # =============================================================================
-# flow-06: ensure in a repo with no commits fail-closes state=no_commits.
+# ensure-04: re-running ensure mid-flow (already positioned) is a safe no-op.
 # =============================================================================
-test_flow_ensure_no_commits() {
+test_ensure_04_ensure_again_is_noop() {
+  new_repo again-slug
+  run_flow ensure "$SLUG" >/dev/null
+  before_refs=$(all_refs)
+  before_tree=$(cat "$REPO_ROOT/a.txt")
+  out=$(run_flow ensure "$SLUG"); st=$?
+  [ "$out" = "state=reused" ] || { echo "  expected state=reused, got: $out"; return 1; }
+  [ "$st" -eq 0 ] || { echo "  expected exit 0, got: $st"; return 1; }
+  [ "$(git -C "$REPO_ROOT" branch --show-current)" = "antz/$SLUG" ] \
+    || { echo "  position lost"; return 1; }
+  [ "$(all_refs)" = "$before_refs" ] || { echo "  a ref changed"; return 1; }
+  [ "$(cat "$REPO_ROOT/a.txt")" = "$before_tree" ] \
+    || { echo "  working tree touched"; return 1; }
+}
+
+# =============================================================================
+# ensure-05: when git refuses the positioning (a destructive-checkout
+# conflict), the script stops machine-readably and forces nothing.
+# =============================================================================
+test_ensure_05_refused_switch_stops_clean() {
+  new_repo conflict-slug
+  # antz/<slug> committed a.txt at its own distinct content…
+  git -C "$REPO_ROOT" branch -q "antz/$SLUG"
+  # …master commits a different content…
+  printf 'two\n' > "$REPO_ROOT/a.txt"
+  git -C "$REPO_ROOT" -c user.email=t@t -c user.name=t commit -q -am master-move
+  master_head=$(git -C "$REPO_ROOT" rev-parse HEAD)
+  # …and the working tree holds a third, uncommitted content switching would
+  # overwrite (the destructive-checkout conflict).
+  printf 'dirty\n' > "$REPO_ROOT/a.txt"
+  out=$(run_flow ensure "$SLUG"); st=$?
+  [ "$out" = "state=checkout_refused" ] \
+    || { echo "  expected state=checkout_refused, got: $out"; return 1; }
+  [ "$st" -eq 1 ] || { echo "  expected exit 1, got: $st"; return 1; }
+  [ "$(cat "$REPO_ROOT/a.txt")" = "dirty" ] \
+    || { echo "  uncommitted content destroyed"; return 1; }
+  [ "$(git -C "$REPO_ROOT" branch --show-current)" = "master" ] \
+    || { echo "  session moved off master"; return 1; }
+  [ "$(git -C "$REPO_ROOT" rev-parse HEAD)" = "$master_head" ] \
+    || { echo "  HEAD moved"; return 1; }
+  [ "$(git -C "$REPO_ROOT" rev-parse "refs/heads/antz/$SLUG")" \
+      = "$(git -C "$REPO_ROOT" rev-parse "master~1")" ] \
+    || { echo "  marker branch moved"; return 1; }
+  [ -z "$(git -C "$REPO_ROOT" stash list)" ] \
+    || { echo "  a stash entry was created"; return 1; }
+}
+
+# =============================================================================
+# ensure-06: the script is statically free of destructive mechanisms — no
+# force/reset/clean/stash/restore/branch-delete capability anywhere.
+# =============================================================================
+test_ensure_06_no_destructive_flags() {
+  # Scan only invocation lines: comments inside the fence mention git freely
+  # (the laws' prose) and are not invocations.
+  git_lines=$(grep -v '^[[:space:]]*#' "$SCRIPT" | grep 'git')
+  [ -n "$git_lines" ] || { echo "  no git invocations found"; return 1; }
+  if printf '%s\n' "$git_lines" | grep -E -- '[[:space:]](--force|-f|-B|-d|-D|-C|-m|-M)([[:space:]])' >/dev/null; then
+    echo "  a git invocation carries a destructive/force flag:"; return 1
+  fi
+  if printf '%s\n' "$git_lines" | grep -E 'git (reset|clean|stash|restore)' >/dev/null; then
+    echo "  a destructive git subcommand is present"; return 1
+  fi
+  # git branch appears only as the discover listing and the plain marker
+  # creation.
+  if printf '%s\n' "$git_lines" | grep 'git branch' \
+       | grep -vE "git branch (--list 'antz/\*'|-q \"antz/\\\$slug\"|\"antz/\\\$slug\")" | grep -q .; then
+    echo "  unexpected git branch invocation:"; return 1
+  fi
+  # The positioning appears only as a plain, flagless switch onto the
+  # marker branch, and it exists (the law this sub-spec changes).
+  switch_lines=$(printf '%s\n' "$git_lines" | grep 'git switch')
+  [ "$(printf '%s\n' "$switch_lines" | grep -c 'git switch')" = "1" ] \
+    || { echo "  git switch appears more than once:"; return 1; }
+  printf '%s\n' "$switch_lines" | grep -q 'git switch "antz/\$slug"' \
+    || { echo "  positioning is not a plain flagless switch: $switch_lines"; return 1; }
+}
+
+# =============================================================================
+# ensure-07: no subcommand ever commits — HEAD and every branch ref hold
+# steady across discover/ensure/state, a refused release, and a successful
+# one.
+# =============================================================================
+test_ensure_07_no_subcommand_commits() {
+  new_repo noc-slug
+  run_flow ensure "$SLUG" >/dev/null
+  mk_change_dir
+  base_refs=$(all_refs)
+  commit_count=$(git -C "$REPO_ROOT" rev-list --count HEAD)
+  base_tree=$(cat "$REPO_ROOT/spdd/changes/$SLUG/01-api.feature")
+  run_flow discover > /dev/null
+  run_flow ensure "$SLUG" > /dev/null
+  run_state_through_flow > /dev/null
+  run_flow release "$SLUG" > /dev/null 2>&1
+  # Refused: the change dir is still present — nothing may change.
+  mv "$REPO_ROOT/spdd/changes/$SLUG" "$REPO_ROOT/spdd/archive-$SLUG"
+  mkdir -p "$REPO_ROOT/spdd/archive/$SLUG"
+  mv "$REPO_ROOT/spdd/archive-$SLUG"/* "$REPO_ROOT/spdd/archive/$SLUG/"
+  rmdir "$REPO_ROOT/spdd/changes/$SLUG" 2>/dev/null || true
+  rmdir "$REPO_ROOT/spdd/changes" 2>/dev/null || true
+  run_flow release "$SLUG" > /dev/null
+  [ "$(git -C "$REPO_ROOT" rev-list --count HEAD)" = "$commit_count" ] \
+    || { echo "  HEAD's commit count grew"; return 1; }
+  [ "$(all_refs)" = "$base_refs" ] \
+    || { echo "  branch refs changed"; return 1; }
+  [ "$(cat "$REPO_ROOT/spdd/archive/$SLUG/01-api.feature")" = "$base_tree" ] \
+    || { echo "  working tree content lost"; return 1; }
+}
+
+# =============================================================================
+# ensure-08 (outline, one test per row): the preflight fail-close is
+# unchanged — every subcommand, both environments.
+# =============================================================================
+test_ensure_08_no_git_discover() {
+  new_repo nogit-slug
+  shellsh=$(command -v sh)
+  out=$(PATH="/nonexistent" "$shellsh" "$SCRIPT" discover 2>/dev/null); st=$?
+  [ "$out" = "state=no_git" ] || { echo "  expected state=no_git, got: $out"; return 1; }
+  [ "$st" -eq 1 ] || { echo "  expected exit 1, got: $st"; return 1; }
+}
+
+test_ensure_08_no_git_ensure() {
+  new_repo nogit-slug
+  shellsh=$(command -v sh)
+  out=$(PATH="/nonexistent" "$shellsh" "$SCRIPT" ensure "$SLUG" 2>/dev/null); st=$?
+  [ "$out" = "state=no_git" ] || { echo "  expected state=no_git, got: $out"; return 1; }
+  [ "$st" -eq 1 ] || { echo "  expected exit 1, got: $st"; return 1; }
+}
+
+test_ensure_08_no_repo_discover() {
+  nonrepo=$(mktemp -d); add_tmp_repo "$nonrepo"
+  out=$(cd "$nonrepo" && sh "$SCRIPT" discover 2>/dev/null); st=$?
+  [ "$out" = "state=no_repo" ] || { echo "  expected state=no_repo, got: $out"; return 1; }
+  [ "$st" -eq 1 ] || { echo "  expected exit 1, got: $st"; return 1; }
+}
+
+test_ensure_08_no_repo_ensure() {
+  nonrepo=$(mktemp -d); add_tmp_repo "$nonrepo"
+  out=$(cd "$nonrepo" && sh "$SCRIPT" ensure no-repo-slug 2>/dev/null); st=$?
+  [ "$out" = "state=no_repo" ] || { echo "  expected state=no_repo, got: $out"; return 1; }
+  [ "$st" -eq 1 ] || { echo "  expected exit 1, got: $st"; return 1; }
+}
+
+# =============================================================================
+# ensure-09: the unborn-repo fail-close is unchanged — no branch, no
+# positioning attempt.
+# =============================================================================
+test_ensure_09_unborn_repo_no_branch() {
   new_repo_no_commit unborn-slug
-  out=$(run_flow ensure "$SLUG")
+  out=$(run_flow ensure "$SLUG"); st=$?
   [ "$out" = "state=no_commits" ] || { echo "  expected state=no_commits, got: $out"; return 1; }
+  [ "$st" -eq 1 ] || { echo "  expected exit 1, got: $st"; return 1; }
   git -C "$REPO_ROOT" show-ref --verify --quiet "refs/heads/antz/$SLUG" \
     && { echo "  branch created despite no commits"; return 1; }
+  [ "$(git -C "$REPO_ROOT" branch --show-current)" != "antz/$SLUG" ] \
+    || { echo "  positioning was attempted"; return 1; }
+}
+
+# =============================================================================
+# ensure-10: when the branch cannot be made to exist (creation fails and it
+# is still absent), ensure fail-closes truthfully — never a false "reused".
+# A plain `git branch antz/<slug>` doesn't fail on a valid HEAD, so the
+# create arm is exercised through a git shim on PATH that exits nonzero on
+# `git branch` while delegating everything else to the real git.
+# =============================================================================
+test_ensure_10_creation_failed_reports_no_branch() {
+  new_repo nobranch-slug
+  shimdir=$(mktemp -d); add_tmp_repo "$shimdir"
+  real_git=$(command -v git)
+  {
+    printf '#!/bin/sh\n'
+    printf 'case "$1" in branch) exit 1;; esac\n'
+    printf 'exec "%s" "$@"\n' "$real_git"
+  } > "$shimdir/git"
+  chmod +x "$shimdir/git"
+  before=$(git -C "$REPO_ROOT" branch --show-current)
+  out=$(cd "$REPO_ROOT" && PATH="$shimdir:$PATH" sh "$SCRIPT" ensure "$SLUG"); st=$?
+  [ "$out" = "state=no_branch" ] || { echo "  expected state=no_branch, got: $out"; return 1; }
+  [ "$st" -eq 1 ] || { echo "  expected exit 1, got: $st"; return 1; }
+  [ "$(git -C "$REPO_ROOT" branch --show-current)" = "$before" ] \
+    || { echo "  session position changed"; return 1; }
+  if git -C "$REPO_ROOT" show-ref --verify --quiet "refs/heads/antz/$SLUG"; then
+    { echo "  branch exists despite the failure"; return 1; }
+  fi
   return 0
 }
 
 # =============================================================================
-# flow-07: state runs the probe verbatim with CHANGE_DIR pointed at the main
-# checkout's spdd/changes/<slug>.
+# ensure-11 (outline, one test per row): the release gate is unchanged.
 # =============================================================================
-test_flow_state_runs_probe() {
-  new_repo probe-slug
-  git -C "$REPO_ROOT" branch -q "antz/$SLUG"
-  mk_change_dir
-  out=$(run_state_through_flow)
-  printf '%s\n' "$out" | grep -qx "working_root=$REPO_ROOT" \
-    || { echo "  missing working_root line in: $out"; return 1; }
-  printf '%s\n' "$out" | grep -q '^open_questions=no$' \
-    || { echo "  probe didn't run against CHANGE_DIR: $out"; return 1; }
-}
-
-# =============================================================================
-# flow-09: state fail-closes with branch=missing when the marker branch
-# doesn't exist.
-# =============================================================================
-test_flow_state_fails_without_branch() {
-  new_repo ghost-slug
-  out=$(run_state_through_flow)
-  [ "$out" = "branch=missing" ] || { echo "  expected branch=missing, got: $out"; return 1; }
-}
-
-# =============================================================================
-# flow-10/prefix: release fail-closes on every gate combination, and never
-# touches anything on any refusal.
-# =============================================================================
-test_flow_release_gate_archive_missing() {
+test_ensure_11_release_refused_archive_missing() {
   new_repo gate-slug
-  git -C "$REPO_ROOT" branch -q "antz/$SLUG"
-  out=$(run_flow release "$SLUG")
+  run_flow ensure "$SLUG" >/dev/null
+  mk_change_dir
+  before_refs=$(all_refs)
+  out=$(run_flow release "$SLUG"); st=$?
   [ "$out" = "gate=refused reason=archive-missing" ] \
     || { echo "  expected archive-missing, got: $out"; return 1; }
+  [ "$st" -eq 1 ] || { echo "  expected exit 1, got: $st"; return 1; }
+  [ "$(all_refs)" = "$before_refs" ] || { echo "  something changed on disk"; return 1; }
+  [ -d "$REPO_ROOT/spdd/changes/$SLUG" ] \
+    || { echo "  change dir altered on a refusal"; return 1; }
 }
 
-test_flow_release_gate_change_still_present() {
+test_ensure_11_release_refused_change_still_present() {
   new_repo gate-slug
-  git -C "$REPO_ROOT" branch -q "antz/$SLUG"
+  run_flow ensure "$SLUG" >/dev/null
   mk_change_dir; mk_archive
-  out=$(run_flow release "$SLUG")
+  out=$(run_flow release "$SLUG"); st=$?
   [ "$out" = "gate=refused reason=change-still-present" ] \
     || { echo "  expected change-still-present, got: $out"; return 1; }
+  [ "$st" -eq 1 ] || { echo "  expected exit 1, got: $st"; return 1; }
+  [ -d "$REPO_ROOT/spdd/changes/$SLUG" ] && [ -f "$REPO_ROOT/spdd/changes/$SLUG/01-api.feature" ] \
+    || { echo "  change dir altered on a refusal"; return 1; }
+  [ -f "$REPO_ROOT/spdd/archive/$SLUG/x.md" ] \
+    || { echo "  archive altered on a refusal"; return 1; }
 }
 
-test_flow_release_gate_branch_missing() {
+test_ensure_11_release_refused_branch_missing() {
   new_repo gate-slug
   mk_archive
-  out=$(run_flow release "$SLUG")
+  out=$(run_flow release "$SLUG"); st=$?
   [ "$out" = "gate=refused reason=branch-missing" ] \
     || { echo "  expected branch-missing, got: $out"; return 1; }
+  [ "$st" -eq 1 ] || { echo "  expected exit 1, got: $st"; return 1; }
+  before=$(ls -R "$REPO_ROOT/spdd")
+  out2=$(run_flow release "$SLUG")
+  [ "$out2" = "$out" ] || { echo "  gate output not stable"; return 1; }
+  [ "$(ls -R "$REPO_ROOT/spdd")" = "$before" ] \
+    || { echo "  nothing may change on a refusal"; return 1; }
 }
 
 # =============================================================================
-# flow-12: release after the gate holds reports the branch and removes
-# nothing, ever.
+# ensure-12: a successful release prints exactly the branch line, removes
+# nothing, and prints no commands for anyone to run.
 # =============================================================================
-test_flow_release_releases_and_keeps_everything() {
+test_ensure_12_release_reports_and_removes_nothing() {
   new_repo rel-slug
-  git -C "$REPO_ROOT" branch -q "antz/$SLUG"
-  mk_archive
-  out=$(run_flow release "$SLUG")
+  run_flow ensure "$SLUG" >/dev/null
+  mk_change_dir
+  mv "$REPO_ROOT/spdd/changes/$SLUG" "$REPO_ROOT/spdd/archive-$SLUG"
+  mkdir -p "$REPO_ROOT/spdd/archive/$SLUG"
+  mv "$REPO_ROOT/spdd/archive-$SLUG"/* "$REPO_ROOT/spdd/archive/$SLUG/"
+  rmdir "$REPO_ROOT/spdd/changes/$SLUG" 2>/dev/null || true
+  rmdir "$REPO_ROOT/spdd/changes" 2>/dev/null || true
+  out=$(run_flow release "$SLUG"); st=$?
   [ "$out" = "released branch=antz/$SLUG" ] \
     || { echo "  expected released branch=..., got: $out"; return 1; }
+  [ "$st" -eq 0 ] || { echo "  expected exit 0, got: $st"; return 1; }
+  printf '%s' "$out" | grep -qE 'git|merge|delete|commit' \
+    && { echo "  stdout carries a command suggestion"; return 1; }
   git -C "$REPO_ROOT" show-ref --verify --quiet "refs/heads/antz/$SLUG" \
     || { echo "  branch didn't survive release"; return 1; }
   [ -d "$REPO_ROOT/spdd/archive/$SLUG" ] \
@@ -277,65 +530,228 @@ test_flow_release_releases_and_keeps_everything() {
 }
 
 # =============================================================================
-# flow-13: no subcommand ever commits — git's HEAD and status hold steady
-# across ensure/state/release.
+# ensure-13: discover is unchanged — nothing when neither exists; exactly one
+# branch line and one on-disk line when both do.
 # =============================================================================
-test_flow_never_commits() {
-  new_repo noc-1-slug
-  mk_change_dir
+test_ensure_13_discover_unchanged() {
+  new_repo fresh-slug
+  out=$(run_flow discover)
+  [ -z "$out" ] || { echo "  expected no candidates, got: $out"; return 1; }
+  # Now both marker branch and change dir exist.
   run_flow ensure "$SLUG" >/dev/null
-  ( cd "$REPO_ROOT" && sh "$SCRIPT" state "$SLUG" "$PROBE_EXTRACT" >/dev/null )
-  run_flow release "$SLUG" >/dev/null 2>&1
-  [ "$(git -C "$REPO_ROOT" rev-list --count HEAD)" = "1" ] \
-    || { echo "  HEAD grew: a commit happened"; return 1; }
-  git -C "$REPO_ROOT" cat-file -e "refs/heads/antz/$SLUG" 2>/dev/null
-  [ "$(git -C "$REPO_ROOT" rev-parse "refs/heads/antz/$SLUG")" = "$(git -C "$REPO_ROOT" rev-parse HEAD)" ] \
-    || { echo "  marker branch moved off HEAD"; return 1; }
+  mk_change_dir
+  out=$(run_flow discover)
+  printf '%s\n' "$out" | grep -qx "candidate=branch slug=$SLUG" \
+    || { echo "  missing candidate=branch in: $out"; return 1; }
+  printf '%s\n' "$out" | grep -qx "candidate=on-disk slug=$SLUG" \
+    || { echo "  missing candidate=on-disk in: $out"; return 1; }
+  [ "$(printf '%s\n' "$out" | grep -c 'candidate=')" = "2" ] \
+    || { echo "  discover printed extra candidates: $out"; return 1; }
 }
 
 # =============================================================================
-# flow-18/19 (ported from the worktree variant's suite): preflight
-# fail-closes discover and ensure when git is absent from the environment
-# (sanitized PATH) or the directory is not a git repository.
+# ensure-14: state is unchanged — it verifies the marker branch, resolves the
+# repo root, and runs the probe verbatim with CHANGE_DIR at the working
+# tree's change dir; branch=missing without the branch.
 # =============================================================================
-test_flow_preflight_no_git() {
-  new_repo nogit-slug
-  SHELLSH=$(command -v sh)
-  out=$(PATH="/nonexistent" "$SHELLSH" "$SCRIPT" discover 2>/dev/null)
-  [ "$out" = "state=no_git" ] || { echo "  expected state=no_git, got: $out"; return 1; }
-  out=$(PATH="/nonexistent" "$SHELLSH" "$SCRIPT" ensure "nogit-slug" 2>/dev/null)
-  [ "$out" = "state=no_git" ] || { echo "  expected state=no_git, got: $out"; return 1; }
+test_ensure_14_state_unchanged() {
+  new_repo probing-slug
+  run_flow ensure "$SLUG" >/dev/null
+  mk_change_dir
+  out=$(run_state_through_flow)
+  printf '%s\n' "$out" | grep -qx "working_root=$REPO_ROOT" \
+    || { echo "  missing working_root line in: $out"; return 1; }
+  printf '%s\n' "$out" | grep -q '^open_questions=no$' \
+    || { echo "  probe didn't run with CHANGE_DIR set: $out"; return 1; }
+  printf '%s\n' "$out" | grep -q '^subspec=01-api.feature ids=' \
+    || { echo "  probe output missing subspec line: $out"; return 1; }
+  # branch=missing fails closed when the marker branch is absent.
+  new_repo ghost-slug
+  out=$(run_state_through_flow); st=$?
+  [ "$out" = "branch=missing" ] || { echo "  expected branch=missing, got: $out"; return 1; }
+  [ "$st" -eq 1 ] || { echo "  expected exit 1, got: $st"; return 1; }
 }
 
-test_flow_preflight_no_repo() {
-  nonrepo=$(mktemp -d)
-  add_tmp_repo "$nonrepo"
-  out=$( cd "$nonrepo" && sh "$SCRIPT" discover 2>/dev/null )
-  [ "$out" = "state=no_repo" ] || { echo "  expected state=no_repo, got: $out"; return 1; }
-  # ensure fail-closes the same way from a non-repo.
-  out=$( cd "$nonrepo" && sh "$SCRIPT" ensure no-repo-slug 2>/dev/null )
-  [ "$out" = "state=no_repo" ] || { echo "  expected state=no_repo, got: $out"; return 1; }
+# =============================================================================
+# orchestrator-01: step 1's ensure instructions document the new state
+# meanings — created/reused imply positioned on antz/<slug> with the work
+# uncommitted on that branch; checkout_refused and no_branch are documented
+# stop-and-report outcomes with a user-controlled resolution; no_commits
+# keeps its meaning.
+# =============================================================================
+test_orchestrator_01_state_meanings() {
+  ok=0
+  require "$PROSE_STEP1" 'state=created' || ok=1
+  require "$PROSE_STEP1" 'state=reused' || ok=1
+  # Both success states are described as having positioned the session.
+  require "$PROSE_STEP1" 'both position the session on branch `antz/<slug>`' || ok=1
+  require "$PROSE_STEP1" "the flow's work now happens on that branch, uncommitted" || ok=1
+  # The refused stop and its user-controlled resolution.
+  require "$PROSE_STEP1" 'state=checkout_refused' || ok=1
+  require "$PROSE_STEP1" 'git refused the positioning because it would overwrite uncommitted changes' || ok=1
+  require "$PROSE_STEP1" 'the user resolves the conflict themselves (e.g. commit or stash) and re-invokes' || ok=1
+  require "$PROSE_STEP1" 'nothing is ever forced' || ok=1
+  # The truthful failed-creation stop, documented the same way.
+  require "$PROSE_STEP1" 'state=no_branch' || ok=1
+  require "$PROSE_STEP1" 'the branch could not be made to exist' || ok=1
+  # The unchanged unborn-repo stop.
+  require "$PROSE_STEP1" 'state=no_commits' || ok=1
+  require "$PROSE_STEP1" 'the repo has no commits yet' || ok=1
+  return $ok
+}
+
+# =============================================================================
+# orchestrator-02: step 5's human follow-up print reflects that the user is
+# already on antz/<slug>, hands review/commit/merge/delete entirely to the
+# user, shows the merge target only as a placeholder, and states the
+# orchestrator never runs them.
+# =============================================================================
+test_orchestrator_02_followups() {
+  ok=0
+  # The user's position and the uncommitted state, visible via git status.
+  require "$PROSE_STEP5" 'sits uncommitted in the working tree' || ok=1
+  require "$PROSE_STEP5" 'the user sees it on branch `antz/<slug>` via `git status`' || ok=1
+  # Committing is the user's whenever/how decision, not one mandated form.
+  require "$PROSE_STEP5" 'whenever and however you prefer' || ok=1
+  refuse "$PROSE_STEP5" 'git add -A && git commit' || ok=1
+  # Merging is the user's whether-and-where decision with a placeholder target.
+  require "$PROSE_STEP5" 'whether and where' || ok=1
+  require "$PROSE_STEP5" 'git switch <integration> && git merge antz/<slug>' || ok=1
+  # Branch deletion is the user's optional cleanup.
+  require "$PROSE_STEP5" 'optional cleanup' || ok=1
+  require "$PROSE_STEP5" 'git branch -d antz/<slug>' || ok=1
+  # The orchestrator never runs them.
+  require "$PROSE_STEP5" 'the orchestrator never runs them' || ok=1
+  return $ok
+}
+
+# =============================================================================
+# orchestrator-03: no concrete integration branch name appears as a merge
+# target anywhere in the prompt; every merge/delete example names only
+# antz/<slug> or a placeholder.
+# =============================================================================
+test_orchestrator_03_no_hardcoded_integration_branch() {
+  ok=0
+  # The placeholder is present; no hardcoded target anywhere in the prompt.
+  require "$ORCHESTRATOR_PROMPT" 'git switch <integration>' || ok=1
+  # "merge" appears in the prose only as the user's own action or the law's
+  # "no merges" — never followed by a concrete branch name. Grep every
+  # merge/branch -d mention and assert none names master/main.
+  if grep -inE '(merge|branch -d)[^`]*`(master|main)`' "$ORCHESTRATOR_PROMPT" | grep -q .; then
+    echo "  a concrete integration branch appears as a merge/delete target"
+    grep -inE '(merge|branch -d)[^`]*`(master|main)`' "$ORCHESTRATOR_PROMPT"
+    ok=1
+  fi
+  if grep -inE '(merge|branch -d)[^a-z/](master|main)\b' "$ORCHESTRATOR_PROMPT" | grep -q .; then
+    echo "  a bare master/main appears as a merge/delete target"
+    grep -inE '(merge|branch -d)[^a-z/](master|main)\b' "$ORCHESTRATOR_PROMPT"
+    ok=1
+  fi
+  return $ok
+}
+
+# =============================================================================
+# orchestrator-04: the law wording — the branch is created AND checked out
+# by ensure (re-positioned on resume), still a base-commit marker with the
+# work uncommitted; the destruction law names the refused checkout; the
+# never-commits law survives verbatim in meaning in both sections; the
+# "What you don't do" bullet confines the orchestrator to the four
+# subcommands with no ad-hoc git.
+# =============================================================================
+test_orchestrator_04_law_wording() {
+  ok=0
+  # The owns section: created AND checked out, re-positioned, marker of the
+  # base commit, work uncommitted.
+  require "$PROSE_OWNS" 'created and checked out by the embedded script'"'"'s `ensure`' || ok=1
+  require "$PROSE_OWNS" 're-positioned onto on resume' || ok=1
+  require "$PROSE_OWNS" 'marker of the commit the flow started from' || ok=1
+  require "$PROSE_OWNS" 'always stays uncommitted in the main checkout'"'"'s working tree' || ok=1
+  # The script header's destruction law, now naming the refused checkout.
+  require "$FLOW_SCRIPT" 'no reset, no merges, no branch deletes, and never a forced or overwriting checkout' || ok=1
+  require "$FLOW_SCRIPT" 'refused, not forced, when it would destroy uncommitted work' || ok=1
+  # Never-commits, in meaning verbatim, in both the law list and the owns section.
+  require "$FLOW_SCRIPT" 'no role ever commits' || ok=1
+  require "$PROSE_OWNS" 'no role ever commits' || ok=1
+  # The four-subcommand boundary with no ad-hoc git.
+  require "$PROSE_DONT" 'four subcommands (`discover`/`ensure`/`state`/`release`)' || ok=1
+  require "$PROSE_DONT" 'no ad-hoc git' || ok=1
+  return $ok
+}
+
+# =============================================================================
+# orchestrator-05: everything not named by the other scenarios is unchanged —
+# the release table keeps its four exact machine lines; discover keeps its
+# candidate= forms; the state table keeps branch=missing; no new subcommand,
+# probe, or process step was added.
+# =============================================================================
+test_orchestrator_05_unchanged_surface() {
+  ok=0
+  # The release table's four exact machine lines.
+  for line in 'gate=refused reason=branch-missing' \
+              'gate=refused reason=archive-missing' \
+              'gate=refused reason=change-still-present' \
+              'released branch='; do
+    require "$PROSE_STEP5" "$line" || ok=1
+  done
+  # discover's candidate forms and the state table's branch=missing.
+  require "$PROSE_STEP1" 'candidate=branch slug=' || ok=1
+  require "$PROSE_STEP1" 'candidate=on-disk slug=' || ok=1
+  require "$ORCHESTRATOR_PROMPT" 'branch=missing' || ok=1
+  # Exactly four subcommands, and still exactly four fenced blocks (the
+  # flow fence, the working-root lines block, the step-5 follow-up print
+  # block, and the probe fence) — eight fence lines, exactly one of them
+  # a ```sh opener.
+  require "$ORCHESTRATOR_PROMPT" 'discover`/`ensure`/`state`/`release`' || ok=1
+  fences=$(grep -cE '^   ```(sh)?$' "$ORCHESTRATOR_PROMPT")
+  [ "$fences" = "8" ] || { echo "  expected 8 fence lines (4 blocks), got: $fences"; ok=1; }
+  shfences=$(grep -c '^   ```sh$' "$ORCHESTRATOR_PROMPT")
+  [ "$shfences" = "1" ] || { echo "  expected exactly 1 probe fence, got: $shfences"; ok=1; }
+  # No new process step: the numbered steps still end at 6.
+  require "$ORCHESTRATOR_PROMPT" '6. On a fresh rejection' || ok=1
+  if grep -qE '^7\. ' "$ORCHESTRATOR_PROMPT"; then
+    echo "  a new process step appeared"; ok=1
+  fi
+  return $ok
 }
 
 # ---- run ----------------------------------------------------------------------
 
-run_test "flow-extracted: the embedded flow script extracts from the prompt" test_flow_extracted
-run_test "flow-01: discover prints nothing with no branches and no change dirs" test_flow_discover_empty
-run_test "flow-02: discover lists marker branches and on-disk change dirs" test_flow_discover_lists
-run_test "flow-03: ensure creates the marker branch at HEAD (state=created)" test_flow_ensure_creates
-run_test "flow-03-bis: ensure never checks anything out" test_flow_ensure_no_checkout
-run_test "flow-04: ensure on an existing marker branch reports state=reused" test_flow_ensure_reused
-run_test "flow-06: ensure fail-closes state=no_commits on an unborn repo" test_flow_ensure_no_commits
-run_test "flow-07: state runs the probe with CHANGE_DIR in the main checkout" test_flow_state_runs_probe
-run_test "flow-09: state fail-closes branch=missing without the marker branch" test_flow_state_fails_without_branch
-run_test "flow-10: release refuses when the archive is missing" test_flow_release_gate_archive_missing
-run_test "flow-11: release refuses when the change dir is still present" test_flow_release_gate_change_still_present
-run_test "flow-11b: release refuses when the marker branch is missing" test_flow_release_gate_branch_missing
-run_test "flow-12: release reports the branch and removes nothing, ever" test_flow_release_releases_and_keeps_everything
-run_test "flow-13: no subcommand ever commits anything" test_flow_never_commits
-run_test "flow-18: preflight fail-closes with state=no_git" test_flow_preflight_no_git
-run_test "flow-19: preflight fail-closes with state=no_repo" test_flow_preflight_no_repo
+run_test "ensure-extracted: the embedded flow script extracts from the prompt" test_ensure_extracted
+run_test "ensure-01: ensure creates the branch at HEAD and positions the session" test_ensure_01_fresh_creates_and_positions
+run_test "ensure-02: uncommitted working-tree work survives the positioning" test_ensure_02_uncommitted_work_survives
+run_test "ensure-03: resume positions onto the existing branch without rewriting it" test_ensure_03_resume_positions_without_rewriting
+run_test "ensure-04: re-running ensure while positioned is a safe no-op" test_ensure_04_ensure_again_is_noop
+run_test "ensure-05: a refused switch stop-state alters nothing" test_ensure_05_refused_switch_stops_clean
+run_test "ensure-06: the script is statically free of destructive mechanisms" test_ensure_06_no_destructive_flags
+run_test "ensure-07: no subcommand ever commits anything" test_ensure_07_no_subcommand_commits
+run_test "ensure-08 git absent: discover fail-closes state=no_git" test_ensure_08_no_git_discover
+run_test "ensure-08 git absent: ensure fail-closes state=no_git" test_ensure_08_no_git_ensure
+run_test "ensure-08 non-repo: discover fail-closes state=no_repo" test_ensure_08_no_repo_discover
+run_test "ensure-08 non-repo: ensure fail-closes state=no_repo" test_ensure_08_no_repo_ensure
+run_test "ensure-09: unborn repo fail-closes state=no_commits" test_ensure_09_unborn_repo_no_branch
+run_test "ensure-10: a failed creation reports state=no_branch, never reused" test_ensure_10_creation_failed_reports_no_branch
+run_test "ensure-11 archive missing: release refuses and removes nothing" test_ensure_11_release_refused_archive_missing
+run_test "ensure-11 change present: release refuses and removes nothing" test_ensure_11_release_refused_change_still_present
+run_test "ensure-11 branch missing: release refuses and removes nothing" test_ensure_11_release_refused_branch_missing
+run_test "ensure-12: release reports the branch and removes nothing, ever" test_ensure_12_release_reports_and_removes_nothing
+run_test "ensure-13: discover is unchanged (empty listing and full listing)" test_ensure_13_discover_unchanged
+run_test "ensure-14: state is unchanged (probe run and branch=missing)" test_ensure_14_state_unchanged
+
+run_test "orchestrator-01: step 1's ensure instructions document the new state meanings" test_orchestrator_01_state_meanings
+run_test "orchestrator-02: step 5's human follow-up print is user-controlled with a placeholder merge target" test_orchestrator_02_followups
+run_test "orchestrator-03: no concrete integration branch name appears as a merge target anywhere" test_orchestrator_03_no_hardcoded_integration_branch
+run_test "orchestrator-04: the law wording reflects the checkout contract" test_orchestrator_04_law_wording
+run_test "orchestrator-05: the unchanged surface stays unchanged" test_orchestrator_05_unchanged_surface
+
+# e2e-orchestrator-01 (spdd/changes/flow-branch-checkout/e2e-qa.feature) is
+# observable only by driving a live antz-orchestrator session end to end —
+# the verifier's Integration Verification, not this unit suite. Explicit
+# stub so the scenario id is accounted for (suite convention: see
+# tests/versioning-rule_test.sh).
+skip_test "e2e-orchestrator-01: a live orchestrated run leaves the user on antz/<slug> and prints user-controlled follow-ups with a placeholder merge target" \
+  "e2e-only: observable only in a live orchestrated run (verifier's e2e-qa.feature)"
 
 echo
-echo "pass=$pass_count fail=$fail_count"
+echo "pass=$pass_count fail=$fail_count skip=$skip_count"
+rm -f "$FLOW_SCRIPT" "$PROSE_STEP1" "$PROSE_STEP5" "$PROSE_OWNS" "$PROSE_DONT"
 [ "$fail_count" -eq 0 ]

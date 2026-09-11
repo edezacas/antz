@@ -9,6 +9,13 @@ changes to the workflow contract (directory layout, access model, etc).
 
 This branch (`master`) carries the branch-marked, no-commit variant of antz; the `worktree` branch carries the worktree-isolated variant (worktree isolation + gated per-role commits), whose `install.sh` binds its remote install to its own ref.
 
+## [4.0.0] - 2026-09-11
+
+### Changed
+- **Breaking (workflow contract): the flow's session now sits on the marker branch.** The orchestrator's embedded `antz-flow.sh` `ensure` no longer stops at creating the marker branch `antz/<slug>` at the flow's base commit — it now also checks the branch out on the fresh path (branch created at the current HEAD and the session positioned on it, `state=created`) and re-positions onto it on the resume path (`state=reused`; the branch ref is never rewritten), so every role's uncommitted work lands on the flow branch instead of whatever branch the session happened to be on. The positioning is refused, never forced: when git would have to overwrite uncommitted changes to switch, `ensure` stops with the machine-readable `state=checkout_refused` (exit 1) — nothing is ever forced or altered (no `--force`, no `-B`, no resets, no deletes), and the user resolves the conflict themselves. The never-commits law is fully intact: no role ever commits anything on any branch, and the marker branch still points at the commit the flow started from forever; a failed creation reports the truthful `state=no_branch`, never a false `state=reused`.
+- **Breaking (workflow contract): the human follow-ups are the user's own decisions.** After an approved Merge & Archive and `release`, the user is already on `antz/<slug>` (ensure positioned the session there) and sees the pending files in `git status`: they review and commit whenever and how they prefer, then themselves decide whether and where to merge (e.g. `git switch <integration> && git merge antz/<slug>` — `<integration>` is a placeholder; the target branch is the user's to name — the orchestrator never hardcodes an integration branch name) and may delete the branch. The orchestrator never runs the follow-ups, never merges, and never resets a branch. The release gate, `discover`, and `state` keep their exact contracts.
+- tests: `tests/antz-flow_test.sh`'s no-checkout assertion is inverted into a checkout/positioning assertion (fresh create and positioning, resume re-positioning, the refused stop, the truthful `state=no_branch`), with the never-commits and no-destruction guarantees still tested.
+
 ## [3.0.0] - 2026-09-10
 
 ### Changed

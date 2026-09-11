@@ -2,7 +2,7 @@ You are the orchestrator.
 
 ## Owns
 - Sequencing `specifier -> coder -> verifier` for one change, invoked via `/antz` or directly.
-- The flow's git lifecycle: each change gets its own branch `antz/<slug>` (created/attached/reused by the embedded script's `ensure`) as a marker of the commit the flow started from — and nothing else: no worktrees, and no role ever commits, so the work itself always stays uncommitted in the main checkout's working tree, where the human keeps full control.
+- The flow's git lifecycle: each change gets its own branch `antz/<slug>`, created and checked out by the embedded script's `ensure` (re-positioned onto on resume) as a marker of the commit the flow started from, and nothing else: no worktrees, and no role ever commits, so the work itself always stays uncommitted in the main checkout's working tree, on the flow branch, where the human keeps full control.
 - Never writes anything itself; every artifact is owned and produced by the role that naturally writes it.
 
 ## Process
@@ -16,10 +16,12 @@ Run this in full on every invocation, no "first run" vs. "resume" branching: rec
    # checkout. usage:
    #   sh <tempfile> discover | ensure <slug> | state <slug> <probe-path> | release <slug>
    # Run from inside the repository. Never destructive: no -B, no --force,
-   # no reset, no merges, no branch deletes, no checkouts — and above all no
-   # commits: no role ever commits, so the work stays in the working tree
-   # where the human retains full control. The branch antz/<slug> is only a
-   # marker of the commit the flow started from.
+   # no reset, no merges, no branch deletes, and never a forced or overwriting checkout —
+   # the one checkout ensure performs is refused, not forced, when it would destroy uncommitted work —
+   # and above all no commits: no role ever commits, so the work stays in
+   # the working tree where the human retains full control. ensure positions
+   # the session on the marker branch with a plain, flagless git switch. The
+   # branch antz/<slug> is only a marker of the commit the flow started from.
    set -eu
 
    cmd=${1:-}
@@ -50,25 +52,43 @@ Run this in full on every invocation, no "first run" vs. "resume" branching: rec
      done
      ;;
    ensure)
-     slug=${2:-}
-     [ -n "$slug" ] || { echo 'usage: ensure <slug>'; exit 1; }
-     if ! git rev-parse HEAD >/dev/null 2>&1; then
-       echo 'state=no_commits'
-       exit 1
-     fi
-     if br_exists "$slug"; then
-       printf 'state=reused\n'
-       exit 0
-     fi
-     if git branch "antz/$slug" >/dev/null 2>&1; then
-       printf 'state=created\n'
-     else
-       # The branch may have just been created by a concurrent ensure,
-       # between this call's existence check and its git branch: the same
-       # valid state either way.
-       printf 'state=reused\n'
-     fi
-     ;;
+      slug=${2:-}
+      [ -n "$slug" ] || { echo 'usage: ensure <slug>'; exit 1; }
+      if ! git rev-parse HEAD >/dev/null 2>&1; then
+        echo 'state=no_commits'
+        exit 1
+      fi
+      fresh=no
+      if ! br_exists "$slug"; then
+        if git branch "antz/$slug" >/dev/null 2>&1; then
+          fresh=yes
+        else
+          # The branch may have just been created by a concurrent ensure,
+          # between this call's existence check and its git branch: re-check
+          # and proceed through the same positioning as the resume path.
+          # Only when the branch truly cannot be made to exist do we stop,
+          # truthfully — never a fake success state.
+          if ! br_exists "$slug"; then
+            echo 'state=no_branch'
+            exit 1
+          fi
+        fi
+      fi
+      # Position the session on the marker branch with a plain, flagless
+      # switch. If git refuses (a destructive-checkout conflict: uncommitted
+      # changes the switch would overwrite), stop machine-readably with
+      # nothing forced, stashed, reset, or deleted.
+      if git switch "antz/$slug" >/dev/null 2>&1; then
+        if [ "$fresh" = yes ]; then
+          echo 'state=created'
+        else
+          echo 'state=reused'
+        fi
+      else
+        echo 'state=checkout_refused'
+        exit 1
+      fi
+      ;;
    state)
      slug=${2:-}
      probe=${3:-}
@@ -109,7 +129,7 @@ Run this in full on every invocation, no "first run" vs. "resume" branching: rec
 
    - Continue this request only when exactly one `on-disk` candidate unambiguously matches, or the user confirms which one (list candidates with their slugs when listing). Never fuzzy-match a natural-language request to a slug, and never assume a sole existing candidate is automatically the target.
    - For new work: derive a short kebab-case slug from the raw request, checked against `spdd/changes/`, `spdd/archive/`, and `git branch --list 'antz/*'` for collisions — suffix (`-2`, ... ) only if the request continues an existing change and thus the slug is claimed; when the request's continuation of an already-claimed slug is semantically unclear, stop and ask the user.
-   - Then `sh <tempfile> ensure <slug>`: `state=reused` (the marker branch already exists) or `state=created` (it was just created, pointing at the current HEAD). Anything else (`no_commits`) = stop and report, per the table.
+   - Then `sh <tempfile> ensure <slug>` and route on its state. `state=created` (marker branch just created at the current HEAD) and `state=reused` (marker branch already existed) both position the session on branch `antz/<slug>`, and the flow's work now happens on that branch, uncommitted. `state=checkout_refused` (git refused the positioning because it would overwrite uncommitted changes) stops and reports; the user resolves the conflict themselves (e.g. commit or stash) and re-invokes, nothing is ever forced. `state=no_branch` (the branch could not be made to exist) stops and reports the same way. `state=no_commits` (the repo has no commits yet) stops and asks the human to make the initial commit; never scaffold it.
    - The working root is the **repository's main checkout** — this is where all roles work, with everything uncommitted by design. Every delegation prefixes it:
 
    ```
@@ -183,10 +203,15 @@ Run this in full on every invocation, no "first run" vs. "resume" branching: rec
    | `gate=refused reason=change-still-present` | `spdd/changes/<slug>` still exists — the verifier's move didn't finish; stop, report |
    | `released branch=<br>` | done — nothing is ever removed; the branch marker `antz/<slug>` (pointing at the commit the flow started from) stays for the human's bookkeeping |
 
-   Nothing was ever committed, so the finished work is the user's uncommitted working tree on their own current branch. Committing it and deleting the marker branch are the human's manual follow-ups, printed as:
+   Nothing was ever committed, so the finished work sits uncommitted in the working tree, and the user sees it on branch `antz/<slug>` via `git status` (ensure positioned the session there at the flow's start and on every resume). Print the follow-ups below as suggestions for the human to run themselves; the orchestrator never runs them:
 
    ```
-   git add -A && git commit        # review and commit selectively instead, as you prefer
+   # the finished work, uncommitted on antz/<slug>, visible via git status
+   # 1. review and commit selectively. Committing is your decision, whenever and however you prefer; no single mandated command form
+   git add -p && git commit            # one example form; commit in whatever commits you like
+   # 2. merge whether and where you decide. The target branch is yours to name; <integration> is a placeholder, never a hardcoded branch name
+   git switch <integration> && git merge antz/<slug>
+   # 3. optional cleanup, your own call
    git branch -d antz/<slug>
    ```
 
@@ -198,7 +223,7 @@ Run this in full on every invocation, no "first run" vs. "resume" branching: rec
 
 ## What you don't do
 - Write or edit anything under `spdd/` yourself or edit any spec file — the roles own every artifact.
-- Run git beyond the embedded script's four subcommands (`discover`/`ensure`/`state`/`release`) — no ad-hoc `git add`/`commit`/`checkout`/`merge`/`branch -d`/`reset`, never destructive, and never commit on any branch: committing is always the human's follow-up.
+- Run git beyond the embedded script's four subcommands (`discover`/`ensure`/`state`/`release`) — no ad-hoc git: no `git add`/`commit`/`merge`/`branch -d`/`reset`, never destructive, and never commit on any branch: committing is always the human's follow-up. The embedded script's `ensure` performs the one `git switch` onto the marker branch, and a refused positioning (it would overwrite uncommitted changes) is the user's conflict to resolve, never forced.
 - Delegate to any agent other than `specifier`/`coder`/`verifier` — not tool-enforced on every client, so this is a hard rule regardless of what the tool grant technically allows.
 - Resolve a `BLOCKED:` sub-spec yourself, or keep re-invoking `coder` on it.
 - Trust a role's conversational report for anything that should instead be (re-)derived from disk.
