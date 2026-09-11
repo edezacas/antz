@@ -148,6 +148,11 @@ stay byte-for-byte unchanged.
   ### Invariants
   - The "## Skills" sections are additive: no existing bullet of either
     prompt is reworded or removed.
+    **Partially superseded** by change `orchestrator-fast-path`
+    (closingblock-05): the specifier prompt's historical byte-for-byte pin
+    (prompts-05) was lifted for exactly one additive edit — the closing-block
+    requirement added to its output/report section; no existing bullet was
+    reworded or removed, and the additive-shape guard enforces the shape.
   - The Tool-grant asymmetry is handled entirely by install.sh's render,
     never by client-specific prompt text.
   - TDD/verification flow, path-ownership rules, Working Root conventions
@@ -226,6 +231,13 @@ stay byte-for-byte unchanged.
     executed; command-body templating hazards (no dollar-digit / no
     $ARGUMENTS inside install.sh-rendered command bodies) do not extend to
     agent-file snippets, as install.sh's set-model script documents.
+    **Superseded in part** by change `orchestrator-fast-path`
+    (scriptsource-01..03, renderinject-01..03): the three scripts — including
+    antz-skills.sh — now live as source files under `scripts/orchestration/`,
+    the prompt's fences carry `# antz-include:` marker lines, and install.sh
+    injects the file content into the rendered `antz-orchestrator` body for
+    both clients. Still true: POSIX sh, temp-file executed at runtime,
+    nothing installed standalone.
   - The orchestrator never reads or follows a SKILL.md's instructions
     itself; nothing in this layer adds tools to its grant (install.sh's
     orchestrateonly mapping stays unchanged).
@@ -354,7 +366,12 @@ stay byte-for-byte unchanged.
     only frontmatter name/description data is parsed; skill bodies are
     never matched.
   - The snippet remains a temp-file-executed POSIX sh snippet embedded in
-    the prompt — no installed CLI, hook, or plugin.
+    the prompt — no installed CLI, hook, or plugin. **Superseded** by change
+    `orchestrator-fast-path` (scriptsource-01..03, renderinject-01..03): the
+    snippet is now the source file `scripts/orchestration/antz-skills.sh`,
+    carried into the rendered orchestrator body by install.sh's include-marker
+    injection; the temp-file runtime contract and the no-installed-CLI rule
+    are unchanged.
   - No role commits anything; the human's follow-ups are unchanged.
   - YAML coverage beyond plain single-line and folded (">" / ">-")
     descriptions (literal "|", quoted multi-line, anchors) is out of scope:
@@ -736,3 +753,25 @@ SKILL.md exists and reads in full at ~/.agents/skills/); their live-session
   e2e-01), and the fix is tracked by the patch bump 4.2.1 (bump421-01..02).
   The caution is closed; the description-keyed contract (orchestrator-02)
   and the implementation now agree.
+
+## Supersession record — change `orchestrator-fast-path` (merged 2026-09-11)
+
+- **The antz-skills.sh snippet is now a source file** (scriptsource-01..03,
+  renderinject-01..03, merged into `spdd/specs/flow-branch.md`): the derivation
+  runs from `scripts/orchestration/antz-skills.sh`, injected into the rendered
+  `antz-orchestrator` body by install.sh's include-marker injection for both
+  clients. The output contract (skill= lines, none-matched line, cap of five,
+  tie-break, description-keyed matching, block-scalar support) is unchanged —
+  the file is a byte-equal dedent of the former fenced snippet, and the suite
+  runs it directly (testharness-03). The "extracted marker-to-fence" wording in
+  the descmatch Background above describes the pre-change extraction affordance.
+- **descmatch-05's additive-vs-HEAD guard re-scoped** (testharness-03): removed
+  lines are now permitted only inside any of the three script fenced bodies
+  (each must carry exactly its `# antz-include:` marker line naming an existing
+  file); any removal outside them still fails the guard. The suite enforces
+  this in `tests/orchestrator-skills-block_test.sh`.
+- **prompts-05's specifier byte-for-byte pin lifted** (closingblock-05): the
+  specifier prompt gains exactly one additive bullet (the closing-block
+  requirement in its report section); no existing bullet reworded or removed;
+  enforced by the additive-shape guard in `tests/skills-activation-prompts_test.sh`
+  with the retirement-note convention.

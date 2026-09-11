@@ -11,111 +11,7 @@ Run this in full on every invocation, no "first run" vs. "resume" branching: rec
 1. **Derive the slug and resolve the working root.** Save the script below to a temp file and run `sh <tempfile> discover` first — candidates for existing-but-resumable changes come only from what git and the disk list mechanically (`git branch --list 'antz/*'` and the `spdd/changes/` directories of the main checkout), never from any role's conversational report. Since nothing is ever committed, a change's resumable state lives in the working tree, not in any branch's tree.
 
    ```
-   #!/bin/sh
-   # antz-flow.sh — git plumbing for one antz flow in the repo's main
-   # checkout. usage:
-   #   sh <tempfile> discover | ensure <slug> | state <slug> <probe-path> | release <slug>
-   # Run from inside the repository. Never destructive: no -B, no --force,
-   # no reset, no merges, no branch deletes, and never a forced or overwriting checkout —
-   # the one checkout ensure performs is refused, not forced, when it would destroy uncommitted work —
-   # and above all no commits: no role ever commits, so the work stays in
-   # the working tree where the human retains full control. ensure positions
-   # the session on the marker branch with a plain, flagless git switch. The
-   # branch antz/<slug> is only a marker of the commit the flow started from.
-   set -eu
-
-   cmd=${1:-}
-   [ -n "$cmd" ] || { echo 'usage: sh <tempfile> discover | ensure <slug> | state <slug> <probe-path> | release <slug>'; exit 1; }
-
-   # Preflight: the flow needs git on PATH and a git repository at or above
-   # the caller's directory. Both are stop-and-report states with their own
-   # machine line; there is no unbranched fallback mode.
-   command -v git >/dev/null 2>&1 || { echo 'state=no_git'; exit 1; }
-   git rev-parse --show-toplevel >/dev/null 2>&1 || { echo 'state=no_repo'; exit 1; }
-
-   root=$(git rev-parse --show-toplevel)
-
-   br_exists() { git show-ref --verify --quiet "refs/heads/antz/$1"; }
-
-   case "$cmd" in
-   discover)
-     # Branch markers for past/ongoing flows, then the working tree's own
-     # change state — the only place resumable work can live, since a
-     # branch's tree is always identical to the flow's base commit (nothing
-     # is ever committed onto it).
-     git branch --list 'antz/*' | sed 's/^[*+ ]*//' | grep '^antz/' | while read -r br; do
-       printf 'candidate=branch slug=%s\n' "${br#antz/}"
-     done
-     for d in "$root/spdd/changes"/*/; do
-       [ -d "$d" ] || continue
-       printf 'candidate=on-disk slug=%s\n' "$(basename "$d")"
-     done
-     ;;
-   ensure)
-      slug=${2:-}
-      [ -n "$slug" ] || { echo 'usage: ensure <slug>'; exit 1; }
-      if ! git rev-parse HEAD >/dev/null 2>&1; then
-        echo 'state=no_commits'
-        exit 1
-      fi
-      fresh=no
-      if ! br_exists "$slug"; then
-        if git branch "antz/$slug" >/dev/null 2>&1; then
-          fresh=yes
-        else
-          # The branch may have just been created by a concurrent ensure,
-          # between this call's existence check and its git branch: re-check
-          # and proceed through the same positioning as the resume path.
-          # Only when the branch truly cannot be made to exist do we stop,
-          # truthfully — never a fake success state.
-          if ! br_exists "$slug"; then
-            echo 'state=no_branch'
-            exit 1
-          fi
-        fi
-      fi
-      # Position the session on the marker branch with a plain, flagless
-      # switch. If git refuses (a destructive-checkout conflict: uncommitted
-      # changes the switch would overwrite), stop machine-readably with
-      # nothing forced, stashed, reset, or deleted.
-      if git switch "antz/$slug" >/dev/null 2>&1; then
-        if [ "$fresh" = yes ]; then
-          echo 'state=created'
-        else
-          echo 'state=reused'
-        fi
-      else
-        echo 'state=checkout_refused'
-        exit 1
-      fi
-      ;;
-   state)
-     slug=${2:-}
-     probe=${3:-}
-     [ -n "$slug" ] && [ -n "$probe" ] || { echo 'usage: state <slug> <probe-path>'; exit 1; }
-     [ -f "$probe" ] || { echo 'probe file missing'; exit 1; }
-     if ! br_exists "$slug"; then
-       echo 'branch=missing'
-       exit 1
-     fi
-     printf 'working_root=%s\n' "$root"
-     CHANGE_DIR="$root/spdd/changes/$slug" sh "$probe"
-     ;;
-   release)
-     slug=${2:-}
-     [ -n "$slug" ] || { echo 'usage: release <slug>'; exit 1; }
-     br_exists "$slug" || { echo 'gate=refused reason=branch-missing'; exit 1; }
-     [ -d "$root/spdd/archive/$slug" ] || { echo 'gate=refused reason=archive-missing'; exit 1; }
-     [ ! -d "$root/spdd/changes/$slug" ] || { echo 'gate=refused reason=change-still-present'; exit 1; }
-     # Nothing is ever removed — no worktree exists and nothing was ever
-     # committed. The branch marker stays for the human's bookkeeping.
-     printf 'released branch=antz/%s\n' "$slug"
-     ;;
-   *)
-     echo "unknown command: $cmd"
-     exit 1
-     ;;
-   esac
+   # antz-include: scripts/orchestration/antz-flow.sh
    ```
 
    | discover output | Meaning / action |
@@ -157,124 +53,13 @@ Run this in full on every invocation, no "first run" vs. "resume" branching: rec
    - The derivation uses this snippet (save to a third temp file, run as shown above) — the same temp-file-executed POSIX sh convention as `antz-flow.sh` and the status probe, never a new installed command, CLI, hook, or plugin. It lists paths and descriptions only: it never reads or follows a SKILL.md's instructions, and it writes nothing to disk.
 
    ```
-   #!/bin/sh
-   # antz-skills.sh — derive one delegation's "## Skills to load before work"
-   # listing from disk, statelessly, at delegation time. Nothing is written:
-   # no registry, no cache — derive it fresh for every delegation. usage:
-   #   sh <tempfile> <working-root> <match keyword> [<match keyword> ...]
-   # Prints at most five lines
-   #   skill=<name> path=<absolute SKILL.md path> matched=<kw,kw,...>
-   # (best match first, alphabetical-by-name tie-break) or, when nothing
-   # matches or no skills directory exists, exactly one line:
-   #   Skills: none matched
-   set -eu
-
-   root=${1:-}
-   [ -n "$root" ] || { echo 'usage: antz-skills.sh <working-root> <keyword>...'; exit 1; }
-   lc() { tr '[:upper:]' '[:lower:]'; }
-   LC_ALL=C
-   export LC_ALL
-
-   res_list=""
-   seen_names=""
-
-   for base in "$root/.agents" "$root/.claude" "$root/.opencode" \
-      "$HOME/.agents" "$HOME/.claude" "$HOME/.config/opencode"; do
-    base="$base/skills"
-    [ -d "$base" ] || continue
-    for m in "$base"/*; do
-      [ -d "$m" ] || continue
-      [ -f "$m/SKILL.md" ] || continue
-      fm=$(awk '
-        NR == 1 && /^---[[:space:]]*$/ { fm = 1; next }
-        fm && /^---[[:space:]]*$/ { exit }
-        fm { print }
-      ' "$m/SKILL.md")
-      nm=$(printf '%s\n' "$fm" | awk '/^[Nn]ame:/ { sub(/^[Nn]ame:[[:space:]]*/, ""); print; exit }')
-      if [ -z "$nm" ]; then nm=$(basename "$m"); fi
-      case "$nm" in *'|'*) continue ;; esac
-      case "$seen_names" in *"|$nm|"*) continue ;; esac
-      # Matching text: the description field's content only -- a plain
-      # single-line value, or a folded ('>' / '>-') block scalar with its
-      # indented continuation lines accumulated until the next top-level
-      # key or the end of the frontmatter. The name, license, metadata,
-      # and the skill body below the '---' fence are never matched.
-      desc=$(printf '%s\n' "$fm" | awk '
-        seen { next }
-        /^[Dd]escription:/ {
-          sub(/^[Dd]escription:[[:space:]]*/, "")
-          if ($0 ~ /^[>|][0-9+-]*[[:space:]]*$/) { block = 1; next }
-          print
-          seen = 1
-          next
-        }
-        block && /^[[:space:]]/ { sub(/^[[:space:]]+/, ""); print; next }
-        block && /^[[:space:]]*$/ { next }
-        block { seen = 1 }
-      ')
-      desc_l=$(printf '%s\n' "$desc" | lc)
-      score=0
-      reason=""
-      for kw in "$@"; do
-        kw=$(printf '%s' "$kw" | lc)
-        case "$kw" in '') continue ;; esac
-        case "$desc_l" in
-          *"$kw"*) score=$((score + 1)); reason="$reason,$kw" ;;
-        esac
-      done
-      [ "$score" -gt 0 ] || continue
-      abs=$(cd "$m" && pwd)
-      seen_names="$seen_names|$nm|"
-      res_list="$res_list$nm|$score|$abs/SKILL.md|${reason#,}
-   "
-    done
-  done
-
-   if [ -z "$res_list" ]; then
-     echo 'Skills: none matched'
-     exit 0
-   fi
-   chosen=$(printf '%s\n' "$res_list" | sort -t'|' -k2,2nr -k1,1 | head -n 5)
-   while IFS='|' read -r nm score path reason; do
-     [ -n "$nm" ] || continue
-     printf 'skill=%s path=%s matched=%s\n' "$nm" "$path" "$reason"
-   done <<EOF_TOP
-   $chosen
-   EOF_TOP
+   # antz-include: scripts/orchestration/antz-skills.sh
    ```
 
 2. **Probe disk state.** Save the probe script below to a second temp file and run `sh <flow-tempfile> state <slug> <probe-tempfile>`: the `state` subcommand verifies the marker branch exists, resolves the repo root, and runs the probe with `CHANGE_DIR` pointed at the working root's `spdd/changes/<slug>`. Trust only its output for the facts below — never a role's conversational report.
 
    ```sh
-   #!/bin/sh
-   set -eu
-
-   : "${CHANGE_DIR:?CHANGE_DIR must be set to the spdd/changes/<slug> path}"
-
-   if [ ! -d "$CHANGE_DIR" ]; then
-     echo "change_dir=missing"
-     exit 1
-   fi
-
-   if [ -f "$CHANGE_DIR/OPEN_QUESTIONS.md" ]; then
-     echo "open_questions=yes"
-     exit 0
-   fi
-   echo "open_questions=no"
-
-   rejected_count=0
-   if [ -f "$CHANGE_DIR/REJECTED.md" ]; then
-     rejected_count=$(grep -c '^## Rejection [0-9][0-9]*[[:space:]]*$' "$CHANGE_DIR/REJECTED.md" || true)
-   fi
-   echo "rejected_count=$rejected_count"
-
-   for f in "$CHANGE_DIR"/[0-9][0-9]-*.feature; do
-     [ -e "$f" ] || continue
-     ids=$(awk '/^[[:space:]]*#/ { if (buf == "") first = $0; buf = buf $0 "\n"; next }
-                /^[[:space:]]*Scenario([[:space:]]+Outline)?:/ { print first }
-                { buf = ""; first = "" }' "$f" | grep -oE '[A-Za-z][A-Za-z0-9_-]*-[0-9]+' | sort -u | tr '\n' ',' | sed 's/,$//')
-     printf 'subspec=%s ids=%s\n' "$(basename "$f")" "$ids"
-   done
+   # antz-include: scripts/orchestration/antz-probe.sh
    ```
 
    | Output | Meaning |
@@ -284,15 +69,16 @@ Run this in full on every invocation, no "first run" vs. "resume" branching: rec
    | `open_questions=yes` | `OPEN_QUESTIONS.md` exists. Stop, surface it to the user, don't resolve it. |
    | `open_questions=no` | proceed to the rest of the output |
    | `rejected_count=N` | entries in `REJECTED.md` (0 if absent) — routes step 4 |
-   | `subspec=<file> ids=<id,id,...>` | one line per sub-spec, in filename (dependency) order, with its declared scenario ids (from the first line of the comment tag immediately above each `Scenario:`/`Scenario Outline:` — continuation lines are description, not ids) |
+   | `subspec=<file> ids=<id,id,...> receipt=<file|missing> covered=<n>/<N> complete=<yes|no> class=<done|blocked|in_progress>` | one line per sub-spec, in filename (dependency) order, with its declared scenario ids (from the first line of the comment tag immediately above each `Scenario:`/`Scenario Outline:` — continuation lines are description, not ids) and its receipt classification fields, computed mechanically from the coder's `NN-<feature>.result` receipt — `covered=` counts declared ids present in the receipt out of the declared count, `complete=yes` requires the receipt to exist with exactly one non-empty `test_command=` line and exactly the declared id set, and `class=` applies the mapping (any `result=blocked` line → `blocked`, checked first regardless of coverage; else complete with all results green/ordinary-skip → `done`; else `in_progress`) |
 
-3. **Classify each sub-spec**, in the printed order, all runs inside the working root (`cd '<working-root>'` before anything). Discover the unit-suite's run command the way any contributor would (`package.json` `test` script, a `Makefile` `test` target, the language's standard convention); if genuinely ambiguous, ask the user once rather than guessing. If the suite needs host-project dependencies that aren't installed, install them first (inside the working root), then run the suite. Run it, then classify each sub-spec from its `ids`: presence alone isn't enough — the actual run result resolves each id into red vs. green/skip.
+3. **Classify each sub-spec**, in the printed order, all inside the working root (`cd '<working-root>'` before anything). Classification is file reading: each `subspec=` line's receipt fields (`receipt=`, `covered=`, `complete=`, `class=`) are authoritative, computed mechanically by the probe from the coder's receipt — the unit suite is never run for classification of a well-formed receipt, and never as a pre-verifier gate (the single exception is the doubtful-receipt bullet below).
    - An empty `ids` list can't be classified at all — the sub-spec's scenarios aren't tagged per the specifier's convention. Stop and ask the user; never treat it as vacuously `done`.
-   - Any id backed by a skip reasoned `BLOCKED: <why>` (plain colon) — distinct from an ordinary "not unit-testable" skip — makes the sub-spec `blocked`. Stop at the first one found: relay the reason and ask the user to route it to `specifier`, before looking at any other sub-spec.
-   - Otherwise, any id not yet green or ordinary-skip makes it `in_progress`: delegate to a fresh `coder` session (one session per sub-spec), carrying the Working Root lines. These coder sessions run **sequentially, never in parallel**: they edit the same working tree, so a concurrent pair's interleaved edits would corrupt each other's files and make both sessions' reports unreliable.
-   - All ids green or ordinary-skip makes it `done`.
+   - `class=blocked` — any `result=blocked` receipt line, checked first regardless of coverage (a partial receipt with a blocked id is blocked, never in_progress). Stop at the first one found: relay its `BLOCKED:` reason and ask the user to route it to `specifier`, before looking at any other sub-spec.
+   - `class=done` — `complete=yes` with every id result green or ordinary-skip: move on to the next sub-spec.
+   - `class=in_progress` with `complete=yes` — a well-formed receipt whose outcomes aren't done/blocked: delegate to a fresh `coder` session (one session per sub-spec), carrying the Working Root lines. These coder sessions run **sequentially, never in parallel**: they edit the same working tree, so a concurrent pair's interleaved edits would corrupt each other's files and make both sessions' reports unreliable.
+   - `class=in_progress` with `complete=no` — the doubtful receipt (missing, incomplete, or mismatched): re-run the unit suite once, for that doubtful sub-spec only — using the receipt's `test_command=` value when the receipt carries one, else discovering the command the way any contributor would (`package.json` `test` script, a `Makefile` `test` target, the language's standard convention; if genuinely ambiguous, ask the user once rather than guessing; if the suite needs host-project dependencies that aren't installed, install them first inside the working root, then run). Classify that sub-spec from the actual run result — all green/ordinary-skip → done; any `BLOCKED:` skip → blocked; any red → in_progress, delegating a fresh `coder` session — and report the receipt doubt in your report. Never write, fix, or fabricate the receipt yourself: the receipt stays the coder's artifact, even when wrong.
 
-4. Once every sub-spec is `done`, route on `rejected_count`:
+4. Once every sub-spec is `done`, route on `rejected_count` — without running the unit suite at all: classification came from receipts, and there is no "final gate" re-test; the verifier's own e2e Integration Verification suite remains the independent gate:
 
    | `rejected_count` | Action |
    |---|---|
@@ -323,9 +109,15 @@ Run this in full on every invocation, no "first run" vs. "resume" branching: rec
 
 6. On a fresh rejection (this invocation's `verifier` call just wrote a new entry): loop back to step 2 rather than re-reading state from memory — the freshly written entry is picked up correctly on the next pass.
 
+**Session guards — delegation law for one invocation.** Two guards bind every delegation decision within one orchestrator invocation. They are prompt-level law, with the same standing as the never-delegate-outside-the-three-roles rule: not tool-enforced on every client, binding regardless of what the tool grant technically allows. They add constraints only — they never re-route an existing outcome or change a step's meaning.
+
+- **Dedup.** Within one invocation, the same (sub-spec, role) pair is never delegated twice: once a pair has been delegated, later flow steps route by the existing state machine — fresh classification from disk (steps 2–3), the bounded retry (step 4), the stops — and never by re-delegating that pair. The mechanism is the session's own account of the delegations it has already made in this invocation; nothing is written to disk for this (no delegation ledger under `spdd/`), and a later orchestrator invocation starts with a clean slate — resume is a fresh session, so the same pair may be delegated again there. The single carve-out is step 4's bounded-retry relay: relaying each attributable blocker to the `coder` session for the sub-spec it names is the one permitted second delegation of a pair, still bounded by `REJECTED.md` (at most one relay per pair per entry; a second entry stops the flow for good).
+- **Latch.** After any stop-and-report outcome, the session performs no further delegation of any kind: it reports and ends instead, and resumption is always a fresh invocation. The stop outcomes include at least: `open_questions=yes`; the flow script's machine-line stops (`state=no_git`, `state=no_repo`, `state=no_commits`, `state=checkout_refused`, `state=no_branch`, `branch=missing`, `change_dir=missing`, `gate=refused reason=...`); a `BLOCKED:`-reasoned sub-spec found in classification; `rejected_count=2`; a non-attributable blocker in a rejected entry; and a slug-ambiguity stop (no unambiguous on-disk candidate). The latch covers delegation only — the orchestrator's own read-only probing (re-running the flow/probe scripts) is unchanged, since state reconstruction from disk is every invocation's starting duty.
+
 ## Report Format
 - State which role ran, its verdict/output, and what happens next.
 - On any stop, state exactly why and what the user needs to do to resume — nothing needs to happen for state to survive, since it's already on disk (the working tree's change directory, plus the marker branch). A stop for non-attributable blockers must name the manual `verifier` invocation as the resume action, including the Working Root for the human to pass it.
+- End your report with a closing block of exactly three consecutive lines — `status=<value>`, `ids=<id,id,...>`, `results=<value>` — grep-able, short, deterministic, filled as `status=<value>` (`delegated-specifier`, `delegated-coder`, `delegated-verifier`, `stopped`, `released`, or `waiting-user`), `ids=<id,id,...>` carrying the ids from the probe, and `results=<value>` holding comma-joined `<subspec-file>=<done|blocked|in_progress>` per sub-spec, from the probe's class fields. The block is a mirror only: no routing, count, or decision ever derives from it — your routing already ran on disk state — and wherever a disk receipt exists, the receipt is the authority over the block's mirrored values. It is never an input to any routing state or count.
 
 ## What you don't do
 - Write or edit anything under `spdd/` yourself or edit any spec file — the roles own every artifact.

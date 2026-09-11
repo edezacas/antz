@@ -18,7 +18,7 @@
 # This script renders those into each client's native frontmatter format and
 # writes them under that client's global agents directory.
 #
-# VERSION + CHANGELOG.md track changes to agents/prompts/ and agents/meta/.
+# VERSION + CHANGELOG.md track changes to agents/prompts/, agents/meta/, and install.sh.
 # Each installed file's marker comment embeds the VERSION it was generated
 # from, so re-running this script can detect an update and print the
 # CHANGELOG.md entries the installed copy is missing.
@@ -92,6 +92,58 @@ fetch_file() {
   else
     curl -fsSL "$RAW_BASE/$rel" || { echo "Failed to fetch: $RAW_BASE/$rel" >&2; exit 1; }
   fi
+}
+
+inject_includes() {
+  # $1 = prompt body. Substitutes every "# antz-include: <relpath>" marker
+  # line with the verbatim content of the named file (fetched through
+  # fetch_file, so both the local-checkout read and the curl | sh fetch apply),
+  # each line prefixed with the marker line's own leading whitespace -- the
+  # fence indentation the embedded snippet carried before the include markers
+  # replaced it. Used only for the orchestrator agent (keyed at the call site).
+  # A marker never survives the render, and a file that cannot be read or
+  # fetched fails the whole render loudly (fetch_file's error names it) --
+  # never a marker left in place, never a partial orchestrator body.
+  # Loop-based on purpose: no heredoc captured inside a command substitution
+  # (the bash-3.2 mis-parse hazard, posixsh-01).
+  body="$1"
+  printf '%s\n' "$body" | while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      *'# antz-include: '*)
+        indent=${line%%'# antz-include: '*}
+        rel=${line##*'# antz-include: '}
+        case "$indent" in
+          *[![:space:]]*)
+            echo "Malformed antz-include marker (non-whitespace indentation): $line" >&2
+            exit 1
+            ;;
+        esac
+        [ -n "$rel" ] || { echo "Empty antz-include marker: $line" >&2; exit 1; }
+        script=$(fetch_file "$rel") || exit 1
+        # Re-apply the fence indentation to the dedented script content, so
+        # the render is byte-identical to the pre-change embedded snippet:
+        # only non-empty lines get the indent (blank lines rendered empty
+        # before). One pinned exception: antz-skills.sh's embedded
+        # counterpart carried a pre-existing under-fence-indent line (a
+        # loop-closer "  done" at two spaces) whose dedent left it untouched
+        # (already shorter than the fence indent) -- byte-identity pins it
+        # verbatim, so the fence indent is not re-applied to it. The file
+        # content alone cannot distinguish that historical line from a
+        # genuinely dedented one, so the exception is keyed to the file and
+        # shape it is known to take (see
+        # spdd/changes/orchestrator-fast-path/02-renderinject.feature).
+        case "$rel" in
+          scripts/orchestration/antz-skills.sh)
+            printf '%s\n' "$script" | sed -e "/./s/^/$indent/" -e 's/^     done$/  done/'
+            ;;
+          *)
+            printf '%s\n' "$script" | sed "/./s/^/$indent/"
+            ;;
+        esac
+        ;;
+      *) printf '%s\n' "$line" ;;
+    esac
+  done
 }
 
 meta_field() {
@@ -563,6 +615,13 @@ for agent in $AGENTS; do
   description=$(meta_field "$meta_content" description)
   access=$(meta_field "$meta_content" access)
   body=$(fetch_file "agents/prompts/$agent.prompt")
+
+  # The orchestrator prompt carries one "# antz-include:" marker line per
+  # script fence (source of truth: scripts/orchestration/<name>.sh);
+  # substitution is keyed to this agent only. See inject_includes.
+  if [ "$agent" = "orchestrator" ]; then
+    body=$(inject_includes "$body")
+  fi
 
   if [ "$want_claude" -eq 1 ]; then
     mkdir -p "$HOME/.claude/agents"

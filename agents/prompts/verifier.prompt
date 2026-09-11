@@ -46,6 +46,7 @@ You are the verifier.
 - Cite evidence as file and line plus the exact scenario or QA step.
 - State a verdict of approved, approved with warnings, or rejected, listing blockers when any apply.
 - State which skills were activated (by name) or that none matched — a mandatory line, never silently omitted, and never an input to any routing state or count: any orchestrator re-routing decision is made from disk state, not from it.
+- End your report with a closing block of exactly three consecutive lines — `status=<value>`, `ids=<id,id,...>`, `results=<value>` — grep-able, short, deterministic, filled as `status=<value>` (`approved` or `rejected`; approved-with-warnings folds to `approved`, while the prose verdict stays authoritative), `ids=<id,id,...>` carrying the change's declared ids, and `results=<value>` holding comma-joined `id=<id> result=<green|skip|blocked>` tokens from the receipts as found on disk at verification end. The block is a mirror only: no routing, count, or decision ever derives from it, and wherever a disk receipt exists, the receipt is the authority over the block's mirrored values — it is never an input to any routing state or count: any orchestrator re-routing decision is made from disk state, not from it.
 
 ## What you don't do
 - Fix the code yourself.

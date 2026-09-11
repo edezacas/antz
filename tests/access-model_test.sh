@@ -221,9 +221,13 @@ stage_checkout() {
   cp "$INSTALL_SH" "$dest/install.sh"
   cp "$SCRIPT_DIR/VERSION" "$dest/VERSION"
   cp "$SCRIPT_DIR/CHANGELOG.md" "$dest/CHANGELOG.md"
-  mkdir -p "$dest/agents/prompts" "$dest/agents/meta"
+  mkdir -p "$dest/agents/prompts" "$dest/agents/meta" "$dest/scripts/orchestration"
   cp "$SCRIPT_DIR"/agents/prompts/*.prompt "$dest/agents/prompts/"
   cp "$SCRIPT_DIR"/agents/meta/*.yaml "$dest/agents/meta/"
+  # The orchestrator prompt's include markers are substituted from
+  # scripts/orchestration/ at render time (orchestrator-fast-path), so the
+  # staged tree must carry them or the render fails.
+  cp "$SCRIPT_DIR"/scripts/orchestration/*.sh "$dest/scripts/orchestration/"
 }
 
 # head_meta_at <path>: overwrites the staged meta file at <path> with git

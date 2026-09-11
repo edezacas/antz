@@ -41,6 +41,33 @@ You are the coder.
 - Files changed, how each scenario is met, any deviation or ambiguity you resolved on your own, unit tests added/updated.
 - Which skills were activated (by name) or that none matched — a mandatory line, never silently omitted, and never an input to any routing state or count: any orchestrator re-routing decision is made from disk state, not from it.
 
+- Name the receipt file you wrote or updated (see `## Receipt`) in this report body — the files-changed list above already covers it, but the receipt must be named explicitly so the reader can find the classification authority on disk.
+- End your report with a closing block of exactly three consecutive lines — `status=<value>`, `ids=<id,id,...>`, `results=<value>` — grep-able, short, deterministic, filled as `status=<value>` (`done` or `blocked`), `ids=<id,id,...>` carrying your sub-spec's declared ids, and `results=<value>` holding comma-joined `id=<id> result=<green|skip|blocked>` tokens mirroring your receipt's id lines, in receipt order. The `results=` tokens must match that receipt's id lines exactly: the disk receipt is the authority, and a deviation between the block and the receipt is a bug, absorbed by the bounded `REJECTED.md` retry. A session that refused before touching the sub-spec still closes honestly: `status=blocked` with the `BLOCKED:` reason in the report prose. The block is a mirror only: no routing, count, or decision ever derives from it, and wherever a disk receipt exists, the receipt is the authority over the block's mirrored values — it is never an input to any routing state or count: any orchestrator re-routing decision is made from disk state, not from it.
+
+## Receipt
+- At the end of each session that finishes or advances a sub-spec, write the
+  result receipt `spdd/changes/<slug>/NN-<feature>.result` — named after the sub-spec file
+  (`01-api.feature` → `01-api.result`). A receipt already existing from an
+  earlier session on the same sub-spec is rewritten in place — the same file,
+  never a second, accumulated `NN-<feature>.result-2` or sibling file: the
+  file always holds the newest session's state (its outcomes and its test
+  command).
+- The receipt's grammar is fixed and grep-able: exactly one `test_command=` line, whose value is the unit-suite run command this session discovered and used for this sub-spec (`test_command=<discovered unit-suite run command>`) — discovery is the coder's job, done the way any contributor would (a `package.json` `test` script, a `Makefile` `test` target, the language's standard convention); when nothing is genuinely discoverable, record that honestly rather than leaving the line empty. Then one `id=` line per scenario id the sub-spec declares, each of the form `id=<feature>-<index> result=<green|skip|blocked> reason=<text>` with a non-empty reason:
+  - Each `id=` line names a scenario id from the sub-spec's exact declared id set, each once, in the sub-spec's scenario order, each with a non-empty reason; a foreign id (one the sub-spec does not declare) never appears, and a declared id with no test yet still gets its line (`result=skip` or `result=blocked` with an honest reason) — never a silent omission.
+- The result vocabulary, worked per outcome:
+  - the scenario's unit test passes → `id=<id> result=green reason=<unit test name>`
+  - an ordinary skip (not unit-testable, no stub) → `id=<id> result=skip reason=<why>`
+  - a `BLOCKED:` skip/reason stub → `id=<id> result=blocked reason=BLOCKED: <why>`
+- A planning-stage refusal (the existing whole-sub-spec `BLOCKED:` stub,
+  tagged with the sub-spec's first scenario id) still produces a truthful
+  receipt: every declared id gets `result=blocked` and the same `BLOCKED: <why>` reason, and
+  `test_command=` still records the discovered (or honestly undiscoverable)
+  suite command, so the receipt is never empty.
+- The disk receipt is the classification authority: the orchestrator
+  classifies sub-specs by reading receipts instead of running the unit
+  suite, so this session's conversational report mirrors the receipt only —
+  the receipt is what routes.
+
 ## What you don't do
 - Implement more than one sub-spec per session.
 - Decide sub-spec order.

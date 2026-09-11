@@ -4,14 +4,22 @@
 # spdd/changes/skills-activation/02-orchestrator.feature,
 # scenarios orchestrator-01..04).
 #
-# The block is produced by an embedded POSIX sh snippet (the same temp-file
-# convention as the flow script and the status probe), so the tests assert
-# both halves of the contract:
+# The block is produced by a POSIX sh script that lives as a real file,
+# scripts/orchestration/antz-skills.sh (injected into the rendered
+# antz-orchestrator body by install.sh since change orchestrator-fast-path;
+# same temp-file convention as the flow script and the status probe), so the
+# tests assert both halves of the contract:
 #   - the prompt text carries the block's duty, explicit none-matched line,
 #     and implementation constraints (orchestrator-01, -02 wording, -04), and
-#   - the extracted snippet genuinely derives absolute SKILL.md paths from
-#     the standard skills directories with the capped, tie-broken, keyword-
-#     reasoned matching the scenarios demand (orchestrator-01..03 runtime).
+#   - the file genuinely derives absolute SKILL.md paths from the standard
+#     skills directories with the capped, tie-broken, keyword-reasoned
+#     matching the scenarios demand (orchestrator-01..03 runtime).
+#
+# Since change orchestrator-fast-path (sub-spec 01) the snippet is a file and
+# the prompt's fence carries only its include marker, so this suite runs the
+# file directly -- no extraction from the prompt anymore (testharness-03), and
+# the file keeps the shebang first line the old marker-to-fence-close
+# extractor dropped.
 #
 # Self-contained bash test harness (no external framework/dependency -- this
 # repo has no package manager or build system), mirroring the harness style
@@ -32,11 +40,29 @@
 # descmatch-04 (the change-time diff-scope check against the pre-change tree)
 # is a transient verification, not a permanent regression test: explicit SKIP
 # stub, verified by the coder at implementation time.
+#
+# Re-scoped by change orchestrator-fast-path (sub-spec 03, testharness-03):
+# the snippet's lines now live in scripts/orchestration/antz-skills.sh and
+# the prompt carries only the include markers, so the guard's permitted
+# regions are the prompt's three script fences (each verified to carry
+# exactly its "# antz-include:" marker line naming an existing file) -- any
+# removal outside those three fenced bodies still fails the guard.
+#
+# Evolved by change orchestrator-fast-path (sub-spec 05, receipts): the
+# prompt's step-3 classification prose is legitimately rewritten (from
+# run-the-suite classification to receipt-file reading), so the two real-tree
+# additive-vs-HEAD checks (orchestrator-01's and descmatch-05's) are gated on
+# the prompt's prose (the file minus its fenced blocks) being unchanged vs
+# HEAD. While the receipt rewrite is uncommitted they are vacuously retired
+# with a loud note (not a failure -- same convention as renderinject_test.sh's
+# base-render gate); the synthetic fence-scoping cases and the structural
+# assertions (marker-only fences, existing files) stay enforced forever.
 
 set -u
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 ORCHESTRATOR_PROMPT="$SCRIPT_DIR/agents/prompts/orchestrator.prompt"
+SKILLS_SCRIPT="$SCRIPT_DIR/scripts/orchestration/antz-skills.sh"
 
 pass_count=0
 fail_count=0
@@ -89,16 +115,146 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# ---- extracting the embedded snippet from the prompt ------------------------
+# Prints 1 when the working orchestrator.prompt's prose (the file minus its
+# fenced blocks) differs from HEAD's copy -- a later sub-spec's legitimate
+# prose edit -- and 0 when it doesn't (or HEAD's copy is unreadable, in
+# which case there is nothing to compare against).
+prompt_prose_distinct_from_head() {
+  work=$(new_tmp)
+  basep=$(new_tmp)
+  awk '/^[[:space:]]*```/ { infence = !infence; next } !infence' "$ORCHESTRATOR_PROMPT" > "$work"
+  if git -C "$SCRIPT_DIR" show HEAD:agents/prompts/orchestrator.prompt > "$basep" 2>/dev/null; then
+    awk '/^[[:space:]]*```/ { infence = !infence; next } !infence' "$basep" > "$basep"
+    cmp -s "$work" "$basep" && { printf '0'; return 0; }
+    printf '1'
+  else
+    printf '0'
+  fi
+}
 
-SKILLS_SCRIPT=$(new_tmp)
-# The snippet is fenced with a plain fence (like antz-flow.sh) and carries
-# its own "# antz-skills.sh" marker comment; extract marker-to-fence-close.
-awk '
-  /^ *# antz-skills.sh/ { s = 1 }
-  s && /^ *```$/ { exit }
-  s { print }
-' "$ORCHESTRATOR_PROMPT" | sed 's/^   //' > "$SKILLS_SCRIPT"
+# ---- the script under test (a file, run directly) ----------------------------
+
+run_snippet() {
+  # Runs the script with HOME pointed at a temp home.
+  # $1 = temp home, $2 = working root, remaining args = match keywords.
+  h="$1"; shift
+  HOME="$h" sh "$SKILLS_SCRIPT" "$@"
+}
+
+# ---- testharness-03: the re-scoped additive-vs-HEAD guard --------------------
+# The three script bodies now live as files under scripts/orchestration/ and
+# the prompt's three script fences carry only their "# antz-include:" marker
+# lines. The guard is re-scoped accordingly: it verifies each of the three
+# script fences contains exactly its marker line naming an existing file,
+# and a removed line is permitted only inside one of those three fenced
+# bodies -- any removal outside them still fails the guard. The pre-change
+# (HEAD) copy's three fences are located by the same shapes the old
+# extractors used (first 3-space fence; the antz-skills.sh marker comment;
+# the ```sh fence), so the old embedded bodies are the permitted old-side
+# regions while the change is uncommitted.
+
+region_from_opener() {
+  # $1 = file, $2 = 1-based line number of a fence opener. Prints
+  # "opener closer" when the fence closes, nothing (non-zero) otherwise.
+  close=$(awk -v o="$2" 'NR > o && /^ *```$/ { print NR; exit }' "$1")
+  if [ -n "$close" ] && [ "$close" -gt "$2" ]; then
+    printf '%s %s' "$2" "$close"
+    return 0
+  fi
+  return 1
+}
+
+region_enclosing_line() {
+  # $1 = file, $2 = 1-based line number of a line inside the fence. Prints
+  # "opener closer" for the fence enclosing that line.
+  open=$(awk -v tgt="$2" 'NR < tgt && /^ *```(sh)?$/ { l = NR } END { print l + 0 }' "$1")
+  [ "$open" -gt 0 ] || return 1
+  region_from_opener "$1" "$open"
+}
+
+compute_fence_regions() {
+  # $1 = prompt file; sets FENCE_REGIONS="s1 e1 s2 e2 s3 e3" for the three
+  # script fences -- flow (the first 3-space fence), skills (the fence
+  # carrying the antz-skills.sh include marker, or the pre-change marker
+  # comment as the fallback for the HEAD copy), probe (the 3-space ```sh
+  # fence). Fails (non-zero, FENCE_REGIONS empty) when any is missing.
+  f="$1"
+  FENCE_REGIONS=""
+  fl=$(grep -nE '^   ```$' "$f" | head -n 1 | cut -d: -f1)
+  [ -n "$fl" ] || { echo "  no flow fence found in $f" >&2; return 1; }
+  r=$(region_from_opener "$f" "$fl") || { echo "  flow fence does not close" >&2; return 1; }
+  FENCE_REGIONS="$r"
+  sl=$(grep -nE '^ *# antz-include: scripts/orchestration/antz-skills\.sh' "$f" | head -n 1 | cut -d: -f1)
+  [ -n "$sl" ] || sl=$(grep -nE '^ *# antz-skills\.sh' "$f" | head -n 1 | cut -d: -f1)
+  [ -n "$sl" ] || { echo "  no antz-skills marker found in $f" >&2; return 1; }
+  r=$(region_enclosing_line "$f" "$sl") || { echo "  skills fence not locatable" >&2; return 1; }
+  FENCE_REGIONS="$FENCE_REGIONS $r"
+  pl=$(grep -nE '^   ```sh$' "$f" | head -n 1 | cut -d: -f1)
+  [ -n "$pl" ] || { echo "  no probe fence found in $f" >&2; return 1; }
+  r=$(region_from_opener "$f" "$pl") || { echo "  probe fence does not close" >&2; return 1; }
+  FENCE_REGIONS="$FENCE_REGIONS $r"
+}
+
+assert_include_markers() {
+  # $1 = working-tree prompt file. Each of the three script fences contains
+  # exactly its "# antz-include:" marker line, and each named file exists.
+  # (The HEAD copy has no markers; this check is for the marker scheme only.)
+  # (The loop variable is fence_name, never "name" -- run_test's global name
+  # must not be clobbered by a test body.)
+  f="$1"
+  ok=0
+  compute_fence_regions "$f" || { echo "  could not locate the three script fences in $f"; return 1; }
+  set -- $FENCE_REGIONS
+  [ $# -eq 6 ] || { echo "  expected 3 fence regions, got $# tokens"; return 1; }
+  for fence_name in antz-flow antz-skills antz-probe; do
+    s="$1"; e="$2"; shift 2
+    want="# antz-include: scripts/orchestration/$fence_name.sh"
+    body=$(awk -v s="$s" -v e="$e" 'NR > s && NR < e' "$f" | sed 's/^   //')
+    [ "$body" = "$want" ] \
+      || { echo "  $fence_name fence is not exactly its include marker: $body"; ok=1; }
+    [ -f "$SCRIPT_DIR/scripts/orchestration/$fence_name.sh" ] \
+      || { echo "  include marker names a missing file: scripts/orchestration/$fence_name.sh"; ok=1; }
+  done
+  return $ok
+}
+
+removals_outside_regions() {
+  # $1 = unified diff file; $2 = old-side regions, $3 = new-side regions
+  # (each a flat "opener closer opener closer ..." list; empty disables
+  # nothing -- a side with no located regions fail-closes, flagging every
+  # removal on it). Prints every removed diff line lying outside the three
+  # script fences on BOTH sides; empty output means the guard passes.
+  awk -v oldr="$2" -v newr="$3" '
+    BEGIN {
+      on = split(oldr, oa, /[[:space:]]+/)
+      ocount = int(on / 2)
+      for (i = 1; i <= ocount; i++) { os[i] = oa[2*i - 1] + 0; oe[i] = oa[2*i] + 0 }
+      nn = split(newr, na, /[[:space:]]+/)
+      ncount = int(nn / 2)
+      for (i = 1; i <= ncount; i++) { ns[i] = na[2*i - 1] + 0; ne[i] = na[2*i] + 0 }
+    }
+    /^@@ / {
+      old = $2; new = $3
+      sub(/^-/, "", old); sub(/^\+/, "", new)
+      split(old, a, ","); oline = a[1] + 0
+      split(new, b, ","); nline = b[1] + 0
+      next
+    }
+    /^---/ { next }
+    /^\+\+\+/ { next }
+    /^\\/ { next }
+    /^\+/ { nline++; next }
+    /^-/ {
+      inside = 0
+      for (i = 1; i <= ocount; i++) if (os[i] > 0 && oline >= os[i] && oline <= oe[i]) inside = 1
+      for (i = 1; i <= ncount; i++) if (ns[i] > 0 && nline >= ns[i] && nline <= ne[i]) inside = 1
+      if (!inside) print
+      oline++
+      next
+    }
+    /^ / { oline++; nline++; next }
+  ' "$1"
+}
 
 # ---- fixture helpers --------------------------------------------------------
 
@@ -121,70 +277,9 @@ add_skill_fm() {
   } > "$1/SKILL.md"
 }
 
-run_snippet() {
-  # Runs the extracted snippet with HOME pointed at a temp home.
-  # $1 = temp home, $2 = working root, remaining args = match keywords.
-  h="$1"; shift
-  HOME="$h" sh "$SKILLS_SCRIPT" "$@"
-}
-
-# ---- descmatch-05: the snippet-scoped additive-vs-HEAD guard -----------------
-# The antz-skills.sh snippet's lines legitimately change (the descmatch fix
-# edits them), so the old "no removed lines at all" assertion no longer
-# holds. The guard is scoped: a removed line is permitted only when it lies
-# inside the antz-skills.sh fenced snippet -- judged by its old-side line
-# number against the old (HEAD) copy's snippet region, or by its new-side
-# position against the working-tree copy's region (whichever side carries a
-# located snippet; 0/0 disables a side's check). Any removal outside the
-# snippet still fails the guard.
-
-region_start=0
-region_end=0
-compute_snippet_region() {
-  # $1 = file holding the prompt text; sets region_start/region_end to the
-  # antz-skills.sh fenced snippet's line range (0/0 when it has no snippet).
-  region_start=0
-  region_end=0
-  local marker open close
-  marker=$(grep -n '^ *# antz-skills.sh' "$1" | head -n 1 | cut -d: -f1)
-  [ -n "$marker" ] || return 0
-  open=$(awk -v m="$marker" 'NR < m && /^ *```$/ { l = NR } END { print l + 0 }' "$1")
-  close=$(awk -v m="$marker" 'NR > m && /^ *```$/ { print NR; exit }' "$1")
-  [ -n "$open" ] && [ "$open" -gt 0 ] || open=$marker
-  if [ -n "$close" ] && [ "$close" -gt "$open" ]; then
-    region_start=$open
-    region_end=$close
-  fi
-  return 0
-}
-
-removals_outside_snippet() {
-  # $1 = unified diff file; $2..$5 = os oe ns ne (old/new snippet regions,
-  # 0 disables that side). Prints every removed diff line that lies outside
-  # the snippet on both sides; empty output means the guard passes.
-  awk -v os="$2" -v oe="$3" -v ns="$4" -v ne="$5" '
-    /^@@ / {
-      old = $2; new = $3
-      sub(/^-/, "", old); sub(/^\+/, "", new)
-      split(old, a, ","); oline = a[1] + 0
-      split(new, b, ","); nline = b[1] + 0
-      next
-    }
-    /^---/ { next }
-    /^\+\+\+/ { next }
-    /^\\/ { next }
-    /^\+/ { nline++; next }
-    /^-/ {
-      inside = 0
-      if (os > 0 && oline >= os && oline <= oe) inside = 1
-      if (ns > 0 && nline >= ns && nline <= ne) inside = 1
-      if (!inside) print
-      oline++
-      next
-    }
-    /^ / { oline++; nline++; next }
-  ' "$1"
-}
+# ---- descmatch-05: the script-fences-scoped additive-vs-HEAD guard -----------
+# (Scoping history and the testharness-03 re-scope are documented at the
+# removals_outside_regions helper above.)
 
 # =============================================================================
 # orchestrator-01: every delegation gains the "## Skills to load before work"
@@ -214,27 +309,38 @@ test_orchestrator_01_block() {
   require "$ORCHESTRATOR_PROMPT" 'Working root: <repo root absolute path>' || ok=1
   require "$ORCHESTRATOR_PROMPT" 'Change slug: <slug>' || ok=1
 
-  # The addition is additive except inside the antz-skills.sh fenced
-  # snippet (descmatch-05): removed lines are permitted only inside it --
-  # any removal outside the snippet still fails the guard.
+  # The addition is additive except inside the three script fences
+  # (re-scoped by testharness-03): each script fence must carry exactly its
+  # "# antz-include:" marker line naming an existing file, and removed lines
+  # are permitted only inside those three fenced bodies -- any removal
+  # outside them still fails the guard. Gated per the header note on the
+  # prompt prose being unchanged vs HEAD (the receipts sub-spec's step-3
+  # rewrite retires the real-tree check with a loud note).
   if command -v git >/dev/null 2>&1 && [ -e "$SCRIPT_DIR/.git" ]; then
-    diff_file=$(new_tmp)
-    git -C "$SCRIPT_DIR" diff HEAD -- agents/prompts/orchestrator.prompt > "$diff_file" \
-      || { echo "  git diff failed"; ok=1; }
-    compute_snippet_region "$ORCHESTRATOR_PROMPT"
-    ns=$region_start; ne=$region_end
-    os=0; oe=0
-    if git -C "$SCRIPT_DIR" cat-file -e HEAD:agents/prompts/orchestrator.prompt 2>/dev/null; then
-      head_prompt=$(new_tmp)
-      git -C "$SCRIPT_DIR" show HEAD:agents/prompts/orchestrator.prompt > "$head_prompt" 2>/dev/null
-      compute_snippet_region "$head_prompt"
-      os=$region_start; oe=$region_end
-    fi
-    bad=$(removals_outside_snippet "$diff_file" "$os" "$oe" "$ns" "$ne")
-    if [ -n "$bad" ]; then
-      echo "  orchestrator.prompt has removed lines outside the antz-skills.sh snippet:"
-      printf '%s\n' "$bad"
-      ok=1
+    assert_include_markers "$ORCHESTRATOR_PROMPT" || ok=1
+    if [ "$(prompt_prose_distinct_from_head)" -eq 1 ]; then
+      echo "  note: orchestrator.prompt prose changed vs HEAD (a later sub-spec's legitimate edit); the additive-vs-HEAD removal check is vacuously retired, structural assertions still enforced"
+    else
+      diff_file=$(new_tmp)
+      git -C "$SCRIPT_DIR" diff HEAD -- agents/prompts/orchestrator.prompt > "$diff_file" \
+        || { echo "  git diff failed"; ok=1; }
+      compute_fence_regions "$ORCHESTRATOR_PROMPT"
+      ns="$FENCE_REGIONS"
+      [ -n "$ns" ] || { echo "  could not locate the three script fences in the working tree"; ok=1; }
+      os=""
+      if git -C "$SCRIPT_DIR" cat-file -e HEAD:agents/prompts/orchestrator.prompt 2>/dev/null; then
+        head_prompt=$(new_tmp)
+        git -C "$SCRIPT_DIR" show HEAD:agents/prompts/orchestrator.prompt > "$head_prompt" 2>/dev/null
+        compute_fence_regions "$head_prompt"
+        os="$FENCE_REGIONS"
+        [ -n "$os" ] || { echo "  could not locate the three script fences in the HEAD copy"; ok=1; }
+      fi
+      bad=$(removals_outside_regions "$diff_file" "$os" "$ns")
+      if [ -n "$bad" ]; then
+        echo "  orchestrator.prompt has removed lines outside the three script fences:"
+        printf '%s\n' "$bad"
+        ok=1
+      fi
     fi
   fi
   return $ok
@@ -538,52 +644,90 @@ metadata:
 }
 
 # =============================================================================
-# descmatch-05: the additive-vs-HEAD guard is snippet-scoped -- a removal
-# inside the antz-skills.sh fenced snippet is permitted (on either the
-# old-side or new-side region check), a removal outside it is still flagged,
-# and the real tree's diff passes the scoped guard. (The snippet's POSIX sh
-# parse is asserted by the orchestrator-04 constraint test.)
+# descmatch-05: the additive-vs-HEAD guard is script-fences-scoped (re-scoped
+# by testharness-03) -- a removal inside one of the three script fences is
+# permitted (on either the old-side or new-side region check), a removal
+# outside them is still flagged, and the real tree's diff passes the scoped
+# guard. (The script's POSIX sh parse is asserted by the orchestrator-04
+# constraint test; the fences' marker-only bodies by assert_include_markers.)
 # =============================================================================
 test_descmatch_05_guard_scoping() {
   ok=0
   if command -v git >/dev/null 2>&1 && [ -e "$SCRIPT_DIR/.git" ]; then
-    compute_snippet_region "$ORCHESTRATOR_PROMPT"
-    ns=$region_start; ne=$region_end
-    [ "$ns" -gt 0 ] && [ "$ne" -gt "$ns" ] \
-      || { echo "  could not locate the antz-skills.sh snippet region in the working tree"; ok=1; }
+    compute_fence_regions "$ORCHESTRATOR_PROMPT"
+    ns="$FENCE_REGIONS"
+    set -- $ns
+    [ $# -eq 6 ] \
+      || { echo "  could not locate the three script fences in the working tree"; ok=1; }
+    # Safe defaults keep the synthetic cases well-defined (a 0 start never
+    # falls inside a real fence region, so they fail loudly, not crash) even
+    # when the fences could not be located.
+    fs=${1:-0}; fe=${2:-0}
 
-    # The real tree's diff vs HEAD passes the scoped guard.
+    # The real tree's diff vs HEAD passes the scoped guard -- gated per the
+    # header note on the prompt prose being unchanged vs HEAD (the receipts
+    # sub-spec's step-3 rewrite retires this real-tree check with a loud
+    # note; the synthetic fence-scoping cases below stay enforced).
     diff_file=$(new_tmp)
     git -C "$SCRIPT_DIR" diff HEAD -- agents/prompts/orchestrator.prompt > "$diff_file" \
       || { echo "  git diff failed"; ok=1; }
-    os=0; oe=0
+    os=""
     if git -C "$SCRIPT_DIR" cat-file -e HEAD:agents/prompts/orchestrator.prompt 2>/dev/null; then
       head_prompt=$(new_tmp)
       git -C "$SCRIPT_DIR" show HEAD:agents/prompts/orchestrator.prompt > "$head_prompt" 2>/dev/null
-      compute_snippet_region "$head_prompt"
-      os=$region_start; oe=$region_end
+      compute_fence_regions "$head_prompt"
+      os="$FENCE_REGIONS"
+      [ -n "$os" ] || { echo "  could not locate the three script fences in the HEAD copy"; ok=1; }
     fi
-    bad=$(removals_outside_snippet "$diff_file" "$os" "$oe" "$ns" "$ne")
-    [ -z "$bad" ] || { echo "  the scoped guard flags the real tree's diff: $bad"; ok=1; }
+    if [ "$(prompt_prose_distinct_from_head)" -eq 1 ]; then
+      echo "  note: orchestrator.prompt prose changed vs HEAD (a later sub-spec's legitimate edit); the real-tree additive-vs-HEAD check is vacuously retired, synthetic fence-scoping cases still enforced"
+    else
+      bad=$(removals_outside_regions "$diff_file" "$os" "$ns")
+      [ -z "$bad" ] || { echo "  the scoped guard flags the real tree's diff: $bad"; ok=1; }
+    fi
 
-    # Synthetic hunks: a removal whose new-side position lies inside the
-    # snippet region is permitted...
+    # Synthetic hunks (using the flow fence's region): a removal whose
+    # new-side position lies inside a script fence is permitted...
     syn=$(new_tmp)
-    printf '@@ -1,2 +%d,2 @@\n context\n-removed inside the snippet\n+added inside the snippet\n context\n' "$ns" > "$syn"
-    bad=$(removals_outside_snippet "$syn" 0 0 "$ns" "$ne")
-    [ -z "$bad" ] || { echo "  a removal inside the snippet region was flagged: $bad"; ok=1; }
+    printf '@@ -1,2 +%d,2 @@\n context\n-removed inside the fence\n+added inside the fence\n context\n' "$fs" > "$syn"
+    bad=$(removals_outside_regions "$syn" "" "$ns")
+    [ -z "$bad" ] || { echo "  a removal inside a script fence was flagged: $bad"; ok=1; }
 
-    # ...a removal outside it is still flagged...
-    printf '@@ -1,2 +1,2 @@\n context\n-removed outside the snippet\n+added outside the snippet\n context\n' > "$syn"
-    bad=$(removals_outside_snippet "$syn" 0 0 "$ns" "$ne")
-    [ -n "$bad" ] || { echo "  a removal outside the snippet region was not flagged"; ok=1; }
+    # ...a removal outside them is still flagged...
+    printf '@@ -1,2 +1,2 @@\n context\n-removed outside the fences\n+added outside the fences\n context\n' > "$syn"
+    bad=$(removals_outside_regions "$syn" "" "$ns")
+    [ -n "$bad" ] || { echo "  a removal outside the script fences was not flagged"; ok=1; }
 
-    # ...and the old-side region check behaves the same way.
-    bad=$(removals_outside_snippet "$syn" 1 100 0 0)
-    [ -z "$bad" ] || { echo "  a removal inside the old-side region was flagged: $bad"; ok=1; }
-    bad=$(removals_outside_snippet "$syn" 500 600 0 0)
-    [ -n "$bad" ] || { echo "  a removal outside the old-side region was not flagged"; ok=1; }
+    # ...and the old-side region check behaves the same way: a removal whose
+    # old-side position lies inside a script fence is permitted...
+    printf '@@ -%d,2 +1,2 @@\n context\n-removed inside an old-side fence\n+added\n context\n' "$fs" > "$syn"
+    bad=$(removals_outside_regions "$syn" "$ns" "")
+    [ -z "$bad" ] || { echo "  a removal inside an old-side fence region was flagged: $bad"; ok=1; }
+    # ...and one outside them is still flagged.
+    printf '@@ -500,2 +500,2 @@\n context\n-removed outside old regions\n+added outside them\n context\n' > "$syn"
+    bad=$(removals_outside_regions "$syn" "$ns" "")
+    [ -n "$bad" ] || { echo "  a removal outside the old-side fence regions was not flagged"; ok=1; }
   fi
+  return $ok
+}
+
+# =============================================================================
+# testharness-03: the skills suite runs scripts/orchestration/antz-skills.sh
+# directly (no extraction from the prompt; the file keeps the shebang first
+# line the old marker-to-fence-close extractor dropped), and each of the
+# prompt's three script fences carries exactly its "# antz-include:" marker
+# line naming an existing file.
+# =============================================================================
+test_testharness_03_file_source() {
+  ok=0
+  [ "$SKILLS_SCRIPT" = "$SCRIPT_DIR/scripts/orchestration/antz-skills.sh" ] \
+    || { echo "  the suite is not running scripts/orchestration/antz-skills.sh"; ok=1; }
+  [ -f "$SKILLS_SCRIPT" ] \
+    || { echo "  no skills script at scripts/orchestration/antz-skills.sh"; ok=1; }
+  first=$(head -n 1 "$SKILLS_SCRIPT")
+  [ "$first" = '#!/bin/sh' ] \
+    || { echo "  antz-skills.sh lost its shebang first line: $first"; ok=1; }
+  assert_include_markers "$ORCHESTRATOR_PROMPT" || ok=1
   return $ok
 }
 
@@ -598,7 +742,8 @@ run_test "skills-invariant: the orchestrator never parses skill contents (body t
 run_test "descmatch-01: matching is keyed to the description field only -- a keyword only in name: no longer matches, a description keyword still matches exactly as before" test_descmatch_01_name_only_no_match
 run_test "descmatch-02: 'description: >' and '>- ' block scalars match via their indented continuation lines, accumulated until the next top-level key or the end of the frontmatter -- the '>' indicator and post-key text are not match text, and the body is still never read" test_descmatch_02_block_scalars
 run_test "descmatch-03: license-only and metadata-only keywords ('apache', 'edezacas') no longer list a skill; the description still matches" test_descmatch_03_license_metadata_excluded
-run_test "descmatch-05: the additive-vs-HEAD guard is snippet-scoped -- removals inside the antz-skills.sh fenced snippet are permitted, any removal outside it still fails, and the real tree's diff passes" test_descmatch_05_guard_scoping
+run_test "descmatch-05: the additive-vs-HEAD guard is script-fences-scoped -- removals inside the three script fences are permitted, any removal outside them still fails, and the real tree's diff passes" test_descmatch_05_guard_scoping
+run_test "testharness-03: the skills suite runs scripts/orchestration/antz-skills.sh directly (shebang kept), and each prompt script fence carries exactly its include marker naming an existing file" test_testharness_03_file_source
 
 # ---- change-time scenario: explicit SKIP stub ---------------------------------
 # descmatch-04 (spdd/changes/skills-desc-match/01-descmatch.feature) inspects

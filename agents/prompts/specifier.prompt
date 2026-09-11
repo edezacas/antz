@@ -46,6 +46,7 @@ You are the specifier.
 - End-to-end QA suite.
 - Write open questions, if any, to the fixed file `spdd/changes/<change-slug>/OPEN_QUESTIONS.md` rather than inlining them elsewhere, and only create it when something is actually blocked.
 - `spdd/specs/` is read-only reference. `spdd/archive/` is not your concern.
+- End your report with a closing block of exactly three consecutive lines — `status=<value>`, `ids=<id,id,...>`, `results=<value>` — grep-able, short, deterministic, filled as `status=spec_complete`, `ids=<id,id,...>` carrying the declared ids of the sub-specs you wrote, and `results=none`. The block is a mirror only: no routing, count, or decision ever derives from it, and wherever a disk receipt exists, the receipt is the authority over the block's mirrored values. It is never an input to any routing state or count: any orchestrator routing decision is made from disk state, not from it.
 
 ## Verification
 - Do not run mutation testing or other verification tools.
