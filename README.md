@@ -62,17 +62,7 @@ Currently compatible with:
 - **`curl`** — only needed to install without a local checkout (`curl | sh`, and `install.sh --check` run the same way); a local checkout installs from disk instead.
 - Claude Code and/or OpenCode installed, for `install.sh` to detect and target.
 
-# Variants
-
-Two maintained flavors of antz, one per git branch — install via the same `curl | sh`, changing only the branch ref:
-
-- **`master`** (this file's default URL): marked-by-branch flow — the orchestrator creates a marker branch `antz/<slug>`, but **no role ever commits anything**: all work stays uncommitted in your working tree, and you review/commit/delete at the end.
-- **`worktree`**: worktree-isolated flow — each change runs in its own worktree `.worktrees/<slug>` on branch `antz/<slug>`, with gated per-role commits (only from orchestrated delegations) and a gated worktree removal after approval:
-  `curl -fsSL https://raw.githubusercontent.com/edezacas/antz/worktree/install.sh | sh`
-
-Each version line (`VERSION`/`CHANGELOG.md`) is independent per branch.
-
-## Install
+# Install
 
 Renders the agent definitions under `agents/prompts/` + `agents/meta/` into native subagent files for whichever of Claude Code / OpenCode are detected, and installs them into that client's global agents directory (`~/.claude/agents/`, `~/.config/opencode/agents/`).
 

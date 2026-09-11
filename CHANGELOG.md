@@ -7,7 +7,7 @@ and this project uses [Semantic Versioning](https://semver.org/): patch for
 non-behavioral wording tweaks, minor for behavior changes, major for breaking
 changes to the workflow contract (directory layout, access model, etc).
 
-This branch (`master`) carries the branch-marked, no-commit variant of antz; the `worktree` branch carries the worktree-isolated variant (worktree isolation + gated per-role commits), whose `install.sh` binds its remote install to its own ref.
+This branch (`master`) carries the branch-marked, no-commit variant of antz.
 
 ## [4.3.0] - 2026-09-11
 

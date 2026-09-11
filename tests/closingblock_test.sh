@@ -321,8 +321,14 @@ test_closingblock_05_specifier_diff_purely_additive_closing_block_only() {
   DIFF_FILE=$(mktemp)
   git -C "$SCRIPT_DIR" diff HEAD -- agents/prompts/specifier.prompt > "$DIFF_FILE"
   if [ ! -s "$DIFF_FILE" ]; then
-    echo "  specifier.prompt has no diff vs HEAD (the closing-block edit is missing)"
-    ok=1
+    # Time-robustness (the 94938da lesson): once the closing-block edit is
+    # committed, the working tree equals HEAD and the diff-vs-HEAD window is
+    # gone. In that state the assertion degrades to a state check: the
+    # closing-block bullet must be present in the current prompt.
+    if ! grep -q 'closing block' "$SCRIPT_DIR/agents/prompts/specifier.prompt"; then
+      echo "  specifier.prompt has no diff vs HEAD and carries no closing-block bullet"
+      ok=1
+    fi
   else
     # Purely additive: no removed content lines (a removed content line
     # starts with '-' followed by a non-'-' character; '^---' headers
