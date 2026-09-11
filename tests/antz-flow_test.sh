@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Unit tests for the antz-flow.sh fence embedded in
-# agents/prompts/orchestrator.prompt — the branch-marked, never-committed
-# variant: each change gets its own marker branch antz/<slug>, ensure
+# Unit tests for scripts/orchestration/antz-flow.sh — the branch-marked,
+# never-committed variant: each change gets its own marker branch antz/<slug>,
+# ensure
 # positions the session on that branch (create-then-switch fresh, plain
 # switch on resume, refused-checked when git would destroy uncommitted
 # work), and nothing is ever committed or removed, so the script computes
@@ -20,6 +20,12 @@
 # scenario id carries the ensure-<n> or orchestrator-<n> prefix (and each
 # example-table row is its own test), which the sub-spec convention expects.
 #
+# Since change orchestrator-fast-path (sub-spec 01) the scripts live as real
+# files under scripts/orchestration/ and the prompt's fences carry only
+# include markers, so this suite loads antz-flow.sh (and the probe, for the
+# state tests) as files directly — no extraction from the prompt anymore
+# (testharness-01); a prompt fence can no longer drift from the tested code.
+#
 # Self-contained bash test harness, mirroring the harness style of
 # tests/orchestrator-status-probe_test.sh. Run:
 #   sh tests/antz-flow_test.sh
@@ -28,13 +34,12 @@ set -u
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 ORCHESTRATOR_PROMPT="$SCRIPT_DIR/agents/prompts/orchestrator.prompt"
+FLOW_SH="$SCRIPT_DIR/scripts/orchestration/antz-flow.sh"
+PROBE_SH="$SCRIPT_DIR/scripts/orchestration/antz-probe.sh"
 
 pass_count=0
 fail_count=0
 skip_count=0
-
-SCRIPT=$(mktemp)
-PROBE_EXTRACT=$(mktemp)
 
 run_test() {
   name="$1"; fn="$2"
@@ -56,28 +61,12 @@ skip_test() {
   skip_count=$((skip_count + 1))
 }
 
-# ---- extracting the embedded scripts from the prompt ------------------------
-
-extract_flow() {
-  # The flow fence is the prompt's first 3-space-``` fence (the probe is the
-  # ```sh fence; its shape is guarded by
-  # tests/orchestrator-status-probe_test.sh).
-  awk '/^   ```$/{c++; next} c==1' "$ORCHESTRATOR_PROMPT"
-}
-
-extract_flow > "$SCRIPT"
-
-# The probe is embedded verbatim (its extraction is what
-# orchestrator-status-probe_test.sh guards), and `state` runs it via the
-# flow script's state subcommand, so we do the same for the state tests.
-awk '/^   ```sh$/{p=1; next} /^   ```$/{p=0} p' "$ORCHESTRATOR_PROMPT" | sed 's/^   //' > "$PROBE_EXTRACT"
-
 # ---- prompt-prose extracts (sub-spec "orchestrator") -------------------------
 #
 # The prose scenarios assert on section-scoped extracts of the prompt, not
 # the whole file, so a stray mention elsewhere can't satisfy them. The flow
 # fence (script) is excluded from prose extracts — its comments are the
-# script's own law wording, asserted via the FLOW_SCRIPT extract.
+# script's own law wording, asserted via the FLOW_SCRIPT file.
 
 # ---- content-assertion helpers (precedent: tests/versioning-rule_test.sh) ----
 
@@ -97,8 +86,7 @@ refuse() {
   return 0
 }
 
-FLOW_SCRIPT=$(mktemp)
-cp "$SCRIPT" "$FLOW_SCRIPT"
+FLOW_SCRIPT="$FLOW_SH"
 
 # Step 1's prose after the flow fence: from the flow fence's closing ```
 # (the second 3-space fence line) to the step-2 heading. Covers the
@@ -154,11 +142,11 @@ new_repo_no_commit() {
 
 run_flow() {
   # $@ = flow subcommand + args; runs from inside the repo.
-  ( cd "$REPO_ROOT" && sh "$SCRIPT" "$@" )
+  ( cd "$REPO_ROOT" && sh "$FLOW_SH" "$@" )
 }
 
 run_state_through_flow() {
-  ( cd "$REPO_ROOT" && sh "$SCRIPT" state "$SLUG" "$PROBE_EXTRACT" )
+  ( cd "$REPO_ROOT" && sh "$FLOW_SH" state "$SLUG" "$PROBE_SH" )
 }
 
 mk_change_dir() {
@@ -190,7 +178,6 @@ all_refs() {
 TMP_REPOS=""
 
 cleanup() {
-  rm -f "$SCRIPT" "$PROBE_EXTRACT"
   for d in $TMP_REPOS; do
     # Never rely on git state beyond the throwaway repo; force-remove the
     # whole temp dir (this is the test's own repo, not a user's).
@@ -202,12 +189,34 @@ cleanup() {
 trap cleanup EXIT
 
 # =============================================================================
-# extracted guard: the script was actually found and extracted (guards every
-# other test against a silent no-op if the fence markers ever change shape).
+# loaded guard: the script under test is the real file (guards every other
+# test against a silent no-op if the file ever goes missing or its shape
+# changes).
 # =============================================================================
 test_ensure_extracted() {
-  grep -q 'br_exists' "$SCRIPT" || { echo "  flow script didn't extract"; return 1; }
+  [ -f "$FLOW_SH" ] || { echo "  no flow script at scripts/orchestration/antz-flow.sh"; return 1; }
+  sh -n "$FLOW_SH" || { echo "  flow script fails sh -n"; return 1; }
+  grep -q 'br_exists' "$FLOW_SH" || { echo "  flow script doesn't look like the flow script"; return 1; }
   return 0
+}
+
+# =============================================================================
+# testharness-01: the suite loads scripts/orchestration/antz-flow.sh as a
+# file, with no extraction step reading agents/prompts/orchestrator.prompt —
+# since sub-spec 01 the prompt's flow fence carries exactly its include
+# marker line, so there is no embedded script left to extract and the tested
+# code cannot drift from the file.
+# =============================================================================
+test_testharness_01_file_source() {
+  ok=0
+  [ "$FLOW_SH" = "$SCRIPT_DIR/scripts/orchestration/antz-flow.sh" ] \
+    || { echo "  the suite is not running scripts/orchestration/antz-flow.sh"; ok=1; }
+  # The prompt's flow fence (first 3-space fence) holds exactly the one
+  # include marker line — nothing to extract.
+  body=$(awk '/^   ```$/{c++; next} c==1' "$ORCHESTRATOR_PROMPT" | sed 's/^   //')
+  [ "$body" = '# antz-include: scripts/orchestration/antz-flow.sh' ] \
+    || { echo "  prompt flow fence is not a bare include marker: $body"; ok=1; }
+  return $ok
 }
 
 # =============================================================================
@@ -327,7 +336,7 @@ test_ensure_05_refused_switch_stops_clean() {
 test_ensure_06_no_destructive_flags() {
   # Scan only invocation lines: comments inside the fence mention git freely
   # (the laws' prose) and are not invocations.
-  git_lines=$(grep -v '^[[:space:]]*#' "$SCRIPT" | grep 'git')
+  git_lines=$(grep -v '^[[:space:]]*#' "$FLOW_SH" | grep 'git')
   [ -n "$git_lines" ] || { echo "  no git invocations found"; return 1; }
   if printf '%s\n' "$git_lines" | grep -E -- '[[:space:]](--force|-f|-B|-d|-D|-C|-m|-M)([[:space:]])' >/dev/null; then
     echo "  a git invocation carries a destructive/force flag:"; return 1
@@ -388,7 +397,7 @@ test_ensure_07_no_subcommand_commits() {
 test_ensure_08_no_git_discover() {
   new_repo nogit-slug
   shellsh=$(command -v sh)
-  out=$(PATH="/nonexistent" "$shellsh" "$SCRIPT" discover 2>/dev/null); st=$?
+  out=$(PATH="/nonexistent" "$shellsh" "$FLOW_SH" discover 2>/dev/null); st=$?
   [ "$out" = "state=no_git" ] || { echo "  expected state=no_git, got: $out"; return 1; }
   [ "$st" -eq 1 ] || { echo "  expected exit 1, got: $st"; return 1; }
 }
@@ -396,21 +405,21 @@ test_ensure_08_no_git_discover() {
 test_ensure_08_no_git_ensure() {
   new_repo nogit-slug
   shellsh=$(command -v sh)
-  out=$(PATH="/nonexistent" "$shellsh" "$SCRIPT" ensure "$SLUG" 2>/dev/null); st=$?
+  out=$(PATH="/nonexistent" "$shellsh" "$FLOW_SH" ensure "$SLUG" 2>/dev/null); st=$?
   [ "$out" = "state=no_git" ] || { echo "  expected state=no_git, got: $out"; return 1; }
   [ "$st" -eq 1 ] || { echo "  expected exit 1, got: $st"; return 1; }
 }
 
 test_ensure_08_no_repo_discover() {
   nonrepo=$(mktemp -d); add_tmp_repo "$nonrepo"
-  out=$(cd "$nonrepo" && sh "$SCRIPT" discover 2>/dev/null); st=$?
+  out=$(cd "$nonrepo" && sh "$FLOW_SH" discover 2>/dev/null); st=$?
   [ "$out" = "state=no_repo" ] || { echo "  expected state=no_repo, got: $out"; return 1; }
   [ "$st" -eq 1 ] || { echo "  expected exit 1, got: $st"; return 1; }
 }
 
 test_ensure_08_no_repo_ensure() {
   nonrepo=$(mktemp -d); add_tmp_repo "$nonrepo"
-  out=$(cd "$nonrepo" && sh "$SCRIPT" ensure no-repo-slug 2>/dev/null); st=$?
+  out=$(cd "$nonrepo" && sh "$FLOW_SH" ensure no-repo-slug 2>/dev/null); st=$?
   [ "$out" = "state=no_repo" ] || { echo "  expected state=no_repo, got: $out"; return 1; }
   [ "$st" -eq 1 ] || { echo "  expected exit 1, got: $st"; return 1; }
 }
@@ -448,7 +457,7 @@ test_ensure_10_creation_failed_reports_no_branch() {
   } > "$shimdir/git"
   chmod +x "$shimdir/git"
   before=$(git -C "$REPO_ROOT" branch --show-current)
-  out=$(cd "$REPO_ROOT" && PATH="$shimdir:$PATH" sh "$SCRIPT" ensure "$SLUG"); st=$?
+  out=$(cd "$REPO_ROOT" && PATH="$shimdir:$PATH" sh "$FLOW_SH" ensure "$SLUG"); st=$?
   [ "$out" = "state=no_branch" ] || { echo "  expected state=no_branch, got: $out"; return 1; }
   [ "$st" -eq 1 ] || { echo "  expected exit 1, got: $st"; return 1; }
   [ "$(git -C "$REPO_ROOT" branch --show-current)" = "$before" ] \
@@ -719,7 +728,8 @@ test_orchestrator_05_unchanged_surface() {
 
 # ---- run ----------------------------------------------------------------------
 
-run_test "ensure-extracted: the embedded flow script extracts from the prompt" test_ensure_extracted
+run_test "ensure-extracted: the flow script is loaded from scripts/orchestration/antz-flow.sh and parses as POSIX sh" test_ensure_extracted
+run_test "testharness-01: the flow suite loads scripts/orchestration/antz-flow.sh as a file (no extraction from the prompt)" test_testharness_01_file_source
 run_test "ensure-01: ensure creates the branch at HEAD and positions the session" test_ensure_01_fresh_creates_and_positions
 run_test "ensure-02: uncommitted working-tree work survives the positioning" test_ensure_02_uncommitted_work_survives
 run_test "ensure-03: resume positions onto the existing branch without rewriting it" test_ensure_03_resume_positions_without_rewriting
@@ -754,7 +764,18 @@ run_test "orchestrator-05: the unchanged surface stays unchanged" test_orchestra
 skip_test "e2e-orchestrator-01: a live orchestrated run leaves the user on antz/<slug> and prints user-controlled follow-ups with a placeholder merge target" \
   "e2e-only: observable only in a live orchestrated run (verifier's e2e-qa.feature)"
 
+# e2e-02 (spdd/changes/orchestrator-fast-path/07-e2e.feature) is the change's
+# verifier-owned end-to-end QA suite: the user runs the three script suites
+# from the source tree and checks the runnable-file affordances at the user
+# surface. This suite is one of the three, so it cannot run its siblings from
+# inside itself without recursing; the discover machine lines and `sh -n`
+# cleanliness it observes are covered by this suite's own tests (ensure-13
+# and the file-loading assertions) -- the scenario id itself still gets an
+# explicit stub (suite convention: see tests/versioning-rule_test.sh).
+skip_test "e2e-02: the three script suites pass reading scripts/orchestration/ files directly, in-repo discover prints the same candidate= lines as the temp-file invocation, and sh -n passes for each of the three files" \
+  "e2e-only: the suite run itself is the verifier's step -- a suite cannot run its siblings from inside itself, run by the verifier (07-e2e.feature)"
+
 echo
 echo "pass=$pass_count fail=$fail_count skip=$skip_count"
-rm -f "$FLOW_SCRIPT" "$PROSE_STEP1" "$PROSE_STEP5" "$PROSE_OWNS" "$PROSE_DONT"
+rm -f "$PROSE_STEP1" "$PROSE_STEP5" "$PROSE_OWNS" "$PROSE_DONT"
 [ "$fail_count" -eq 0 ]

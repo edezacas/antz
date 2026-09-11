@@ -140,7 +140,7 @@ both_release_bullets() {
 
 check_branch_create_and_position() {
   ok=0
-  require "$1" 'created **and checked out** by the orchestrator'"'"'s embedded `antz-flow.sh`' || ok=1
+  require "$1" 'created **and checked out** by the orchestrator'"'"'s `antz-flow.sh`' || ok=1
   require "$1" 'the flow'"'"'s session sits on `antz/<slug>`' || ok=1
   require "$1" 're-positions the session onto the existing branch' || ok=1
   return $ok

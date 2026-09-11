@@ -165,7 +165,11 @@ identical rule (versioning-06).
     agents/meta/.") and remains stale as accepted, recorded drift: the next
     change that legitimately touches "install.sh" (which must bump under
     this rule anyway) should correct line 21 as part of its mandatory-bump
-    commit.
+    commit. **CLOSED** by change `orchestrator-fast-path` (renderinject-06,
+    merged 2026-09-11): that change touched install.sh legitimately, bumped to
+    4.3.0, and corrected the header sentence to name all three tracked paths
+    ("agents/prompts/, agents/meta/, and install.sh"); the recorded drift no
+    longer exists.
   - The delivering change itself required no bump and shipped none: its diff
     is docs-only, which the preserved docs-only clause classifies as no-bump
     (worked example for versioning-03's "AGENTS.md, CLAUDE.md, docs/, or
