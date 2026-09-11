@@ -91,14 +91,19 @@ forced_meta_checkout() {
   done
 }
 
-# head_install_checkout <dest>: staged checkout identical to the working tree
-# except install.sh is git HEAD's copy (the pre-change renderer), so the only
-# input that differs from the working render is install.sh itself (render-03,
-# render-04's "only rendered change" scoping).
-head_install_checkout() {
+# prechange_install_checkout <dest>: staged checkout identical to the working
+# tree except install.sh's readwrite Claude tools string is mutated back to
+# the pre-change value. Renderer-vs-renderer with a controlled single-line
+# mutation: robust over time (a git-HEAD baseline goes vacuous/incorrect the
+# moment this change is committed), and any renderer change outside the tools
+# line still shows up as a rendered diff (render-03, render-04 scoping).
+prechange_install_checkout() {
   dest="$1"
   stage_checkout "$dest"
-  git -C "$SCRIPT_DIR" show HEAD:install.sh > "$dest/install.sh"
+  sed -i 's/Read, Grep, Glob, Bash, Edit, Write, Skill/Read, Grep, Glob, Bash, Edit, Write/' \
+    "$dest/install.sh"
+  grep -qF 'Edit, Write, Skill' "$dest/install.sh" \
+    && { echo "  prechange_install_checkout: sed did not apply"; return 1; }
 }
 
 tree_root=$(new_tmp_dir)
@@ -189,7 +194,7 @@ test_render_02() {
 # =============================================================================
 test_render_03() {
   head_root=$(new_tmp_dir)
-  head_install_checkout "$head_root/tree"
+  prechange_install_checkout "$head_root/tree"
   head_home="$HOMES_ROOT/headinstall"
   render_to "$head_home" "$head_root/tree" "$head_root/render.log" \
     || { echo "  HEAD-install render failed:"; cat "$head_root/render.log"; return 1; }
@@ -253,13 +258,13 @@ test_render_04() {
 
 # render-04 (scoping half): the only rendered change vs the pre-change
 # renderer is the readwrite Claude tools string. Diff every rendered file
-# between the HEAD-install render (test_render_03's fixture, pre-change
-# prompts NOT used there -- see note above: that fixture shares prompts, so
-# any diff is renderer-only) and the working render: exactly the three Claude
+# between the controlled-mutation render (see prechange_install_checkout:
+# prompts are shared with the working render, so
+# mutation-only diff) and the working render: exactly the three Claude
 # readwrite agent files differ, and each diff is exactly its tools line.
 test_render_04_scoping() {
   head_root=$(new_tmp_dir)
-  head_install_checkout "$head_root/tree"
+  prechange_install_checkout "$head_root/tree"
   head_home="$HOMES_ROOT/headinstall"
   [ -f "$(agent_md "$head_home" claude specifier)" ] \
     || { render_to "$head_home" "$head_root/tree" "$head_root/render.log" || return 1; }
@@ -303,7 +308,7 @@ run_test "render-02: readonly still maps to Read, Grep, Glob, Bash and orchestra
 run_test "render-03: OpenCode renders byte-identical between pre-change and post-change renderer; no permission.skill, no tools: entry, no skill mention" test_render_03
 
 run_test "render-04: marker format unchanged and rendering deterministic (second render byte-identical)" test_render_04
-run_test "render-04 (scoping): vs git HEAD's renderer, the only rendered change is the three readwrite Claude tools lines" test_render_04_scoping
+run_test "render-04 (scoping): with the mutated pre-change renderer, the only rendered change is the three readwrite Claude tools lines" test_render_04_scoping
 
 # ---- e2e-only scenario: explicit SKIP stub -----------------------------------
 skip_test "e2e-render-01: after reinstall from a post-change checkout, installed Claude copies carry the Skill tool and OpenCode copies keep their shape" \
