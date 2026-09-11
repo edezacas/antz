@@ -9,6 +9,11 @@ changes to the workflow contract (directory layout, access model, etc).
 
 This branch (`master`) carries the branch-marked, no-commit variant of antz; the `worktree` branch carries the worktree-isolated variant (worktree isolation + gated per-role commits), whose `install.sh` binds its remote install to its own ref.
 
+## [4.2.1] - 2026-09-11
+
+### Fixed
+- **The orchestrator's embedded `antz-skills.sh` matching is now keyed to each skill's `description:` field only.** Previously the snippet lowercased and matched keywords against the ENTIRE YAML frontmatter block, so a keyword appearing only in the frontmatter `name:`, `license:`, or `metadata:` falsely listed the skill — verified false positives on the real skills tree: `apache` via `license: Apache-2.0` (angular-conventions, init-project) and `edezacas` via their `metadata:` — and could displace a genuinely matching skill under the cap of five. Now a keyword appearing only in the frontmatter `name:`, `license:`, or `metadata:` no longer lists the skill, while description keywords match exactly as before (same case-insensitive matching, same `matched=` reasons, same `skill=<name> path=<abs>/SKILL.md matched=<kw,...>` lines and explicit `Skills: none matched` line). Multi-line YAML block scalars are matched: `description: >` and `>-` accumulate their indented continuation lines into the match text until the next top-level key or the end of the frontmatter (a naive line-only extraction returned just `>` and would have made the real omarchy and diagnose-crash skills unmatchable). Nothing else changed: the output shapes, the cap of five with the alphabetical-by-name tie-break, the prompt prose, the docs, and install.sh are untouched. This closes the "Implementation caution (verifier, 2026-09-11)" recorded in `spdd/specs/skills-activation.md`. Grades as **patch**, not minor and not major: the snippet's code is aligned to already-specced, already-merged behavior (the rendered prose was already description-keyed) — no new role behavior, render mechanic, or install mechanic is introduced, and the workflow contract, the `antz:generated` marker format, the access model, the rendered command contract, and the install locations are all unchanged, so no consumer breaks.
+
 ## [4.2.0] - 2026-09-11
 
 ### Added
