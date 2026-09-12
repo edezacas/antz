@@ -26,7 +26,7 @@ exists?" pass over every piece of state the orchestrator needs:
 
 | Question | Derived how |
 |---|---|
-| What change/slug is this? | Diff `spdd/changes/` before/after delegating a new request to `specifier`. |
+| What change/slug is this? | The `discover` listing of marker branches and `spdd/changes/` directories. The specifier delegation is a first-class flow step routed from disk: the orchestrator delegates the change to the `specifier` when neither `spdd/changes/<slug>/` nor `spdd/archive/<slug>/` exists, then re-probes (the original design's before/after diff of `spdd/changes/` around a new request was never needed). |
 | What order are sub-specs implemented in? | Numbered filenames (`01-`, `02-`, ...) — an earlier `ORDER.md` design was rejected as pure duplication of what the filename already encodes. |
 | Is sub-spec N done, in progress, or not started? | Grep its scenario ids against `coder`'s unit-level test suite for presence (ids live in the test *name*, not a comment, since comments don't surface in runner output), then actually run the suite to resolve "something present" into red vs. green/skip. |
 | Did `coder` refuse/escalate sub-spec N? | A `BLOCKED: <why>` skip reason — distinct from an ordinary "not unit-testable" skip. |

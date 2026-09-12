@@ -16,9 +16,19 @@
 # unchanged surface — static assertions on the prompt text (precedent:
 # tests/versioning-rule_test.sh).
 #
+# Extended by change fix-orchestrator-flow (sub-spec 01, scenarios flow-01..
+# flow-10): the post-ensure change_dir=missing routing (never-specified ->
+# specifier delegation; on-disk candidate -> mid-session-deletion stop;
+# post-verifier -> step 5), step 5's disk-based verifier-outcome detection
+# (re-probe + release gate + rejected_count comparison), the dedup guard's
+# exactly-two step-4 exceptions, the stopped/waiting-user stop vocabulary,
+# and the unchanged-surface constraints (14 fence lines / one ```sh fence /
+# steps end at 6 / the four tables / scripts/orchestration/ byte-unchanged).
+#
 # Helpers are exercised against throwaway git repos under a temp dir; every
-# scenario id carries the ensure-<n> or orchestrator-<n> prefix (and each
-# example-table row is its own test), which the sub-spec convention expects.
+# scenario id carries the ensure-<n>, orchestrator-<n> or flow-<n> prefix
+# (and each example-table row is its own test), which the sub-spec convention
+# expects.
 #
 # Since change orchestrator-fast-path (sub-spec 01) the scripts live as real
 # files under scripts/orchestration/ and the prompt's fences carry only
@@ -105,6 +115,23 @@ awk '/^## Owns/{s=1} s && /^## / && !/^## Owns/{s=0} s' "$ORCHESTRATOR_PROMPT" >
 # The "## What you don't do" section.
 PROSE_DONT=$(mktemp)
 awk '/^## What you don.t do/{s=1} s && /^## / && !/^## What/{s=0} s' "$ORCHESTRATOR_PROMPT" > "$PROSE_DONT"
+
+# Step 2's section: from its heading to step 3's heading (the probe output
+# table and the trust-only-its-output law).
+PROSE_STEP2=$(mktemp)
+awk '/^2\. \*\*Probe/{s=1} /^3\. \*\*Classify/{s=0} s' "$ORCHESTRATOR_PROMPT" > "$PROSE_STEP2"
+
+# The Session guards block (dedup + latch bullets): from its bold heading to
+# the "## Report Format" section.
+PROSE_GUARDS=$(mktemp)
+awk '/^\*\*Session guards/{s=1} /^## Report Format/{s=0} s' "$ORCHESTRATOR_PROMPT" > "$PROSE_GUARDS"
+
+# The "## Report Format" section.
+PROSE_REPORT=$(mktemp)
+awk '/^## Report Format/{s=1} s && /^## / && !/^## Report Format/{s=0} s' "$ORCHESTRATOR_PROMPT" > "$PROSE_REPORT"
+
+# The orchestrator design notes (flow-10 edits one historical-record row).
+DOCS_ORCH="$SCRIPT_DIR/docs/orchestrator.md"
 
 # ---- tiny git fixture --------------------------------------------------------
 
@@ -726,6 +753,283 @@ test_orchestrator_05_unchanged_surface() {
   return $ok
 }
 
+# =============================================================================
+# flow-01: after ensure, a never-specified flow (probe reports
+# change_dir=missing and neither spdd/changes/<slug>/ nor spdd/archive/<slug>/
+# exists — covering state=created and the branch-only state=reused candidate
+# that never wrote anything) delegates the whole change to the specifier with
+# the standard delegation message, then re-probes and continues through the
+# unchanged state machine (classification onward). The specifier is delegated
+# at most once per invocation, and this step produces delegated-specifier.
+# =============================================================================
+test_flow_01_never_specified_delegation() {
+  ok=0
+  require "$PROSE_STEP1" 'routed by the directories that exist on disk' || ok=1
+  require "$PROSE_STEP1" 'Never specified' || ok=1
+  require "$PROSE_STEP1" 'neither `spdd/changes/<slug>/` nor `spdd/archive/<slug>/` exists' || ok=1
+  require "$PROSE_STEP1" 'the flow was never specified' || ok=1
+  require "$PROSE_STEP1" 'this covers both a `state=created` flow and the branch-only `state=reused` candidate that never wrote anything' || ok=1
+  require "$PROSE_STEP1" 'Delegate the whole change to the `specifier`' || ok=1
+  require "$PROSE_STEP1" 'which creates the change dir by authoring the sub-specs' || ok=1
+  # The standard delegation message: same shape as every other delegation.
+  require "$PROSE_STEP1" 'carrying the standard delegation message' || ok=1
+  require "$PROSE_STEP1" '`Working root` and `Change slug` lines plus the `## Skills to load before work` block' || ok=1
+  require "$PROSE_STEP1" 'identical in shape to every other delegation' || ok=1
+  # Re-probe, then the unchanged state machine from the fresh output.
+  require "$PROSE_STEP1" 'then re-probe (re-run step 2' || ok=1
+  require "$PROSE_STEP1" 'continue through the unchanged state machine from its fresh output' || ok=1
+  require "$PROSE_STEP1" 'classification (step 3) onward' || ok=1
+  # At most one specifier delegation per invocation.
+  require "$PROSE_STEP1" 'The specifier is delegated at most once per invocation' || ok=1
+  # This step produces the Report Format's delegated-specifier status.
+  require "$PROSE_STEP1" 'status is produced by this step' || ok=1
+  require "$PROSE_STEP1" 'status=delegated-specifier' || ok=1
+  return $ok
+}
+
+# =============================================================================
+# flow-02: change_dir=missing when this invocation's discover listed an
+# on-disk candidate for the slug (and no verifier delegation yet) means the
+# change dir was deleted mid-session: stop and ask, never delegating the
+# specifier — a hard state stop reported as status=stopped, with the latch
+# applying.
+# =============================================================================
+test_flow_02_mid_session_deletion_stop() {
+  ok=0
+  require "$PROSE_STEP1" 'Deleted mid-session' || ok=1
+  require "$PROSE_STEP1" 'the `discover` of this invocation listed an on-disk candidate for this slug' || ok=1
+  require "$PROSE_STEP1" 'the change dir existed when the flow resumed' || ok=1
+  require "$PROSE_STEP1" 'the verifier has not been delegated in this invocation' || ok=1
+  require "$PROSE_STEP1" 'the change dir was deleted mid-session' || ok=1
+  require "$PROSE_STEP1" 'Stop and ask the user instead' || ok=1
+  require "$PROSE_STEP1" 'never delegating the specifier' || ok=1
+  require "$PROSE_STEP1" 'a hard state stop, reported as `status=stopped`' || ok=1
+  require "$PROSE_STEP1" 'with the latch applying: no further delegation of any kind, resumption only as a fresh invocation' || ok=1
+  # The step-2 table row routes this arm too.
+  require "$PROSE_STEP2" 'mid-session deletion, stop and ask' || ok=1
+  return $ok
+}
+
+# =============================================================================
+# flow-03: after this invocation has delegated the verifier, a
+# change_dir=missing outcome never re-triggers the never-specified rule and
+# never delegates the specifier — step 5's disk-based outcome detection
+# routes it.
+# =============================================================================
+test_flow_03_post_verifier_routes_to_step5() {
+  ok=0
+  require "$PROSE_STEP1" 'Already verified' || ok=1
+  require "$PROSE_STEP1" 'when this invocation has delegated the `verifier`' || ok=1
+  require "$PROSE_STEP1" 'does not apply the never-specified rule' || ok=1
+  require "$PROSE_STEP1" 'does not delegate the specifier' || ok=1
+  require "$PROSE_STEP1" 'the disk-based outcome detection of step 5 routes it' || ok=1
+  require "$PROSE_STEP2" 'after a `verifier` delegation -> step 5' || ok=1
+  return $ok
+}
+
+# =============================================================================
+# flow-04: step 5 detects the verifier's outcome from disk (re-probe plus the
+# release gate), never from the verifier's conversational verdict; the
+# release table and the human follow-up print keep their exact pinned content.
+# =============================================================================
+test_flow_04_step5_disk_detection_approval() {
+  ok=0
+  require "$PROSE_STEP5" 'detect the verifier' || ok=1
+  require "$PROSE_STEP5" 'outcome from disk' || ok=1
+  require "$PROSE_STEP5" 'never from the verifier' || ok=1
+  require "$PROSE_STEP5" 're-probe with the step-2 probe' || ok=1
+  require "$PROSE_STEP5" 'read-only probing is always allowed' || ok=1
+  require "$PROSE_STEP5" 'route on the fresh output' || ok=1
+  # change_dir=missing after the verifier: run release, route on its line.
+  require "$PROSE_STEP5" 'The probe reports `change_dir=missing`' || ok=1
+  require "$PROSE_STEP5" "the verifier's archive step moved the change dir" || ok=1
+  require "$PROSE_STEP5" 'sh <tempfile> release <slug>' || ok=1
+  require "$PROSE_STEP5" 'released branch=antz/<slug>' || ok=1
+  require "$PROSE_STEP5" 'approved-with-warnings included, since its archive move is identical on disk' || ok=1
+  require "$PROSE_STEP5" 'printing the existing human follow-up print unchanged' || ok=1
+  require "$PROSE_STEP5" 'gate=refused reason=archive-missing' || ok=1
+  require "$PROSE_STEP5" 'anomalous state (the change dir is gone but no archive exists)' || ok=1
+  require "$PROSE_STEP5" 'Any other `gate=refused reason=...` line stops per the release table' || ok=1
+  # The release table survives with its header and the four machine lines,
+  # and the human follow-up print keeps its pinned content.
+  require "$PROSE_STEP5" '| release output | Meaning / action |' || ok=1
+  for line in 'gate=refused reason=branch-missing' \
+              'gate=refused reason=archive-missing' \
+              'gate=refused reason=change-still-present' \
+              'released branch='; do
+    require "$PROSE_STEP5" "$line" || ok=1
+  done
+  require "$PROSE_STEP5" 'git switch <integration> && git merge antz/<slug>' || ok=1
+  require "$PROSE_STEP5" 'the orchestrator never runs them' || ok=1
+  return $ok
+}
+
+# =============================================================================
+# flow-05: the re-probe shows the change dir still present — a
+# rejected_count increase over the pre-delegation disk read is a fresh
+# rejection routed to step 6; any other state (present, no new rejection) is
+# anomalous and fail-closes. Both comparison sides are disk reads.
+# =============================================================================
+test_flow_05_step5_rejection_and_failclosed() {
+  ok=0
+  require "$PROSE_STEP5" 'The re-probe shows the change dir still present' || ok=1
+  require "$PROSE_STEP5" 'compare `rejected_count` with the value read from disk before that verifier delegation' || ok=1
+  require "$PROSE_STEP5" 'disk reads on both sides' || ok=1
+  require "$PROSE_STEP5" 'nothing is taken from the verifier' || ok=1
+  require "$PROSE_STEP5" 'A greater count is a fresh rejection and routes to step 6' || ok=1
+  require "$PROSE_STEP5" 'loop back to step 2, which picks the freshly written entry up on the next pass' || ok=1
+  require "$PROSE_STEP5" 'the change dir present with no new rejection' || ok=1
+  require "$PROSE_STEP5" 'the verifier neither archived nor rejected' || ok=1
+  require "$PROSE_STEP5" 'stop fail-closed and report' || ok=1
+  return $ok
+}
+
+# =============================================================================
+# flow-06: the dedup bullet keeps the never-twice law and enumerates exactly
+# two exceptions, both step 4's (the attributable-blocker relay to coder; the
+# one bounded whole-change verifier retry) — no third exception: the specifier
+# is never re-delegated within an invocation.
+# =============================================================================
+test_flow_06_dedup_two_exceptions() {
+  ok=0
+  require "$PROSE_GUARDS" 'the same (sub-spec, role) pair is never delegated twice' || ok=1
+  require "$PROSE_GUARDS" 'route by the existing state machine' || ok=1
+  require "$PROSE_GUARDS" 'exactly two exceptions, both step 4' || ok=1
+  require "$PROSE_GUARDS" 'relaying each attributable blocker to the `coder` session for the sub-spec it names' || ok=1
+  require "$PROSE_GUARDS" 'at most one relay per pair per entry' || ok=1
+  require "$PROSE_GUARDS" 'a second entry stops the flow for good' || ok=1
+  require "$PROSE_GUARDS" 'the one bounded whole-change `verifier` retry when a rejected entry holds only attributable blockers' || ok=1
+  require "$PROSE_GUARDS" 'bounded by `REJECTED.md`: the count reaching 2 stops the flow for good' || ok=1
+  require "$PROSE_GUARDS" 'No third exception exists' || ok=1
+  require "$PROSE_GUARDS" 'the specifier is never re-delegated within an invocation' || ok=1
+  require "$PROSE_GUARDS" 'persisting after the specifier delegation stops the session rather than re-delegating' || ok=1
+  # The guards' standing wording survives.
+  require "$PROSE_GUARDS" 'prompt-level law' || ok=1
+  require "$PROSE_GUARDS" 'regardless of what the tool grant technically allows' || ok=1
+  require "$PROSE_GUARDS" 'starts with a clean slate' || ok=1
+  require "$PROSE_GUARDS" 'They add constraints only' || ok=1
+  # The superseded "single carve-out" framing is gone.
+  refuse "$PROSE_GUARDS" 'single carve-out' || ok=1
+  return $ok
+}
+
+# =============================================================================
+# flow-07: waiting-user is defined (open questions, slug ambiguity, receipt
+# doubt), stopped is the hard state stop, the latch applies identically to
+# both variants, and the six-value vocabulary is unchanged.
+# =============================================================================
+test_flow_07_waiting_user_defined() {
+  ok=0
+  require "$PROSE_REPORT" 'the stop variant whose stop hands a decision to the user' || ok=1
+  require "$PROSE_REPORT" 'produced by exactly these stops' || ok=1
+  require "$PROSE_REPORT" '`open_questions=yes` outcome' || ok=1
+  require "$PROSE_REPORT" 'slug-ambiguity stop (no unambiguous on-disk candidate, or a semantically unclear continuation of an already-claimed slug)' || ok=1
+  require "$PROSE_REPORT" 'receipt-doubt stop' || ok=1
+  require "$PROSE_REPORT" 'can neither be settled from the receipt' || ok=1
+  require "$PROSE_REPORT" 'asks the user once' || ok=1
+  require "$PROSE_REPORT" 'the hard state stop — every other stop-and-report outcome' || ok=1
+  require "$PROSE_REPORT" 'changes only the status value of the closing block, never stop behavior' || ok=1
+  # The six status values themselves stay pinned, unchanged.
+  require "$PROSE_REPORT" '`delegated-specifier`, `delegated-coder`, `delegated-verifier`, `stopped`, `released`, or `waiting-user`' || ok=1
+  # The latch applies identically to both variants (Session guards).
+  require "$PROSE_GUARDS" 'The latch applies identically to both stop variants' || ok=1
+  require "$PROSE_GUARDS" 'exactly like a `stopped` one' || ok=1
+  return $ok
+}
+
+# =============================================================================
+# flow-08: the hard state stops are enumerated in the vocabulary, so the
+# classification is closed; each stop still names the resume action.
+# =============================================================================
+test_flow_08_stopped_enumeration() {
+  ok=0
+  for t in 'state=no_git' 'state=no_repo' 'state=no_commits' \
+           'state=checkout_refused' 'state=no_branch' 'branch=missing' \
+           'the mid-session change-dir deletion stop' \
+           'the post-verifier fail-closed stop' \
+           'gate=refused reason=...' \
+           'BLOCKED:`-reasoned sub-spec found in classification' \
+           'stop at the first one found, relay its reason' \
+           'rejected_count=2' \
+           'a non-attributable blocker in a rejected entry' \
+           'the empty-ids stop-and-ask'; do
+    require "$PROSE_REPORT" "$t" || ok=1
+  done
+  require "$PROSE_REPORT" 'Each of those stops still names the resume action in the report body' || ok=1
+  return $ok
+}
+
+# =============================================================================
+# flow-09: the unchanged surface stays unchanged — change_dir=missing keeps
+# its probe-table row (only its routing meaning changed) and the probe script
+# still prints it (scripts/orchestration/ byte-unchanged), the latch still
+# names it, the four tables survive, the steps still end at 6, and no new
+# fenced block was added (14 fence lines, one ```sh fence).
+# =============================================================================
+test_flow_09_unchanged_surface() {
+  ok=0
+  require "$PROSE_STEP2" '| `change_dir=missing` |' || ok=1
+  # The old wrong-slug framing is gone from the row (replaced by the
+  # directory-based routing).
+  refuse "$PROSE_STEP2" 'the slug is wrong' || ok=1
+  require "$PROBE_SH" 'change_dir=missing' || ok=1
+  # The scripts stay byte-unchanged by this change (checked against HEAD when
+  # git is readable — same gating as the sessionguards additive guard).
+  if command -v git >/dev/null 2>&1 && [ -e "$SCRIPT_DIR/.git" ] \
+     && git -C "$SCRIPT_DIR" cat-file -e HEAD:scripts/orchestration/antz-probe.sh 2>/dev/null; then
+    git -C "$SCRIPT_DIR" diff --quiet HEAD -- scripts/orchestration/ \
+      || { echo "  scripts/orchestration/ is not byte-unchanged vs HEAD"; ok=1; }
+  fi
+  require "$PROSE_GUARDS" 'change_dir=missing' || ok=1
+  # The four tables survive with their headers.
+  require "$ORCHESTRATOR_PROMPT" '| discover output | Meaning / action |' || ok=1
+  require "$ORCHESTRATOR_PROMPT" '| Output | Meaning |' || ok=1
+  require "$ORCHESTRATOR_PROMPT" '| `rejected_count` | Action |' || ok=1
+  require "$ORCHESTRATOR_PROMPT" '| release output | Meaning / action |' || ok=1
+  # Steps still end at 6; no new fenced block (14 fence lines / 7 blocks,
+  # exactly one ```sh).
+  require "$ORCHESTRATOR_PROMPT" '6. On a fresh rejection' || ok=1
+  if grep -qE '^7\. ' "$ORCHESTRATOR_PROMPT"; then
+    echo "  a new process step appeared"; ok=1
+  fi
+  fences=$(grep -cE '^   ```(sh)?$' "$ORCHESTRATOR_PROMPT")
+  [ "$fences" = "14" ] || { echo "  expected 14 fence lines (7 blocks), got: $fences"; ok=1; }
+  shfences=$(grep -c '^   ```sh$' "$ORCHESTRATOR_PROMPT")
+  [ "$shfences" = "1" ] || { echo "  expected exactly 1 probe fence, got: $shfences"; ok=1; }
+  # Step 1's ensure-state meanings keep their pinned wording.
+  require "$PROSE_STEP1" 'both position the session on branch `antz/<slug>`' || ok=1
+  require "$PROSE_STEP1" 'state=checkout_refused' || ok=1
+  require "$PROSE_STEP1" 'state=no_branch' || ok=1
+  require "$PROSE_STEP1" 'state=no_commits' || ok=1
+  require "$PROSE_STEP1" 'nothing is ever forced' || ok=1
+  return $ok
+}
+
+# =============================================================================
+# flow-10: docs/orchestrator.md's "What change/slug is this?" row describes
+# the specifier delegation as a first-class, disk-routed step (no more
+# before/after diffing of spdd/changes/), keeps the historical-record
+# framing, and no other row of the table is edited.
+# =============================================================================
+test_flow_10_docs_derivation_row() {
+  ok=0
+  require "$DOCS_ORCH" '| What change/slug is this? |' || ok=1
+  require "$DOCS_ORCH" 'first-class flow step routed from disk' || ok=1
+  require "$DOCS_ORCH" 'delegates the change to the `specifier` when neither' || ok=1
+  require "$DOCS_ORCH" 'then re-probes' || ok=1
+  # The old derivation sentence is gone.
+  refuse "$DOCS_ORCH" '| What change/slug is this? | Diff `spdd/changes/` before/after delegating a new request to `specifier`. |' || ok=1
+  # The file's historical-record framing survives.
+  require "$DOCS_ORCH" 'historical design record, not living documentation' || ok=1
+  # No other row of the derived-state table is edited.
+  require "$DOCS_ORCH" '| What order are sub-specs implemented in? | Numbered filenames (`01-`' || ok=1
+  require "$DOCS_ORCH" '| Is sub-spec N done, in progress, or not started? | Grep its scenario ids' || ok=1
+  require "$DOCS_ORCH" '| Did `coder` refuse/escalate sub-spec N? | A `BLOCKED: <why>` skip reason' || ok=1
+  require "$DOCS_ORCH" '| Was this change approved and merged? | `spdd/changes/<slug>/` gone' || ok=1
+  require "$DOCS_ORCH" '| Was this change rejected before, how many times? | `REJECTED.md`' || ok=1
+  return $ok
+}
+
 # ---- run ----------------------------------------------------------------------
 
 run_test "ensure-extracted: the flow script is loaded from scripts/orchestration/antz-flow.sh and parses as POSIX sh" test_ensure_extracted
@@ -756,6 +1060,17 @@ run_test "orchestrator-03: no concrete integration branch name appears as a merg
 run_test "orchestrator-04: the law wording reflects the checkout contract" test_orchestrator_04_law_wording
 run_test "orchestrator-05: the unchanged surface stays unchanged" test_orchestrator_05_unchanged_surface
 
+run_test "flow-01: a never-specified change_dir=missing outcome delegates the whole change to the specifier (once per invocation), then re-probes and continues through the unchanged state machine" test_flow_01_never_specified_delegation
+run_test "flow-02: change_dir=missing with an on-disk discover candidate is a mid-session deletion -- hard stop, status=stopped, latch applies, never the specifier" test_flow_02_mid_session_deletion_stop
+run_test "flow-03: after a verifier delegation change_dir=missing never re-triggers the specifier rule -- step 5's disk-based detection routes it" test_flow_03_post_verifier_routes_to_step5
+run_test "flow-04: step 5 detects the verifier outcome from disk (re-probe + release gate), never from the report; the release table and human follow-up print stay pinned" test_flow_04_step5_disk_detection_approval
+run_test "flow-05: a greater rejected_count than the pre-delegation disk read is a fresh rejection routing to step 6; any other post-verifier state fail-closes" test_flow_05_step5_rejection_and_failclosed
+run_test "flow-06: the dedup guard enumerates exactly two exceptions, both step 4's, and no third exception; the specifier is never re-delegated" test_flow_06_dedup_two_exceptions
+run_test "flow-07: waiting-user is the decision-handing stop variant (open questions, slug ambiguity, receipt doubt), stopped the hard state stop; the latch applies identically; the six values stay pinned" test_flow_07_waiting_user_defined
+run_test "flow-08: the stopped enumeration is closed -- every machine-line and flow stop is named, each still naming the resume action" test_flow_08_stopped_enumeration
+run_test "flow-09: the unchanged surface stays unchanged -- probe row and script keep change_dir=missing, four tables survive, steps end at 6, 14 fence lines with one sh fence, scripts byte-unchanged" test_flow_09_unchanged_surface
+run_test "flow-10: docs/orchestrator.md's 'What change/slug is this?' row describes the disk-routed specifier delegation; other rows untouched" test_flow_10_docs_derivation_row
+
 # e2e-orchestrator-01 (spdd/changes/flow-branch-checkout/e2e-qa.feature) is
 # observable only by driving a live antz-orchestrator session end to end —
 # the verifier's Integration Verification, not this unit suite. Explicit
@@ -777,5 +1092,6 @@ skip_test "e2e-02: the three script suites pass reading scripts/orchestration/ f
 
 echo
 echo "pass=$pass_count fail=$fail_count skip=$skip_count"
-rm -f "$PROSE_STEP1" "$PROSE_STEP5" "$PROSE_OWNS" "$PROSE_DONT"
+rm -f "$PROSE_STEP1" "$PROSE_STEP5" "$PROSE_OWNS" "$PROSE_DONT" \
+  "$PROSE_STEP2" "$PROSE_GUARDS" "$PROSE_REPORT"
 [ "$fail_count" -eq 0 ]

@@ -213,9 +213,14 @@ in AGENTS.md and CLAUDE.md (docs-02 pins the sync).
     is described: granting Edit/Write grants artifact authorship, never
     commit authority (no role carries a commit fence; committing is always
     the human's follow-up).
-  - Coder ownership rules stay as-is: the coder only reads "spdd/changes/"
-    and never touches "spdd/specs/" or "spdd/archive/" -- readwrite for the
-    verifier does not weaken that.
+  - ~~Coder ownership rules stay as-is: the coder only reads "spdd/changes/"
+    and never touches "spdd/specs/" or "spdd/archive/"~~ -- **Superseded** by
+    change `fix-orchestrator-flow` (roles-01, roles-04): the coder now reads
+    both `spdd/changes/` and `spdd/specs/` as read-only context, writes the
+    implementation and tests wherever they belong in the project (outside
+    `spdd/` by definition), writes the receipt in `spdd/changes/<slug>/`, and
+    never touches `spdd/archive/`. The statement is restated by write surface
+    in `spdd/specs/role-surfaces.md`.
   - The historical sibling-variant docs ("docs/worktree-isolation-plan*.md")
     are not corrected: they describe the "worktree" branch's variant
     historically.

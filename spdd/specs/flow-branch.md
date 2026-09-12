@@ -146,6 +146,141 @@ tables, step 3 classification, step 4 rejection routing, the release-output
 table's four machine lines, the Report Format; no new subcommand, probe, or
 process step.
 
+## Feature: orchestrator — flow routing and stop vocabulary (from 01-flow.feature, change `fix-orchestrator-flow`)
+
+The orchestrator routes a never-specified flow to the specifier, detects
+verifier outcomes from disk, and defines its stop vocabulary. Plan items
+1.1–1.3, 1.5. No script changes; `scripts/orchestration/antz-flow.sh` and
+`scripts/orchestration/antz-probe.sh` are byte-unchanged.
+
+### ADD flow-01
+After `ensure`, a never-specified flow delegates the whole change to the
+specifier, then re-probes and continues through the unchanged state machine:
+when neither `spdd/changes/<slug>/` nor `spdd/archive/<slug>/` exists, the
+flow was never specified (covers both a `state=created` flow and the
+branch-only `state=reused` candidate that never wrote anything). The
+orchestrator delegates the whole change to the `specifier` (which creates the
+change dir by authoring the sub-specs), carrying the standard delegation
+message — the `Working root` and `Change slug` lines plus the `## Skills to
+load before work` block — then re-probes (re-runs step 2's `state`
+subcommand) and continues through the unchanged state machine from its fresh
+output. The Report Format's `delegated-specifier` status is produced by this
+step: the closing block of an invocation that stopped here reads
+`status=delegated-specifier`. The specifier is delegated at most once per
+invocation.
+
+### ADD flow-02
+`change_dir=missing` with an on-disk candidate at discover time means the
+change dir was deleted mid-session — a hard stop: when this invocation's
+`discover` listed an on-disk candidate for this slug (the change dir existed
+when the flow resumed) and the verifier has not been delegated in this
+invocation, the flow stops and asks the user instead of delegating the
+specifier. The stop is a hard state stop, reported as such in the closing
+block (`status=stopped`), with the latch applying: no further delegation of
+any kind, resumption only as a fresh invocation.
+
+### ADD flow-03
+After a verifier delegation, `change_dir=missing` never re-triggers the
+specifier rule — step 5's disk-based outcome detection routes it instead: a
+`change_dir=missing` outcome observed after this invocation has delegated the
+`verifier` does not apply the never-specified rule and does not delegate the
+specifier.
+
+### ADD flow-04
+Step 5 detects the verifier's approval from disk — re-probe plus the release
+gate — never from the verifier's report: the orchestrator re-probes (the
+step-2 probe; read-only probing is always allowed) and routes on the fresh
+output. When the probe reports `change_dir=missing` (the verifier's archive
+step moved the change dir), the orchestrator runs `sh <tempfile> release
+<slug>` and routes on its line: a green `released branch=antz/<slug>` means
+the change is approved — approved-with-warnings included, since its archive
+move is identical on disk — and the flow is done, printing the existing human
+follow-up print unchanged. A `gate=refused reason=archive-missing` line is
+an anomalous state (the change dir is gone but no archive exists): stop and
+report. Any other `gate=refused reason=...` line stops per the release table.
+The release-output table and the human follow-up print keep their exact
+pinned content.
+
+### ADD flow-05
+A fresh rejection is detected from a new `REJECTED.md` entry; any other
+post-verifier state fail-closes: when the re-probe shows the change dir still
+present, the orchestrator compares `rejected_count` with the value it read
+from disk before that verifier delegation — disk reads on both sides; nothing
+is taken from the verifier's report. A greater count is a fresh rejection and
+routes to step 6 (loop back to step 2, which picks the freshly written entry
+up on the next pass). Any other state — the change dir present with no new
+rejection — is an anomalous state (the verifier neither archived nor
+rejected): stop fail-closed and report.
+
+### ADD flow-06
+The dedup guard enumerates exactly two exceptions — the step-4 coder relay
+and the step-4 single verifier retry: the never-twice rule stays ("the same
+(sub-spec, role) pair is never delegated twice" within one invocation, routing
+instead by the existing state machine), and the bullet enumerates exactly two
+exceptions, both step 4's: relaying each attributable blocker to the `coder`
+session for the sub-spec it names (at most one relay per pair per entry; a
+second entry stops the flow for good), and the one bounded whole-change
+`verifier` retry when a rejected entry holds only attributable blockers
+(bounded by `REJECTED.md`: the count reaching 2 stops the flow for good). No
+third exception exists: the specifier is never re-delegated within an
+invocation, and a `change_dir=missing` outcome persisting after the specifier
+delegation stops the session rather than re-delegating.
+
+### ADD flow-07
+`waiting-user` is defined — the stop variant that hands a decision to the
+user — and the latch applies identically to both variants: `waiting-user` is
+the stop variant whose stop hands a decision to the user, produced by exactly
+these stops: an `open_questions=yes` outcome; a slug-ambiguity stop (no
+unambiguous on-disk candidate, or a semantically unclear continuation of an
+already-claimed slug); and a receipt-doubt stop (the doubtful-receipt path
+that can neither be settled from the receipt's id lines nor by a suite run,
+and asks the user once). `stopped` is defined as the hard state stop — every
+other stop-and-report outcome. The latch applies identically to both variants:
+a `waiting-user` stop ends the session's delegation exactly like a `stopped`
+one; `waiting-user` changes only the closing block's status value, never stop
+behavior. The vocabulary itself is unchanged — the same six status values stay
+pinned — and the tests and docs that name the vocabulary stay valid without
+edits (the definition lives in the prompt).
+
+### ADD flow-08
+Every other stop reports `status=stopped` — the hard state stops are
+enumerated, so the classification is closed: the stops reported as
+`status=stopped` include at least: the flow script's machine-line stops
+(`state=no_git`, `state=no_repo`, `state=no_commits`,
+`state=checkout_refused`, `state=no_branch`), `branch=missing`, the
+mid-session change-dir deletion stop, the post-verifier fail-closed stop, any
+`gate=refused reason=...` line, a `BLOCKED:`-reasoned sub-spec found in
+classification (stop at the first one found, relay its reason),
+`rejected_count=2`, a non-attributable blocker in a rejected entry, and the
+empty-ids stop-and-ask. Each of those stops still names the resume action in
+the report body; `stopped` versus `waiting-user` changes only the closing
+status value.
+
+### ADD flow-09
+The unchanged surface stays unchanged — the probe keeps `change_dir=missing`
+as an output, the tables and fences survive, the steps still end at 6: the
+step-2 probe table still lists `change_dir=missing` as an output (only its
+routing meaning changed: the wrong-slug stop is replaced by the directory-based
+routing), and the probe script itself still prints it exactly as before. The
+latch still names `change_dir=missing` among the stop outcomes. The discover
+table, the state-output table, the rejection-routing table, and the
+release-output table survive with their headers and machine lines. The numbered
+steps still end at 6 and no new fenced block was added (still 14 fence lines
+across 7 blocks, exactly one `sh` fence). Step 1's ensure-state meanings
+(created/reused positioned, checkout_refused/no_branch/no_commits stops) keep
+their pinned wording.
+
+### ADD flow-10
+The historical design record's derivation table reflects the specifier
+delegation as a first-class, disk-routed step (docs only): the "What
+change/slug is this?" row no longer describes diffing `spdd/changes/` before
+and after delegating a new request to the specifier — the specifier delegation
+is a first-class flow step routed from disk: the orchestrator delegates the
+change to the specifier when neither the change dir nor the archive exists,
+then re-probes. The row keeps the file's historical-record framing (an
+explanation of the design's reasoning, not living documentation). No other row
+of that table is edited by this change.
+
 ## Feature: docs (from 03-docs.feature)
 
 ### ADD docs-01
@@ -418,12 +553,15 @@ with exactly one non-empty `test_command=` line and exactly the declared id set
 (a foreign id is a mismatch — covered may read N/N with complete=no); class=
 applies the mapping (any `result=blocked` line → blocked, checked first
 regardless of coverage; else complete=yes with all results green/skip → done;
-else in_progress). The probe's other outputs are unchanged (`open_questions=`,
+else in_progress). The literal sentinel `test_command=none` is accepted as a
+well-formed non-empty value: complete may be yes with `none` (the probe script
+is byte-unchanged — any non-empty `test_command=` value is already well-formed).
+The probe's other outputs are unchanged (`open_questions=`,
 `rejected_count=`, the `change_dir=missing` short-circuit, the empty-ids
 stop-and-ask rule). Verified live at merge on a fixture matrix: missing receipt,
 all-green done, ordinary-skip done, blocked-first regardless of coverage,
-uncovered id, foreign id, and empty ids (complete=no, class=in_progress — never
-vacuously done).
+uncovered id, foreign id, empty ids (complete=no, class=in_progress — never
+vacuously done), and none-sentinel all-green done.
 
 ### MODIFY receipts-07
 The orchestrator's step 3 classifies each sub-spec from the probe's receipt
@@ -445,6 +583,23 @@ writes, fixes, or fabricates the receipt (it stays the coder's artifact).
 No pre-verifier gate: once every sub-spec is done, step 4 routes to the verifier
 without running the unit suite at all; the verifier's own e2e Integration
 Verification suite remains the independent gate.
+
+### ADD receipts-11
+The orchestrator never executes the sentinel — with `none` and a doubtful
+receipt it classifies from the id lines or asks the user once: the sentinel
+is never executed; a doubtful receipt whose `test_command=` value is the
+literal `none` is never run by the orchestrator. With `none` and a doubtful
+receipt, the orchestrator classifies from the receipt's `id=` lines where they
+settle the outcome — any `result=blocked` line still stops at the first one
+found and relays its `BLOCKED:` reason the same way a well-formed blocked
+receipt would — and when the id lines cannot settle it, the orchestrator asks
+the user once rather than guessing: the receipt-doubt stop, reported
+`status=waiting-user`. The rest of the doubtful-receipt exception is
+unchanged: a doubtful receipt carrying a real command is still re-run once for
+that doubtful sub-spec only, a receipt carrying no `test_command=` line at all
+still falls to discovering the command the way any contributor would, the
+sub-spec is classified from the actual run result, the doubt is reported, and
+the orchestrator still never writes, fixes, or fabricates the receipt.
 
 ## Feature: e2e — orchestrator-fast-path (from 07-e2e.feature)
 
@@ -506,3 +661,41 @@ entries and is never retried again (live-session half judged by mechanism).
 Against pre-change 4.2.1 installed copies, `--check` reports the drift to 4.3.0
 for both clients and prints the [4.3.0] entry writing nothing; `--all` restamps
 every installed file; a fresh `--check` reports already up to date (antz 4.3.0).
+
+## Feature: e2e-qa — fix-orchestrator-flow (from e2e-qa.feature, change `fix-orchestrator-flow`)
+
+Verified at merge (2026-09-12) by the verifier. e2e-version-01 executed fully
+against a temp HOME with 4.3.0-stamped installed copies; e2e-delegation-01
+and e2e-approval-01 are live-session halves judged by mechanism.
+
+- **e2e-version-01** executed fully: with 4.3.0-stamped specifier agent files
+  in both client directories, `./install.sh --check` reported
+  "Claude Code: antz 4.3.0 -> 4.4.0" and "OpenCode: antz 4.3.0 -> 4.4.0",
+  printed the full [4.4.0] CHANGELOG entry, wrote nothing; `./install.sh --all`
+  restamped every installed file; a fresh `--check` reported "already up to date
+  (antz 4.4.0)" for both clients; AGENTS.md and CLAUDE.md carry the updated
+  strict-ownership gotcha bullet identically in both files.
+- **e2e-delegation-01 / e2e-approval-01** (live-session halves) judged by the
+  mechanism they exercise, per the repo's established e2e convention (no role
+  can spawn a live client session): the orchestrator prompt's post-ensure routing
+  (flow-01..03), the dedup guard's two exceptions (flow-06), step 5's disk-based
+  detection (flow-04..05), the waiting-user/stopped definitions (flow-07..08),
+  and the unchanged surface (flow-09) are all pinned by the existing test suites
+  and verified live against the working tree. Machine-observability-limited, not
+  reducible here.
+
+### ADD e2e-delegation-01
+A fresh change gets its flow reaching the specifier instead of dying at
+`change_dir=missing` (live-session; judged by mechanism).
+
+### ADD e2e-approval-01
+Approval is decided from disk, so the user sees the same observable outcome
+whether the verifier said approved or approved-with-warnings, and gets the
+human follow-ups (live-session; judged by mechanism).
+
+### ADD e2e-version-01
+Against pre-change 4.3.0 installed copies, `--check` reports the drift to
+4.4.0 for both clients and prints the [4.4.0] entry; `--all` restamps every
+installed file; a fresh `--check` reports already up to date (antz 4.4.0) for
+both clients; AGENTS.md and CLAUDE.md carry the updated strict-ownership
+gotcha bullet identically in both files.

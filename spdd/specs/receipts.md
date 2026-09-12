@@ -53,13 +53,15 @@ wherever both exist.
     And a coder session implementing one sub-spec tags each unit test with
       its scenario's "<feature>-<index>" id (existing convention)
 
-  # ADD - receipts-01
+  # MODIFY - receipts-01
   At the end of a session that finishes or advances its sub-spec, the coder
   writes `spdd/changes/<slug>/NN-<feature>.result` mirroring the sub-spec's
   filename, containing exactly one `test_command=` line whose value is the
-  unit-suite run command the coder discovered and used for this sub-spec, plus
-  one `id=<feature>-<index> result=<green|skip|blocked> reason=<text>` line per
-  declared scenario id.
+  unit-suite run command the coder discovered and used for this sub-spec — or
+  the literal sentinel `none` when nothing is genuinely discoverable (never
+  empty, which stays malformed; `none` is the one defined way to record honest
+  undiscoverability) — plus one `id=<feature>-<index>
+  result=<green|skip|blocked> reason=<text>` line per declared scenario id.
 
   # ADD - receipts-02 (outline)
   | outcome                                                       | receipt line                                  |
@@ -80,12 +82,13 @@ wherever both exist.
   — never a second, accumulated `NN-<feature>.result-2` or sibling file; the
   file always holds the newest session's state (its outcomes and test command).
 
-  # ADD - receipts-05
+  # MODIFY - receipts-05
   A planning-stage refusal (the existing whole-sub-spec `BLOCKED:` stub, tagged
   with the sub-spec's first scenario id) still produces a truthful receipt:
   every declared id gets `result=blocked` and the same `BLOCKED: <why>` reason,
-  and `test_command=` still records the discovered (or honestly undiscoverable)
-  suite command — the receipt is never empty.
+  and `test_command=` still records the discovered suite command — or the
+  literal `none` sentinel when nothing is genuinely discoverable — the receipt
+  is never empty.
 
   # ADD - receipts-10
   AGENTS.md and CLAUDE.md each carry an identical receipt-convention gotcha

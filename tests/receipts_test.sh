@@ -18,6 +18,18 @@
 #   receipts-10 -- the identical receipt-convention gotcha bullet in
 #       AGENTS.md and CLAUDE.md.
 #
+# Amended by change fix-orchestrator-flow (sub-spec 02-receipts):
+#   receipts-01/receipts-05 (MODIFY) -- the test_command= grammar line gains
+#       the literal `none` sentinel for the genuinely-undiscoverable case
+#       (the old "record that honestly rather than leaving the line empty"
+#       guidance is replaced, never kept beside the sentinel);
+#   receipts-11 (ADD) -- the orchestrator's step-3 doubtful-receipt bullet
+#       never executes the sentinel: with `none` it classifies from the
+#       receipt's id lines where they settle the outcome or asks the user
+#       once (the receipt-doubt stop, status=waiting-user).
+#   (receipts-06's probe acceptance of the sentinel is pinned at runtime in
+#       tests/orchestrator-status-probe_test.sh, as before.)
+#
 # The disk receipt is the classification authority; a role's conversational
 # report is never an input to it. All content assertions are static greps
 # (the duties are prompt prose law, not machinery); every reported test name
@@ -108,9 +120,12 @@ awk '/^4\. Once every sub-spec is `done`/ { flag=1 }
      flag { print }' "$ORCHESTRATOR_PROMPT" > "$STEP4"
 
 # =============================================================================
-# receipts-01: the coder writes the receipt at session end, named after the
-# sub-spec file, with the discovered unit-suite run command recorded in
-# exactly one test_command= line and one id line per declared scenario id.
+# receipts-01 (amended by fix-orchestrator-flow/02-receipts): the coder
+# writes the receipt at session end, named after the sub-spec file, with the
+# discovered unit-suite run command recorded in exactly one test_command=
+# line -- or the literal `none` sentinel when nothing is genuinely
+# discoverable, never an empty value -- and one id line per declared
+# scenario id.
 # =============================================================================
 test_receipts_01() {
   ok=0
@@ -128,6 +143,15 @@ test_receipts_01() {
   require "$RECEIPT" 'the way any contributor would' || ok=1
   require "$RECEIPT" 'package.json' || ok=1
   require "$RECEIPT" 'Makefile' || ok=1
+  # fix-orchestrator-flow (receipts-01): the literal `none` sentinel for the
+  # genuinely-undiscoverable case -- the line reads exactly
+  # "test_command=none", an empty value is still never written, and the old
+  # guidance is replaced, not kept beside the sentinel.
+  require "$RECEIPT" 'the literal sentinel `none`' || ok=1
+  require "$RECEIPT" 'test_command=none' || ok=1
+  require "$RECEIPT" 'never an empty value' || ok=1
+  require "$RECEIPT" 'the one defined way to record honest undiscoverability' || ok=1
+  refuse "$RECEIPT" 'record that honestly rather than leaving the line empty' || ok=1
   # One id line per declared scenario id, of the pinned form.
   require "$RECEIPT" 'one `id=` line per scenario id' || ok=1
   require "$RECEIPT" 'id=<feature>-<index> result=<green|skip|blocked> reason=<text>' || ok=1
@@ -190,11 +214,12 @@ test_receipts_04() {
 }
 
 # =============================================================================
-# receipts-05: a planning-stage refusal (the existing whole-sub-spec BLOCKED:
-# stub, tagged with the sub-spec's first scenario id) still produces a
-# truthful receipt: every declared id result=blocked with the same BLOCKED:
-# reason, and test_command= still records the discovered (or honestly
-# undiscoverable) suite command -- the receipt is never empty.
+# receipts-05 (amended by fix-orchestrator-flow/02-receipts): a planning-stage
+# refusal (the existing whole-sub-spec BLOCKED: stub, tagged with the
+# sub-spec's first scenario id) still produces a truthful receipt: every
+# declared id result=blocked with the same BLOCKED: reason, and test_command=
+# still records the discovered suite command or the literal `none` sentinel
+# when nothing is genuinely discoverable -- the receipt is never empty.
 # =============================================================================
 test_receipts_05() {
   ok=0
@@ -202,7 +227,10 @@ test_receipts_05() {
   require "$RECEIPT" 'first scenario id' || ok=1
   require "$RECEIPT" 'result=blocked' || ok=1
   require "$RECEIPT" 'the same `BLOCKED: <why>` reason' || ok=1
-  require "$RECEIPT" 'honestly undiscoverable' || ok=1
+  # fix-orchestrator-flow (receipts-05): the bullet's old "honestly
+  # undiscoverable" wording follows the sentinel.
+  require "$RECEIPT" 'or the literal `none` sentinel when nothing is genuinely discoverable' || ok=1
+  refuse "$RECEIPT" 'honestly undiscoverable' || ok=1
   require "$RECEIPT" 'never empty' || ok=1
   return $ok
 }
@@ -366,20 +394,55 @@ test_receipts_10_gotcha_updates() {
   return $ok
 }
 
+# =============================================================================
+# receipts-11 (fix-orchestrator-flow/02-receipts, ADD): the orchestrator
+# never executes the sentinel -- a doubtful receipt whose test_command= value
+# is the literal `none` is never run; with `none` the step-3 doubtful-receipt
+# bullet classifies from the receipt's `id=` lines where they settle the
+# outcome (a result=blocked line still stops at the first one found, relaying
+# its BLOCKED: reason the same way a well-formed blocked receipt would), and
+# when the id lines cannot settle it the orchestrator asks the user once
+# rather than guessing -- the receipt-doubt stop, reported
+# status=waiting-user. The rest of the exception (a real command re-run once
+# for that doubtful sub-spec only, discovery when no line is carried,
+# classification from the actual run, the doubt reported, the receipt never
+# fabricated) survives the amendment.
+# =============================================================================
+test_receipts_11() {
+  ok=0
+  require "$STEP3" 'sentinel is never executed' || ok=1
+  require "$STEP3" 'the literal `none`' || ok=1
+  require "$STEP3" 'do not run it' || ok=1
+  require "$STEP3" 'classify from the receipt'"'"'s `id=` lines where they settle the outcome' || ok=1
+  require "$STEP3" 'stops at the first one found' || ok=1
+  require "$STEP3" 'the same way a well-formed blocked receipt would' || ok=1
+  require "$STEP3" 'ask the user once rather than guessing' || ok=1
+  require "$STEP3" 'the receipt-doubt stop reported `status=waiting-user`' || ok=1
+  # The rest of the doubtful-receipt exception is unchanged by the amendment.
+  require "$STEP3" 're-run the unit suite once' || ok=1
+  require "$STEP3" 'for that doubtful sub-spec only' || ok=1
+  require "$STEP3" 'else discovering the command the way any contributor would' || ok=1
+  require "$STEP3" 'from the actual run result' || ok=1
+  require "$STEP3" 'report the receipt doubt' || ok=1
+  require "$STEP3" 'Never write, fix, or fabricate the receipt yourself' || ok=1
+  return $ok
+}
+
 # ---- run everything ----------------------------------------------------------
 
-run_test "receipts-01: the coder prompt states the receipt duty -- NN-<feature>.result named after the sub-spec, exactly one test_command= line with the discovered command, one id line per declared id" test_receipts_01
+run_test "receipts-01: the coder prompt states the receipt duty -- NN-<feature>.result named after the sub-spec, exactly one test_command= line with the discovered command or the literal none sentinel (never an empty value), one id line per declared id" test_receipts_01
 run_test "receipts-02 (green row): a passing unit test records result=green reason=<unit test name>" test_receipts_02_green_row
 run_test "receipts-02 (skip row): an ordinary skip records result=skip reason=<why>" test_receipts_02_skip_row
 run_test "receipts-02 (blocked row): a BLOCKED: stub records result=blocked reason=BLOCKED: <why>" test_receipts_02_blocked_row
 run_test "receipts-03: the receipt's id set equals the declared id set exactly -- scenario order, no foreign id, no silent omission" test_receipts_03
 run_test "receipts-04: a later session rewrites the same receipt in place -- the file always holds the newest session's state" test_receipts_04
-run_test "receipts-05: a planning-stage refusal still produces a truthful receipt -- every id result=blocked, the same BLOCKED: reason, test_command= never empty" test_receipts_05
+run_test "receipts-05: a planning-stage refusal still produces a truthful receipt -- every id result=blocked, the same BLOCKED: reason, test_command= the discovered command or the none sentinel, never empty" test_receipts_05
 run_test "receipts-07: the orchestrator's step 3 classifies from the probe's receipt fields alone and no longer runs the suite for classification" test_receipts_07
 run_test "receipts-08: the doubtful-receipt exception -- one suite re-run for that doubtful sub-spec only, classified from the actual run, receipt never fabricated" test_receipts_08
 run_test "receipts-09: no pre-verifier gate -- step 4 routes to the verifier without running the unit suite; the verifier's e2e suite stays the independent gate" test_receipts_09
 run_test "receipts-10: AGENTS.md and CLAUDE.md carry an identical receipt-convention gotcha bullet" test_receipts_10
 run_test "receipts-10 (gotcha updates): the probe gotcha gains the receipt fields and the stale embedded/running-the-suite wording is fixed in both docs" test_receipts_10_gotcha_updates
+run_test "receipts-11: the orchestrator's step-3 doubtful-receipt bullet never executes the none sentinel -- classify from the id lines where they settle it, else ask the user once (status=waiting-user); the rest of the exception survives" test_receipts_11
 
 # ---- e2e-only scenario: explicit SKIP stub -----------------------------------
 # e2e-03 (spdd/changes/orchestrator-fast-path/07-e2e.feature) is the change's

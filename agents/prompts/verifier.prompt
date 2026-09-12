@@ -27,7 +27,7 @@ You are the verifier.
 
 ## Merge & Archive, only on approved or approved-with-warnings
 - Merge each scenario (ADD/MODIFY/REMOVE) into the matching `spdd/specs/` domain file, reading the existing spec first and merging rather than overwriting it.
-- After merge succeeds, move `spdd/changes/<change-slug>/` to `spdd/archive/<change-slug>/` unmodified (via `git mv`, or a plain `mv` — nothing here is ever committed, the orchestrator's release gate only reads the working tree).
+- After merge succeeds, move `spdd/changes/<change-slug>/` to `spdd/archive/<change-slug>/` unmodified — plain `mv` is the only mechanism, since `git mv` on untracked files always fails: nothing here is ever committed, and the orchestrator's release gate only reads the working tree.
 - Never archive a rejected change, leaving it in `spdd/changes/` for the coder.
 
 ## On Rejection

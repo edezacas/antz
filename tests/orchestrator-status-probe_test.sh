@@ -27,6 +27,12 @@
 # receipt-driven fields themselves. The probe's other outputs
 # (open_questions=, rejected_count=, the change_dir=missing short-circuit,
 # the empty-ids report) are unchanged.
+#
+# Grown by change fix-orchestrator-flow (sub-spec 02-receipts): the sentinel
+# fixtures below pin that the probe accepts the literal `none`
+# test_command= value as well-formed non-empty (complete may be yes) with no
+# probe code change -- scripts/orchestration/antz-probe.sh stays
+# byte-unchanged by that change.
 
 set -u
 
@@ -715,6 +721,45 @@ test_receipts_06_empty_ids_never_done() {
   return $ok
 }
 
+# =============================================================================
+# receipts-06 (fix-orchestrator-flow/02-receipts, property pin): the probe
+# accepts the literal `none` sentinel (the receipt grammar's one defined
+# non-command value, written when no suite is genuinely discoverable) as a
+# well-formed NON-EMPTY test_command= value -- any non-empty value already
+# satisfies the grammar check, so this needs no probe code change and pins
+# that a future grammar tightening cannot silently reject the sentinel.
+# =============================================================================
+
+# receipts-06: test_command=none + exactly the declared id set, all green ->
+# complete=yes class=done (the sentinel is accepted, the mapping unchanged).
+test_receipts_06_none_sentinel_all_green_done() {
+  dir=$(new_change_dir)
+  write_subspec_fixture "$dir" 01-api.feature 'api-1,api-2' 'test_command=none
+id=api-1 result=green reason=api-1 unit test
+id=api-2 result=green reason=api-2 unit test'
+  ok=0
+  out=$(run_probe "$dir")
+  echo "$out" | grep -qxF 'subspec=01-api.feature ids=api-1,api-2 receipt=01-api.result covered=2/2 complete=yes class=done' \
+    || { echo "  expected the none sentinel accepted as a well-formed non-empty test_command= value (complete=yes class=done), got: $out"; ok=1; }
+  rm -rf "$dir"
+  return $ok
+}
+
+# receipts-06: the sentinel receipt with an ordinary skip row among the green
+# ids -> still complete=yes class=done (green-or-ordinary-skip, unchanged).
+test_receipts_06_none_sentinel_skip_row_done() {
+  dir=$(new_change_dir)
+  write_subspec_fixture "$dir" 01-ui.feature 'ui-1,ui-2' 'test_command=none
+id=ui-1 result=green reason=ui-1 unit test
+id=ui-2 result=skip reason=visual-only scenario, not unit-testable'
+  ok=0
+  out=$(run_probe "$dir")
+  echo "$out" | grep -qxF 'subspec=01-ui.feature ids=ui-1,ui-2 receipt=01-ui.result covered=2/2 complete=yes class=done' \
+    || { echo "  expected none-sentinel receipt with a skip row classified done, got: $out"; ok=1; }
+  rm -rf "$dir"
+  return $ok
+}
+
 # ---- run everything ---------------------------------------------------------
 
 run_test "probe-extracted: scripts/orchestration/antz-probe.sh is found and looks correct" test_probe_extracted
@@ -751,6 +796,8 @@ run_test "receipts-06: a duplicate id line forces complete=no" test_receipts_06_
 run_test "receipts-06: a declared id with no receipt line is uncovered, complete=no" test_receipts_06_missing_declared_id_incomplete
 run_test "receipts-06: an id line with an empty reason forces complete=no" test_receipts_06_empty_reason_incomplete
 run_test "receipts-06: an empty-ids sub-spec is never vacuously done, even with a receipt present" test_receipts_06_empty_ids_never_done
+run_test "receipts-06: the literal none sentinel is a well-formed non-empty test_command= value -- all-green ids give complete=yes class=done" test_receipts_06_none_sentinel_all_green_done
+run_test "receipts-06: a none-sentinel receipt with an ordinary skip row still gives complete=yes class=done (mapping unchanged)" test_receipts_06_none_sentinel_skip_row_done
 
 echo ""
 echo "$pass_count passed, $fail_count failed"

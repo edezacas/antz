@@ -1,0 +1,11 @@
+test_command=for t in tests/*_test.sh; do sh "$t" || exit 1; done
+id=flow-01 result=green reason=test_flow_01_never_specified_delegation
+id=flow-02 result=green reason=test_flow_02_mid_session_deletion_stop
+id=flow-03 result=green reason=test_flow_03_post_verifier_routes_to_step5
+id=flow-04 result=green reason=test_flow_04_step5_disk_detection_approval
+id=flow-05 result=green reason=test_flow_05_step5_rejection_and_failclosed
+id=flow-06 result=green reason=test_flow_06_dedup_two_exceptions
+id=flow-07 result=green reason=test_flow_07_waiting_user_defined
+id=flow-08 result=green reason=test_flow_08_stopped_enumeration
+id=flow-09 result=green reason=test_flow_09_unchanged_surface
+id=flow-10 result=green reason=test_flow_10_docs_derivation_row

@@ -9,8 +9,9 @@
 # grant technically allows. They govern one orchestrator invocation's
 # delegations:
 #   (a) dedup -- the same (sub-spec, role) pair is never delegated twice in
-#       one invocation, with the single carve-out of step 4's bounded-retry
-#       relay (still bounded by REJECTED.md);
+#       one invocation, with exactly two exceptions, both step 4's: the
+#       attributable-blocker relay to the named sub-spec's coder and the one
+#       bounded whole-change verifier retry (still bounded by REJECTED.md);
 #   (b) latch -- after any stop-and-report outcome, no further delegation of
 #       any kind in that same session; resumption is always a fresh
 #       invocation.
@@ -208,14 +209,17 @@ prompt_prose_distinct_from_head() {
 }
 
 # =============================================================================
-# sessionguards-01: the dedup law -- within one orchestrator invocation the
-# same (sub-spec, role) pair is never delegated twice; once a pair has been
-# delegated, later flow steps route by the existing state machine (fresh
-# classification from disk, the bounded retry, the stops) and never by
-# re-delegating that pair. The single carve-out: step 4's bounded-retry relay
-# of attributable blockers to the named sub-spec's coder session is the one
-# permitted second delegation of a pair, still bounded by REJECTED.md (at
-# most one relay per pair per entry; a second entry stops the flow for good).
+# sessionguards-01 (amended by fix-orchestrator-flow 1.2): the dedup law --
+# within one orchestrator invocation the same (sub-spec, role) pair is never
+# delegated twice; once a pair has been delegated, later flow steps route by
+# the existing state machine (fresh classification from disk, the bounded
+# retry, the stops) and never by re-delegating that pair. Exactly two
+# exceptions, both step 4's: relaying each attributable blocker to the
+# sub-spec's coder session (at most one relay per pair per entry; a second
+# entry stops the flow for good), and the one bounded whole-change verifier
+# retry (bounded by REJECTED.md: the count reaching 2 stops the flow for
+# good). No third exception: the specifier is never re-delegated within an
+# invocation.
 # =============================================================================
 test_sessionguards_01() {
   ok=0
@@ -227,13 +231,17 @@ test_sessionguards_01() {
   require "$PROCESS" 'route by the existing state machine' || ok=1
   require "$PROCESS" 'fresh classification from disk' || ok=1
   require "$PROCESS" 'never by re-delegating that pair' || ok=1
-  # The single carve-out: step 4's bounded-retry relay, still REJECTED.md-
-  # bounded (one relay per pair per entry; the second entry stops the flow).
-  require "$PROCESS" 'single carve-out' || ok=1
-  require "$PROCESS" "step 4's bounded-retry relay" || ok=1
-  require "$PROCESS" 'the one permitted second delegation of a pair' || ok=1
+  # Exactly two exceptions, both step 4's, each still REJECTED.md-bounded:
+  # the attributable-blocker relay, and the one whole-change verifier retry.
+  require "$PROCESS" 'exactly two exceptions, both step 4' || ok=1
+  require "$PROCESS" 'relaying each attributable blocker to the `coder` session for the sub-spec it names' || ok=1
   require "$PROCESS" 'at most one relay per pair per entry' || ok=1
   require "$PROCESS" 'a second entry stops the flow for good' || ok=1
+  require "$PROCESS" 'the one bounded whole-change `verifier` retry' || ok=1
+  require "$PROCESS" 'bounded by `REJECTED.md`: the count reaching 2 stops the flow for good' || ok=1
+  # No third exception: the specifier is never re-delegated.
+  require "$PROCESS" 'No third exception exists' || ok=1
+  require "$PROCESS" 'the specifier is never re-delegated within an invocation' || ok=1
   # Per-invocation scoping: a later invocation starts with a clean slate.
   require "$PROCESS" 'a later orchestrator invocation starts with a clean slate' || ok=1
   require "$PROCESS" 'resume is a fresh session' || ok=1
@@ -241,6 +249,8 @@ test_sessionguards_01() {
   # never-delegate-outside-the-three-roles rule.
   require "$PROCESS" 'regardless of what the tool grant technically allows' || ok=1
   require "$PROCESS" 'never-delegate-outside-the-three-roles rule' || ok=1
+  # The superseded "single carve-out" framing is gone (flow-06's closure).
+  refuse "$PROCESS" 'single carve-out' || ok=1
   return $ok
 }
 
@@ -380,7 +390,7 @@ test_sessionguards_04() {
 
 # ---- run everything ----------------------------------------------------------
 
-run_test "sessionguards-01: the dedup law -- a (sub-spec, role) pair is never delegated twice in one invocation; routing never re-delegates; step 4's bounded-retry relay is the single REJECTED.md-bounded carve-out" test_sessionguards_01
+run_test "sessionguards-01: the dedup law -- a (sub-spec, role) pair is never delegated twice in one invocation; routing never re-delegates; exactly two exceptions, both step 4's, each REJECTED.md-bounded" test_sessionguards_01
 run_test "sessionguards-02: the latch law -- after any stop-and-report outcome no further delegation of any kind, resumption is a fresh invocation, and every named stop outcome is covered" test_sessionguards_02
 run_test "sessionguards-03: pure prose law -- no new script, no new flow subcommand, no new probe field, no delegation ledger under spdd/, mechanism is the session's own account" test_sessionguards_03
 run_test "sessionguards-04: everything else keeps its meaning -- additive outside the three script fences, steps 1-6 in order, tables survive, constraints only" test_sessionguards_04
