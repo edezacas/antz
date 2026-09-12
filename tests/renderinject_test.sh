@@ -50,6 +50,16 @@
 # when a later sub-spec of this change (06 closingblock) legitimately bumps
 # VERSION -- the pin asserts body identity, not version equality; the
 # inventory and frontmatter assertions are unaffected either way.
+#
+# Evolved by change flow-script-guards (sub-spec 01, ensure-20): an injected
+# scripts/orchestration/ file is a third retirement source for the
+# orchestrator base-render byte-identity gate (scripts_distinct /
+# SCRIPTS_DISTINCT). A script-only sub-spec changes the working tree while
+# the prompt's prose is untouched, so the prose key alone could not retire
+# the vacuous assertion; a change touching both sources retires it once,
+# with a note per reason -- never a double failure. The marker-substitution
+# reconstruction and the structural render assertions stay enforced either
+# way.
 
 set -u
 
@@ -190,14 +200,45 @@ role_prompt_prose_distinct() {
   rm -f "$work" "$basep"
 }
 
+# Prints 1 when any injected scripts/orchestration/ file differs working vs
+# base — this change's (flow-script-guards) legitimate script edit retires
+# the pre-change render byte-identity the same way a prose edit does: a
+# script-only sub-spec changes the rendered orchestrator body by contract.
+# Compares the union of the two dirs' *.sh listings, so an added or removed
+# script counts as a difference too. Prints 0 when every injected file is
+# byte-identical in both trees (see the header note).
+scripts_distinct() {
+  work="$SCRIPT_DIR/scripts/orchestration"
+  base="$BASE_TREE_DIR/scripts/orchestration"
+  for f in "$work"/*.sh; do
+    [ -e "$f" ] || continue
+    b="$base/$(basename "$f")"
+    [ -e "$b" ] || { printf '1'; return 0; }
+    cmp -s "$f" "$b" || { printf '1'; return 0; }
+  done
+  for f in "$base"/*.sh; do
+    [ -e "$f" ] || continue
+    [ -e "$work/$(basename "$f")" ] || { printf '1'; return 0; }
+  done
+  printf '0'
+}
+
 # The gate for the base-derived byte-identity assertions: active only while
-# the base install.sh is distinct AND the prompt prose is unchanged vs base;
-# prints a loud retirement note when the prose has moved on (not a failure).
+# the base install.sh is distinct AND neither the prompt's prose nor any
+# injected scripts/orchestration/ file has moved vs the base; prints a loud
+# retirement note per changed source when they have (not a failure — a
+# change touching both sources retires the assertion once, never twice).
 if_base_identity_active() {
-  if [ "$BASE_DISTINCT" -ne 1 ] || [ "$PROMPT_PROSE_DISTINCT" -ne 0 ]; then
-    if [ "$BASE_DISTINCT" -eq 1 ] && [ "$PROMPT_PROSE_DISTINCT" -eq 1 ]; then
-      echo "  note: orchestrator.prompt prose changed vs the base (a later sub-spec's additive edit); the pre-change byte-identity assertion is vacuously retired, structural assertions still enforced"
-    fi
+  if [ "$BASE_DISTINCT" -ne 1 ]; then
+    return 1
+  fi
+  if [ "$SCRIPTS_DISTINCT" -eq 1 ]; then
+    echo "  note: an injected scripts/orchestration/ file changed vs the base (this change's script edit); the pre-change byte-identity assertion is vacuously retired, structural assertions still enforced"
+  fi
+  if [ "$PROMPT_PROSE_DISTINCT" -eq 1 ]; then
+    echo "  note: orchestrator.prompt prose changed vs the base (a later sub-spec's additive edit); the pre-change byte-identity assertion is vacuously retired, structural assertions still enforced"
+  fi
+  if [ "$SCRIPTS_DISTINCT" -eq 1 ] || [ "$PROMPT_PROSE_DISTINCT" -eq 1 ]; then
     return 1
   fi
   return 0
@@ -258,10 +299,71 @@ assert_no_marker_in_tree() {
   return 0
 }
 
+# ---- ensure-20 (change flow-script-guards, sub-spec 01) ----------------------
+# The base-render byte-identity gate, previously keyed on the prompt's prose
+# alone, must ALSO retire when an injected scripts/orchestration/ file
+# differs from the base tree: a script-only sub-spec (antz-flow.sh edited,
+# prompt prose untouched) legitimately changes the rendered orchestrator
+# body. The reconstruction and structural assertions of renderinject-01..03
+# stay enforced either way; the gate is pinned here at its decision function
+# and its helper against synthetic gating states and fixture trees (the
+# working tree itself may or may not differ from the base — a vacuously
+# retired gate still passes the suites, so pinning the logic, not the
+# moment, is what survives).
+ensure_20_helper_on_fixtures() {
+  ok=0
+  d=$(new_tmp_dir)
+  mkdir -p "$d/w/scripts/orchestration" "$d/b/scripts/orchestration"
+  for s in antz-flow antz-probe antz-skills; do
+    printf 'content-%s\n' "$s" > "$d/w/scripts/orchestration/$s.sh"
+    cp "$d/w/scripts/orchestration/$s.sh" "$d/b/scripts/orchestration/$s.sh"
+  done
+  got=$( SCRIPT_DIR="$d/w" BASE_TREE_DIR="$d/b"; scripts_distinct )
+  [ "$got" = "0" ] || { echo "  identical script dirs reported distinct ($got)"; ok=1; }
+  printf 'edited\n' > "$d/w/scripts/orchestration/antz-flow.sh"
+  got=$( SCRIPT_DIR="$d/w" BASE_TREE_DIR="$d/b"; scripts_distinct )
+  [ "$got" = "1" ] || { echo "  an edited injected script not reported distinct ($got)"; ok=1; }
+  rm "$d/w/scripts/orchestration/antz-flow.sh"
+  cp "$d/b/scripts/orchestration/antz-flow.sh" "$d/w/scripts/orchestration/antz-flow.sh"
+  printf 'new\n' > "$d/w/scripts/orchestration/antz-extra.sh"
+  got=$( SCRIPT_DIR="$d/w" BASE_TREE_DIR="$d/b"; scripts_distinct )
+  [ "$got" = "1" ] || { echo "  an extra injected script not reported distinct ($got)"; ok=1; }
+  rm "$d/w/scripts/orchestration/antz-extra.sh"
+  rm "$d/b/scripts/orchestration/antz-skills.sh"
+  got=$( SCRIPT_DIR="$d/w" BASE_TREE_DIR="$d/b"; scripts_distinct )
+  [ "$got" = "1" ] || { echo "  a missing base script not reported distinct ($got)"; ok=1; }
+  return $ok
+}
+
+ensure_20_gate_decision() {
+  ok=0
+  # The active case is unchanged: base distinct, prose and scripts intact.
+  out=$( BASE_DISTINCT=1 PROMPT_PROSE_DISTINCT=0 SCRIPTS_DISTINCT=0 if_base_identity_active ); rc=$?
+  [ "$rc" -eq 0 ] || { echo "  gate went inactive with nothing changed vs base"; ok=1; }
+  # Scripts distinct alone retires the gate, with a loud note.
+  out=$( BASE_DISTINCT=1 PROMPT_PROSE_DISTINCT=0 SCRIPTS_DISTINCT=1 if_base_identity_active ); rc=$?
+  [ "$rc" -ne 0 ] || { echo "  gate stayed active with an injected script differing from the base"; ok=1; }
+  printf '%s' "$out" | grep -qF 'scripts/orchestration/' \
+    || { echo "  the script-distinct retirement printed no loud note: $out"; ok=1; }
+  # Prose distinct still retires, as before.
+  out=$( BASE_DISTINCT=1 PROMPT_PROSE_DISTINCT=1 SCRIPTS_DISTINCT=0 if_base_identity_active ); rc=$?
+  [ "$rc" -ne 0 ] || { echo "  gate stayed active with the prompt prose changed"; ok=1; }
+  # Both distinct (sub-spec 02's prose edit landing on top of this script
+  # edit): one retirement, no double failure.
+  out=$( BASE_DISTINCT=1 PROMPT_PROSE_DISTINCT=1 SCRIPTS_DISTINCT=1 if_base_identity_active ); rc=$?
+  [ "$rc" -ne 0 ] || { echo "  gate did not retire with both sources changed"; ok=1; }
+  # The degenerate post-merge tree still retires silently as before.
+  out=$( BASE_DISTINCT=0 PROMPT_PROSE_DISTINCT=0 SCRIPTS_DISTINCT=0 if_base_identity_active ); rc=$?
+  [ "$rc" -ne 0 ] || { echo "  gate stayed active on a base-identical tree"; ok=1; }
+  return $ok
+}
+
 # ---- shared fixtures (rendered once, shared by the identity tests) ----------
 
 BASE_TREE_DIR=""
 BASE_DISTINCT=""
+PROMPT_PROSE_DISTINCT=""
+SCRIPTS_DISTINCT=""
 HOME_A=""
 HOME_B=""
 
@@ -285,6 +387,7 @@ setup_fixtures() {
     return 1
   }
   PROMPT_PROSE_DISTINCT=$(prompt_prose_distinct)
+  SCRIPTS_DISTINCT=$(scripts_distinct)
   return 0
 }
 
@@ -708,6 +811,8 @@ run_test "renderinject-04 both source paths (local read, curl fetch) route throu
 run_test "renderinject-05 injection keyed to the orchestrator only: other renders byte-identical, markers substituted nowhere else, --check unchanged" renderinject_05
 run_test "renderinject-06 install.sh header comment names install.sh in the tracked set; no other header line changes" renderinject_06
 run_test "renderinject-07 AGENTS.md/CLAUDE.md gotcha bullets follow the move to scripts/orchestration/, stated identically" renderinject_07
+run_test "ensure-20: the scripts_distinct helper detects edited/extra/missing injected scripts against fixture trees" ensure_20_helper_on_fixtures
+run_test "ensure-20: the base-render identity gate retires (with a note) when an injected script differs, never double-failing with prose drift" ensure_20_gate_decision
 
 # ---- e2e-only scenario: explicit SKIP stub -----------------------------------
 # e2e-01 (spdd/changes/orchestrator-fast-path/07-e2e.feature) is the change's

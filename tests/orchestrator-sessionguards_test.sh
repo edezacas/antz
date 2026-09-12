@@ -37,6 +37,13 @@
 # convention as tests/renderinject_test.sh's base-render gate); the
 # structural assertions (steps 1-6 in order, tables survive, constraints
 # only) stay enforced forever.
+#
+# Extended by change flow-script-guards (sub-spec 02): sessionguards-02's
+# latch stop list gains the new machine-line stops state=tree_dirty and
+# state=bad_slug (its list is "include at least", so the existing scenario
+# id stays valid); sessionguards-04's structural assertions keep holding
+# while its additive-vs-HEAD prose check self-retires with the loud note
+# while 02's prose edit is uncommitted.
 
 set -u
 
@@ -277,6 +284,13 @@ test_sessionguards_02() {
   require "$PROCESS" 'state=no_commits' || ok=1
   require "$PROCESS" 'state=checkout_refused' || ok=1
   require "$PROCESS" 'state=no_branch' || ok=1
+  # The list is "include at least", so it stays valid while being extended:
+  # change flow-script-guards (sub-spec 02) adds the two new machine-line
+  # stops, and documents the dirty=yes advisory as explicitly not a stop.
+  # (The line-scoped latch/report assertions live in tests/antz-flow_test.sh,
+  # test_orchestrator_06_latch_and_report_stops.)
+  require "$PROCESS" 'state=tree_dirty' || ok=1
+  require "$PROCESS" 'state=bad_slug' || ok=1
   require "$PROCESS" 'branch=missing' || ok=1
   require "$PROCESS" 'change_dir=missing' || ok=1
   require "$PROCESS" 'gate=refused reason=' || ok=1

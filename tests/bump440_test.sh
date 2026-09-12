@@ -104,7 +104,13 @@ change_pending() {
   # True while this change's bump artifacts are uncommitted in the working
   # tree (the flow's state -- no role ever commits). Once the human's bump
   # commit lands, the HEAD-comparison guards retire vacuously with a note.
-  ! git -C "$SCRIPT_DIR" diff --quiet HEAD -- CHANGELOG.md VERSION 2>/dev/null
+  # The second condition (learned at change flow-script-guards, whose
+  # legitimate uncommitted 4.5.0 bump made the tree differ from HEAD while
+  # the human's own v4.4.0 tag already existed): the diff must not be some
+  # LATER bump's. This change's guards are pending only while HEAD itself
+  # does not yet carry the [4.4.0] entry.
+  ! git -C "$SCRIPT_DIR" diff --quiet HEAD -- CHANGELOG.md VERSION 2>/dev/null \
+    && ! git -C "$SCRIPT_DIR" show HEAD:CHANGELOG.md 2>/dev/null | grep -q '^## \[4\.4\.0\]'
 }
 
 # =============================================================================

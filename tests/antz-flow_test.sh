@@ -9,8 +9,30 @@
 # the main checkout, what change state sits uncommitted in its working
 # tree, and whether the release gate holds.
 #
+# Extended by change flow-script-guards (sub-spec 01, scenarios ensure-15..
+# ensure-20, plus the rewrites of ensure-02/ensure-05): mechanical slug
+# validation (state=bad_slug before the no-commits check and any branch or
+# positioning work — lowercase letters/digits/hyphen, no leading/trailing or
+# doubled hyphen, at most 40 chars), the new-flow tree guard (state=
+# tree_dirty only when the change dir is absent AND the marker branch would
+# be newly created, on a non-empty git status --porcelain; skipped on
+# resume), and the advisory dirty=yes line appended after any state=reused
+# on a dirty tree. The flow-09 scripts byte-unchanged guard is re-scoped off
+# antz-flow.sh (this change's subject) onto the untouched probe+skills
+# scripts (ensure-19); ensure-20's counterpart lands in
+# tests/renderinject_test.sh.
+#
+# Extended again by change flow-script-guards (sub-spec 02, scenarios
+# orchestrator-01 and orchestrator-06): step 1's ensure instructions also
+# document state=tree_dirty, state=bad_slug, and the dirty=yes advisory
+# (orchestrator-01's extension), and the new orchestrator-06 test pins the
+# Session guards' latch stop list and the Report Format's stopped
+# enumeration naming the two new machine-line stops as hard status=stopped
+# variants with their resume actions, the advisory's not-a-stop framing,
+# and the scenario's structural clauses.
+#
 # It also guards the orchestrator prompt's own prose that consumes the
-# script (sub-spec "orchestrator", scenarios orchestrator-01..05): the
+# script (sub-spec "orchestrator", scenarios orchestrator-01..06): the
 # step-1 ensure instructions' state meanings, the step-5 human follow-up
 # print with its placeholder merge target, the law wording, and the
 # unchanged surface — static assertions on the prompt text (precedent:
@@ -23,7 +45,8 @@
 # (re-probe + release gate + rejected_count comparison), the dedup guard's
 # exactly-two step-4 exceptions, the stopped/waiting-user stop vocabulary,
 # and the unchanged-surface constraints (14 fence lines / one ```sh fence /
-# steps end at 6 / the four tables / scripts/orchestration/ byte-unchanged).
+# steps end at 6 / the four tables / the untouched scripts/orchestration/
+# probe+skills byte-unchanged — re-scoped by flow-script-guards, ensure-19).
 #
 # Helpers are exercised against throwaway git repos under a temp dir; every
 # scenario id carries the ensure-<n>, orchestrator-<n> or flow-<n> prefix
@@ -265,22 +288,63 @@ test_ensure_01_fresh_creates_and_positions() {
 }
 
 # =============================================================================
-# ensure-02: uncommitted working-tree work survives the positioning untouched
-# — carried over, not destroyed or stashed.
+# ensure-02 (rewritten by change flow-script-guards): a dirty tree at a new
+# flow's start is refused with state=tree_dirty before any branch is created
+# or checked out — uncommitted work is neither carried in nor destroyed.
 # =============================================================================
-test_ensure_02_uncommitted_work_survives() {
+test_ensure_02_new_flow_dirty_tree_refused() {
   new_repo carry-slug
   printf 'first\n' > "$REPO_ROOT/a.txt"
   git -C "$REPO_ROOT" add . && git -C "$REPO_ROOT" -c user.email=t@t -c user.name=t commit -q -m base
+  base_head=$(git -C "$REPO_ROOT" rev-parse HEAD)
+  before_refs=$(all_refs)
   printf 'dirty\n' > "$REPO_ROOT/a.txt"
-  out=$(run_flow ensure "$SLUG")
-  [ "$out" = "state=created" ] || { echo "  expected state=created, got: $out"; return 1; }
-  [ "$(git -C "$REPO_ROOT" branch --show-current)" = "antz/$SLUG" ] \
-    || { echo "  not positioned on the flow branch"; return 1; }
+  out=$(run_flow ensure "$SLUG"); st=$?
+  [ "$out" = "state=tree_dirty" ] \
+    || { echo "  expected state=tree_dirty, got: $out"; return 1; }
+  [ "$st" -eq 1 ] || { echo "  expected exit 1, got: $st"; return 1; }
+  [ -z "$(git -C "$REPO_ROOT" branch --list 'antz/*')" ] \
+    || { echo "  the marker branch was created despite the refusal"; return 1; }
+  [ "$(git -C "$REPO_ROOT" branch --show-current)" = "master" ] \
+    || { echo "  the session moved off master"; return 1; }
+  [ "$(git -C "$REPO_ROOT" rev-parse HEAD)" = "$base_head" ] \
+    || { echo "  HEAD moved"; return 1; }
+  [ "$(all_refs)" = "$before_refs" ] || { echo "  a branch ref changed"; return 1; }
   [ "$(cat "$REPO_ROOT/a.txt")" = "dirty" ] \
     || { echo "  working-tree content changed"; return 1; }
   git -C "$REPO_ROOT" status --porcelain -- a.txt | grep -q '^ M a.txt' \
     || { echo "  a.txt no longer reported modified"; return 1; }
+  [ -z "$(git -C "$REPO_ROOT" stash list)" ] \
+    || { echo "  a stash entry was created"; return 1; }
+}
+
+# =============================================================================
+# ensure-17: non-empty git status --porcelain is the whole trigger — an
+# untracked, non-ignored file blocks a new flow the same way a tracked
+# modification does (fail-closed by design).
+# =============================================================================
+test_ensure_17_untracked_file_blocks_new_flow() {
+  new_repo untracked-slug
+  base_head=$(git -C "$REPO_ROOT" rev-parse HEAD)
+  before_refs=$(all_refs)
+  printf 'scratch\n' > "$REPO_ROOT/scratch.txt"
+  git -C "$REPO_ROOT" status --porcelain | grep -q '^?? scratch.txt$' \
+    || { echo "  fixture broken: scratch.txt is not untracked-non-ignored porcelain"; return 1; }
+  out=$(run_flow ensure "$SLUG"); st=$?
+  [ "$out" = "state=tree_dirty" ] \
+    || { echo "  expected state=tree_dirty, got: $out"; return 1; }
+  [ "$st" -eq 1 ] || { echo "  expected exit 1, got: $st"; return 1; }
+  [ -z "$(git -C "$REPO_ROOT" branch --list 'antz/*')" ] \
+    || { echo "  the marker branch was created despite the refusal"; return 1; }
+  [ "$(git -C "$REPO_ROOT" branch --show-current)" = "master" ] \
+    || { echo "  the session moved off master"; return 1; }
+  [ "$(git -C "$REPO_ROOT" rev-parse HEAD)" = "$base_head" ] \
+    || { echo "  HEAD moved"; return 1; }
+  [ "$(all_refs)" = "$before_refs" ] || { echo "  a branch ref changed"; return 1; }
+  [ "$(cat "$REPO_ROOT/scratch.txt")" = "scratch" ] \
+    || { echo "  the untracked file was altered"; return 1; }
+  git -C "$REPO_ROOT" status --porcelain | grep -q '^?? scratch.txt$' \
+    || { echo "  the untracked file no longer reported"; return 1; }
   [ -z "$(git -C "$REPO_ROOT" stash list)" ] \
     || { echo "  a stash entry was created"; return 1; }
 }
@@ -325,17 +389,22 @@ test_ensure_04_ensure_again_is_noop() {
 }
 
 # =============================================================================
-# ensure-05: when git refuses the positioning (a destructive-checkout
-# conflict), the script stops machine-readably and forces nothing.
+# ensure-05 (rewritten by change flow-script-guards): the destructive-checkout
+# refusal now lives on the resume path — change dir present, so the tree
+# guard is skipped and the plain switch is what refuses. Stops machine-
+# readably and forces nothing.
 # =============================================================================
-test_ensure_05_refused_switch_stops_clean() {
+test_ensure_05_refused_switch_on_resume_stops_clean() {
   new_repo conflict-slug
-  # antz/<slug> committed a.txt at its own distinct content…
+  # antz/<slug> stays at the earlier commit (the initial one)…
   git -C "$REPO_ROOT" branch -q "antz/$SLUG"
   # …master commits a different content…
   printf 'two\n' > "$REPO_ROOT/a.txt"
   git -C "$REPO_ROOT" -c user.email=t@t -c user.name=t commit -q -am master-move
   master_head=$(git -C "$REPO_ROOT" rev-parse HEAD)
+  before_refs=$(all_refs)
+  # …the change dir exists (a resume: the tree guard is skipped)…
+  mk_change_dir
   # …and the working tree holds a third, uncommitted content switching would
   # overwrite (the destructive-checkout conflict).
   printf 'dirty\n' > "$REPO_ROOT/a.txt"
@@ -349,6 +418,8 @@ test_ensure_05_refused_switch_stops_clean() {
     || { echo "  session moved off master"; return 1; }
   [ "$(git -C "$REPO_ROOT" rev-parse HEAD)" = "$master_head" ] \
     || { echo "  HEAD moved"; return 1; }
+  [ "$(all_refs)" = "$before_refs" ] \
+    || { echo "  a branch ref moved"; return 1; }
   [ "$(git -C "$REPO_ROOT" rev-parse "refs/heads/antz/$SLUG")" \
       = "$(git -C "$REPO_ROOT" rev-parse "master~1")" ] \
     || { echo "  marker branch moved"; return 1; }
@@ -609,6 +680,167 @@ test_ensure_14_state_unchanged() {
 }
 
 # =============================================================================
+# ensure-15 (outline, one test per row): a mechanically invalid slug is
+# rejected with exactly state=bad_slug (exit 1) before any branch or
+# positioning work — non-destructively: no antz/* branch is created, the
+# session stays put, HEAD, every branch ref, and the working tree are
+# byte-unchanged, and no stash entry exists. The rule: lowercase letters,
+# digits, and hyphen only; no leading/trailing hyphen; no double hyphen;
+# length at most 40.
+# =============================================================================
+ensure_15_row() {
+  # $1 = the invalid slug exactly as it appears on ensure's argv (the empty
+  # row passes the empty string).
+  new_repo other-flow-slug        # clean tree, no antz/* branch, no change dir
+  SLUG="$1"
+  base_head=$(git -C "$REPO_ROOT" rev-parse HEAD)
+  before_refs=$(all_refs)
+  before_branch=$(git -C "$REPO_ROOT" branch --show-current)
+  before_file=$(cat "$REPO_ROOT/a.txt")
+  out=$(run_flow ensure "$SLUG"); st=$?
+  [ "$out" = "state=bad_slug" ] || { echo "  expected state=bad_slug, got: $out"; return 1; }
+  [ "$st" -eq 1 ] || { echo "  expected exit 1, got: $st"; return 1; }
+  [ -z "$(git -C "$REPO_ROOT" branch --list 'antz/*')" ] \
+    || { echo "  an antz/* branch was created for an invalid slug"; return 1; }
+  [ "$(git -C "$REPO_ROOT" branch --show-current)" = "$before_branch" ] \
+    || { echo "  the session moved"; return 1; }
+  [ "$(git -C "$REPO_ROOT" rev-parse HEAD)" = "$base_head" ] \
+    || { echo "  HEAD moved"; return 1; }
+  [ "$(all_refs)" = "$before_refs" ] || { echo "  a branch ref changed"; return 1; }
+  [ "$(cat "$REPO_ROOT/a.txt")" = "$before_file" ] \
+    || { echo "  working-tree content changed"; return 1; }
+  [ -z "$(git -C "$REPO_ROOT" status --porcelain)" ] \
+    || { echo "  the working tree was dirtied"; return 1; }
+  [ -z "$(git -C "$REPO_ROOT" stash list)" ] \
+    || { echo "  a stash entry was created"; return 1; }
+}
+
+test_ensure_15_empty()        { ensure_15_row ''; }
+test_ensure_15_uppercase()    { ensure_15_row 'Bad-Upper'; }
+test_ensure_15_underscore()   { ensure_15_row 'under_score'; }
+test_ensure_15_dot()          { ensure_15_row 'foo.bar'; }
+test_ensure_15_slash()        { ensure_15_row 'foo/bar'; }
+test_ensure_15_leading_hy()   { ensure_15_row '-leading'; }
+test_ensure_15_trailing_hy()  { ensure_15_row 'trailing-'; }
+test_ensure_15_double_hy()    { ensure_15_row 'double--hyphen'; }
+test_ensure_15_len41()        { ensure_15_row "$(printf 'a%.0s' $(seq 41))"; }
+
+# =============================================================================
+# ensure-16: the length boundary — a slug of exactly 40 lowercase characters
+# is valid: the fresh path runs through it and reports state=created.
+# =============================================================================
+test_ensure_16_len40_slug_is_valid() {
+  new_repo "$(printf 'a%.0s' $(seq 40))"
+  out=$(run_flow ensure "$SLUG"); st=$?
+  [ "$out" = "state=created" ] || { echo "  expected state=created, got: $out"; return 1; }
+  [ "$st" -eq 0 ] || { echo "  expected exit 0, got: $st"; return 1; }
+  [ "$(git -C "$REPO_ROOT" branch --show-current)" = "antz/$SLUG" ] \
+    || { echo "  session not positioned on the 40-character flow branch"; return 1; }
+}
+
+# =============================================================================
+# ensure-18: the guard is skipped on resume — a dirty tree still positions,
+# and the reuse reports the pre-existing dirt as an advisory machine line
+# ("dirty=yes" immediately after "state=reused", exit 0). The advisory is
+# emitted on any non-empty-porcelain state=reused: the change-dir resume and
+# the branch-only reuse whose change dir is still absent alike. The third
+# row pins the change-dir half of the guard's conjunction: with the change
+# dir on disk but no marker branch, the tree is dirty and this is still a
+# resume (guard skipped) — ensure creates the marker fresh (state=created,
+# which carries no advisory line).
+# =============================================================================
+ensure_18_row() {
+  # $1 = change-dir (branch exists) | branch-only | change-dir-nobranch.
+  new_repo resume-dirty-slug
+  [ "$1" = change-dir ] && git -C "$REPO_ROOT" branch -q "antz/$SLUG"
+  [ "$1" = branch-only ] && git -C "$REPO_ROOT" branch -q "antz/$SLUG"
+  [ "$1" = change-dir ] && mk_change_dir
+  [ "$1" = change-dir-nobranch ] && mk_change_dir
+  base_head=$(git -C "$REPO_ROOT" rev-parse HEAD)
+  printf 'dirty\n' > "$REPO_ROOT/a.txt"
+  out=$(run_flow ensure "$SLUG"); st=$?
+  [ "$st" -eq 0 ] || { echo "  expected exit 0, got: $st"; return 1; }
+  if [ "$1" = change-dir-nobranch ]; then
+    # A fresh creation carries no advisory: dirty=yes follows reused only.
+    [ "$out" = "state=created" ] \
+      || { echo "  expected state=created, got: $out"; return 1; }
+  else
+    [ "$out" = "$(printf 'state=reused\ndirty=yes')" ] \
+      || { echo "  expected state=reused + dirty=yes, got: $out"; return 1; }
+  fi
+  [ "$(git -C "$REPO_ROOT" branch --show-current)" = "antz/$SLUG" ] \
+    || { echo "  session not positioned on antz/$SLUG"; return 1; }
+  [ "$(cat "$REPO_ROOT/a.txt")" = "dirty" ] \
+    || { echo "  the modification was not carried over untouched"; return 1; }
+  git -C "$REPO_ROOT" status --porcelain -- a.txt | grep -q '^ M a.txt' \
+    || { echo "  a.txt no longer reported modified"; return 1; }
+  [ "$(git -C "$REPO_ROOT" rev-parse HEAD)" = "$base_head" ] \
+    || { echo "  HEAD moved"; return 1; }
+  [ "$(git -C "$REPO_ROOT" rev-parse "refs/heads/antz/$SLUG")" = "$base_head" ] \
+    || { echo "  the marker branch ref moved"; return 1; }
+  [ -z "$(git -C "$REPO_ROOT" stash list)" ] \
+    || { echo "  a stash entry was created"; return 1; }
+}
+
+test_ensure_18_change_dir_resume() { ensure_18_row change-dir; }
+test_ensure_18_branch_only_reuse()  { ensure_18_row branch-only; }
+test_ensure_18_change_dir_no_branch() { ensure_18_row change-dir-nobranch; }
+
+# =============================================================================
+# ensure-19: the scripts byte-unchanged guard (in flow-09) is re-scoped off
+# scripts/orchestration/antz-flow.sh — the file the flow-script-guards change
+# edits — onto the two files it leaves untouched (antz-probe.sh,
+# antz-skills.sh). This change's own working tree is the live evidence that
+# an edited antz-flow.sh doesn't fail the guard (flow-09 runs green with it
+# modified); this test pins the re-scope itself, asserted against flow-09's
+# own body extracted from this file: the guard names exactly the two
+# untouched scripts, the whole-directory form is gone, and the probe's
+# change_dir=missing assertion plus the scenario's structural constraints
+# (14 fence lines / one sh fence / steps end at 6 / the four tables) stay
+# enforced.
+# =============================================================================
+test_ensure_19_scripts_guard_rescoped() {
+  ok=0
+  body=$(awk '/^test_flow_09_unchanged_surface\(\)/,/^}$/' "$0")
+  [ -n "$body" ] || { echo "  test_flow_09_unchanged_surface not found in this file"; return 1; }
+  # The guard compares exactly the two files this change leaves untouched…
+  printf '%s\n' "$body" \
+    | grep -qF 'diff --quiet HEAD -- scripts/orchestration/antz-probe.sh scripts/orchestration/antz-skills.sh' \
+    || { echo "  flow-09's guard no longer names the two untouched scripts exactly"; ok=1; }
+  # …and the whole-directory form is gone (it would fail on an edited antz-flow.sh).
+  if printf '%s\n' "$body" | grep -qE 'diff --quiet HEAD -- scripts/orchestration/([[:space:]]|\\$)'; then
+    echo "  a whole-scripts-directory byte-unchanged check survives in flow-09"
+    ok=1
+  fi
+  # The probe's change_dir=missing assertion stays enforced inside flow-09.
+  needle='require "$PROBE_SH" '"'"'change_dir=missing'"'"''
+  printf '%s\n' "$body" | grep -qF "$needle" \
+    || { echo "  flow-09 lost its probe change_dir=missing assertion"; ok=1; }
+  # The scenario's structural constraints stay enforced (fence count, single
+  # sh fence, steps ending at 6, the four table headers).
+  printf '%s\n' "$body" | grep -qF 'expected 14 fence lines' \
+    || { echo "  flow-09 lost the 14-fence-line constraint"; ok=1; }
+  printf '%s\n' "$body" | grep -qF 'expected exactly 1 probe fence' \
+    || { echo "  flow-09 lost the one-sh-fence constraint"; ok=1; }
+  printf '%s\n' "$body" | grep -qF 'a new process step appeared' \
+    || { echo "  flow-09 lost the steps-end-at-6 constraint"; ok=1; }
+  for t in '| discover output | Meaning / action |' '| Output | Meaning |' \
+           '| `rejected_count` | Action |' '| release output | Meaning / action |'; do
+    printf '%s\n' "$body" | grep -qF "$t" \
+      || { echo "  flow-09 lost the four-tables constraint ($t)"; ok=1; }
+  done
+  # Live non-failure: the re-scoped guard command really passes with
+  # antz-flow.sh edited (same git-availability gate flow-09 uses).
+  if command -v git >/dev/null 2>&1 && [ -e "$SCRIPT_DIR/.git" ] \
+     && git -C "$SCRIPT_DIR" cat-file -e HEAD:scripts/orchestration/antz-probe.sh 2>/dev/null; then
+    git -C "$SCRIPT_DIR" diff --quiet HEAD -- \
+      scripts/orchestration/antz-probe.sh scripts/orchestration/antz-skills.sh \
+      || { echo "  the untouched probe/skills scripts differ from HEAD after all"; ok=1; }
+  fi
+  return $ok
+}
+
+# =============================================================================
 # orchestrator-01: step 1's ensure instructions document the new state
 # meanings — created/reused imply positioned on antz/<slug> with the work
 # uncommitted on that branch; checkout_refused and no_branch are documented
@@ -633,6 +865,106 @@ test_orchestrator_01_state_meanings() {
   # The unchanged unborn-repo stop.
   require "$PROSE_STEP1" 'state=no_commits' || ok=1
   require "$PROSE_STEP1" 'the repo has no commits yet' || ok=1
+  # Extended by change flow-script-guards (sub-spec 02): the new-flow tree
+  # guard rejection is documented — its full trigger conjunction, its
+  # fail-closed nothing-created-or-moved nature, and the user's resume action.
+  require "$PROSE_STEP1" 'state=tree_dirty' || ok=1
+  require "$PROSE_STEP1" 'the change dir `spdd/changes/<slug>/` is absent' || ok=1
+  require "$PROSE_STEP1" 'the marker branch would be newly created' || ok=1
+  require "$PROSE_STEP1" '`git status --porcelain` is non-empty' || ok=1
+  require "$PROSE_STEP1" 'fail-closed by design, with nothing created or moved' || ok=1
+  require "$PROSE_STEP1" 'clean, commit, or gitignore the dirt and re-invoke' || ok=1
+  # The mechanical slug rejection: invalid-slug wording, its
+  # before-any-branch-or-positioning-work placement, its non-destructive
+  # nature, and the user's resume action.
+  require "$PROSE_STEP1" 'state=bad_slug' || ok=1
+  require "$PROSE_STEP1" 'the mechanical rejection of an invalid slug' || ok=1
+  require "$PROSE_STEP1" 'no leading/trailing or doubled hyphen, bounded length' || ok=1
+  require "$PROSE_STEP1" 'before any branch or positioning work' || ok=1
+  require "$PROSE_STEP1" 'nothing changed on disk or in git' || ok=1
+  require "$PROSE_STEP1" 're-invoke with a valid slug' || ok=1
+  # The dirty=yes advisory: appended after a state=reused on a dirty tree,
+  # advisory only (not a stop, no routing change), with the report's warning
+  # that the pre-existing dirt rides into the human's commit.
+  require "$PROSE_STEP1" 'dirty=yes' || ok=1
+  require "$PROSE_STEP1" 'the advisory line' || ok=1
+  require "$PROSE_STEP1" 'a resume, or a branch-only reuse' || ok=1
+  require "$PROSE_STEP1" 'it is not a stop and changes no routing' || ok=1
+  require "$PROSE_STEP1" "the report warns that the pre-existing dirt will ride into the human's commit" || ok=1
+  return $ok
+}
+
+# =============================================================================
+# orchestrator-06 (added by change flow-script-guards, sub-spec 02): the
+# Session guards' latch bullet and the Report Format's stopped enumeration
+# name the new machine-line stops state=tree_dirty and state=bad_slug (each
+# as the hard status=stopped variant, not waiting-user, naming its resume
+# action); dirty=yes is documented as advisory only — not a latch outcome,
+# not a stop, never a routing change. The structural clauses of the scenario
+# are asserted too: steps still end at 6, no new fenced block (14 fence
+# lines / one ```sh fence), the four tables survive, and the dedup guard's
+# exactly-two exceptions are untouched. Latch/report assertions are
+# line-scoped (the bullet/definition itself), so a stray mention elsewhere
+# in the prompt can't satisfy them.
+# =============================================================================
+test_orchestrator_06_latch_and_report_stops() {
+  ok=0
+  # The latch bullet's machine-line stop list includes the two new stops.
+  grep -F -- '- **Latch.**' "$PROSE_GUARDS" | grep -qF 'state=tree_dirty' \
+    || { echo "  the latch's stop list does not name state=tree_dirty"; ok=1; }
+  grep -F -- '- **Latch.**' "$PROSE_GUARDS" | grep -qF 'state=bad_slug' \
+    || { echo "  the latch's stop list does not name state=bad_slug"; ok=1; }
+  # dirty=yes is documented in the latch as advisory only — never a latch
+  # outcome, never a stop, never a routing change.
+  grep -F -- '- **Latch.**' "$PROSE_GUARDS" | grep -qF 'dirty=yes' \
+    || { echo "  the latch bullet does not mention the dirty=yes advisory"; ok=1; }
+  grep -F -- '- **Latch.**' "$PROSE_GUARDS" \
+    | grep -qF 'advisory only — not a latch outcome, not a stop, and never a change of routing' \
+    || { echo "  the latch bullet does not document dirty=yes as advisory only"; ok=1; }
+  # The Report Format's stopped enumeration includes the two new stops on
+  # its own definition line...
+  grep -F '`stopped` is the hard state stop' "$PROSE_REPORT" | grep -qF 'state=tree_dirty' \
+    || { echo "  the stopped enumeration does not name state=tree_dirty"; ok=1; }
+  grep -F '`stopped` is the hard state stop' "$PROSE_REPORT" | grep -qF 'state=bad_slug' \
+    || { echo "  the stopped enumeration does not name state=bad_slug"; ok=1; }
+  # ...as the hard state stop variant, explicitly not waiting-user, each
+  # naming its resume action.
+  grep -F '`stopped` is the hard state stop' "$PROSE_REPORT" | grep -qF 'not `waiting-user`' \
+    || { echo "  the stopped enumeration does not state the new stops are reported status=stopped, not waiting-user"; ok=1; }
+  grep -F '`stopped` is the hard state stop' "$PROSE_REPORT" \
+    | grep -qF 'clean, commit, or gitignore the dirt and re-invoke' \
+    || { echo "  the stopped enumeration does not name state=tree_dirty's resume action"; ok=1; }
+  grep -F '`stopped` is the hard state stop' "$PROSE_REPORT" \
+    | grep -qF 're-invoke with a valid slug' \
+    || { echo "  the stopped enumeration does not name state=bad_slug's resume action"; ok=1; }
+  # The waiting-user stop list stays closed — the new stops never join it.
+  # Both stop-value definitions share one physical line, so the exclusion is
+  # scoped to the waiting-user clause alone (the text between "produced by
+  # exactly these stops:" and the "`stopped` is the hard state stop" turn).
+  wu_clause=$(sed -n 's/.*produced by exactly these stops:\(.*\)`stopped` is the hard state stop.*/\1/p' "$PROSE_REPORT")
+  { [ -n "$wu_clause" ] && printf '%s' "$wu_clause" | grep -qF 'open_questions=yes'; } \
+    || { echo "  the waiting-user clause could not be extracted for the exclusion check"; ok=1; }
+  if printf '%s' "$wu_clause" | grep -qE 'state=(tree_dirty|bad_slug)'; then
+    echo "  a new machine-line stop was routed to waiting-user instead of stopped"; ok=1
+  fi
+  # The scenario's structural clauses: the numbered steps still end at 6,
+  # no new fenced block was added (14 fence lines / one ```sh fence), the
+  # four tables survive, and the dedup guard's exactly-two exceptions are
+  # untouched.
+  require "$ORCHESTRATOR_PROMPT" '6. On a fresh rejection' || ok=1
+  if grep -qE '^7\. ' "$ORCHESTRATOR_PROMPT"; then
+    echo "  a new process step appeared"; ok=1
+  fi
+  fences=$(grep -cE '^   ```(sh)?$' "$ORCHESTRATOR_PROMPT")
+  [ "$fences" = "14" ] || { echo "  expected 14 fence lines (7 blocks), got: $fences"; ok=1; }
+  shfences=$(grep -c '^   ```sh$' "$ORCHESTRATOR_PROMPT")
+  [ "$shfences" = "1" ] || { echo "  expected exactly 1 probe fence, got: $shfences"; ok=1; }
+  for t in '| discover output | Meaning / action |' '| Output | Meaning |' \
+           '| `rejected_count` | Action |' '| release output | Meaning / action |'; do
+    require "$ORCHESTRATOR_PROMPT" "$t" || ok=1
+  done
+  require "$PROSE_GUARDS" 'exactly two exceptions, both step 4' || ok=1
+  require "$PROSE_GUARDS" 'No third exception exists' || ok=1
   return $ok
 }
 
@@ -962,7 +1294,9 @@ test_flow_08_stopped_enumeration() {
 # =============================================================================
 # flow-09: the unchanged surface stays unchanged — change_dir=missing keeps
 # its probe-table row (only its routing meaning changed) and the probe script
-# still prints it (scripts/orchestration/ byte-unchanged), the latch still
+# still prints it (the untouched scripts/orchestration/ probe+skills byte-
+# unchanged; re-scoped off antz-flow.sh by change flow-script-guards, which
+# edits that file — see ensure-19), the latch still
 # names it, the four tables survive, the steps still end at 6, and no new
 # fenced block was added (14 fence lines, one ```sh fence).
 # =============================================================================
@@ -973,12 +1307,15 @@ test_flow_09_unchanged_surface() {
   # directory-based routing).
   refuse "$PROSE_STEP2" 'the slug is wrong' || ok=1
   require "$PROBE_SH" 'change_dir=missing' || ok=1
-  # The scripts stay byte-unchanged by this change (checked against HEAD when
+  # The untouched scripts stay byte-unchanged (checked against HEAD when
   # git is readable — same gating as the sessionguards additive guard).
+  # Re-scoped by change flow-script-guards (ensure-19) off the whole
+  # scripts/orchestration/ directory: antz-flow.sh is that change's subject,
+  # so the guard covers only the two files it leaves untouched.
   if command -v git >/dev/null 2>&1 && [ -e "$SCRIPT_DIR/.git" ] \
      && git -C "$SCRIPT_DIR" cat-file -e HEAD:scripts/orchestration/antz-probe.sh 2>/dev/null; then
-    git -C "$SCRIPT_DIR" diff --quiet HEAD -- scripts/orchestration/ \
-      || { echo "  scripts/orchestration/ is not byte-unchanged vs HEAD"; ok=1; }
+    git -C "$SCRIPT_DIR" diff --quiet HEAD -- scripts/orchestration/antz-probe.sh scripts/orchestration/antz-skills.sh \
+      || { echo "  the untouched probe/skills scripts are not byte-unchanged vs HEAD"; ok=1; }
   fi
   require "$PROSE_GUARDS" 'change_dir=missing' || ok=1
   # The four tables survive with their headers.
@@ -1035,10 +1372,10 @@ test_flow_10_docs_derivation_row() {
 run_test "ensure-extracted: the flow script is loaded from scripts/orchestration/antz-flow.sh and parses as POSIX sh" test_ensure_extracted
 run_test "testharness-01: the flow suite loads scripts/orchestration/antz-flow.sh as a file (no extraction from the prompt)" test_testharness_01_file_source
 run_test "ensure-01: ensure creates the branch at HEAD and positions the session" test_ensure_01_fresh_creates_and_positions
-run_test "ensure-02: uncommitted working-tree work survives the positioning" test_ensure_02_uncommitted_work_survives
+run_test "ensure-02: a dirty tree at a new flow's start is refused state=tree_dirty, nothing created or moved" test_ensure_02_new_flow_dirty_tree_refused
 run_test "ensure-03: resume positions onto the existing branch without rewriting it" test_ensure_03_resume_positions_without_rewriting
 run_test "ensure-04: re-running ensure while positioned is a safe no-op" test_ensure_04_ensure_again_is_noop
-run_test "ensure-05: a refused switch stop-state alters nothing" test_ensure_05_refused_switch_stops_clean
+run_test "ensure-05: a refused switch on the resume path stops clean, guard skipped (change dir present)" test_ensure_05_refused_switch_on_resume_stops_clean
 run_test "ensure-06: the script is statically free of destructive mechanisms" test_ensure_06_no_destructive_flags
 run_test "ensure-07: no subcommand ever commits anything" test_ensure_07_no_subcommand_commits
 run_test "ensure-08 git absent: discover fail-closes state=no_git" test_ensure_08_no_git_discover
@@ -1053,12 +1390,28 @@ run_test "ensure-11 branch missing: release refuses and removes nothing" test_en
 run_test "ensure-12: release reports the branch and removes nothing, ever" test_ensure_12_release_reports_and_removes_nothing
 run_test "ensure-13: discover is unchanged (empty listing and full listing)" test_ensure_13_discover_unchanged
 run_test "ensure-14: state is unchanged (probe run and branch=missing)" test_ensure_14_state_unchanged
+run_test "ensure-15 empty slug: ensure rejects with state=bad_slug and changes nothing" test_ensure_15_empty
+run_test "ensure-15 uppercase: ensure rejects with state=bad_slug and changes nothing" test_ensure_15_uppercase
+run_test "ensure-15 underscore: ensure rejects with state=bad_slug and changes nothing" test_ensure_15_underscore
+run_test "ensure-15 dot: ensure rejects with state=bad_slug and changes nothing" test_ensure_15_dot
+run_test "ensure-15 slash: ensure rejects with state=bad_slug and changes nothing" test_ensure_15_slash
+run_test "ensure-15 leading hyphen: ensure rejects with state=bad_slug and changes nothing" test_ensure_15_leading_hy
+run_test "ensure-15 trailing hyphen: ensure rejects with state=bad_slug and changes nothing" test_ensure_15_trailing_hy
+run_test "ensure-15 double hyphen: ensure rejects with state=bad_slug and changes nothing" test_ensure_15_double_hy
+run_test "ensure-15 41 chars: ensure rejects with state=bad_slug and changes nothing" test_ensure_15_len41
+run_test "ensure-16: a 40-character slug is valid (state=created, positioned)" test_ensure_16_len40_slug_is_valid
+run_test "ensure-17: an untracked non-ignored file blocks a new flow with state=tree_dirty" test_ensure_17_untracked_file_blocks_new_flow
+run_test "ensure-18: a dirty change-dir resume positions and appends the advisory dirty=yes" test_ensure_18_change_dir_resume
+run_test "ensure-18: a dirty branch-only reuse (no change dir) positions and appends dirty=yes" test_ensure_18_branch_only_reuse
+run_test "ensure-18: a dirty change-dir resume with no marker branch is a resume, not a guarded new flow" test_ensure_18_change_dir_no_branch
+run_test "ensure-19: flow-09's scripts byte-unchanged guard is re-scoped to probe+skills, antz-flow.sh edits don't fail it" test_ensure_19_scripts_guard_rescoped
 
 run_test "orchestrator-01: step 1's ensure instructions document the new state meanings" test_orchestrator_01_state_meanings
 run_test "orchestrator-02: step 5's human follow-up print is user-controlled with a placeholder merge target" test_orchestrator_02_followups
 run_test "orchestrator-03: no concrete integration branch name appears as a merge target anywhere" test_orchestrator_03_no_hardcoded_integration_branch
 run_test "orchestrator-04: the law wording reflects the checkout contract" test_orchestrator_04_law_wording
 run_test "orchestrator-05: the unchanged surface stays unchanged" test_orchestrator_05_unchanged_surface
+run_test "orchestrator-06: the latch's stop list and the stopped enumeration name state=tree_dirty and state=bad_slug (hard status=stopped stops, resume actions named); dirty=yes is advisory only; the structure stays (steps end at 6, 14 fences / one sh fence, four tables, dedup's two exceptions)" test_orchestrator_06_latch_and_report_stops
 
 run_test "flow-01: a never-specified change_dir=missing outcome delegates the whole change to the specifier (once per invocation), then re-probes and continues through the unchanged state machine" test_flow_01_never_specified_delegation
 run_test "flow-02: change_dir=missing with an on-disk discover candidate is a mid-session deletion -- hard stop, status=stopped, latch applies, never the specifier" test_flow_02_mid_session_deletion_stop

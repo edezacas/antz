@@ -40,9 +40,34 @@ discover)
   ;;
 ensure)
    slug=${2:-}
-   [ -n "$slug" ] || { echo 'usage: ensure <slug>'; exit 1; }
+   # Mechanical slug validation, before any branch or positioning work and
+   # before the no-commits check: lowercase letters, digits, and hyphen
+   # only; no leading/trailing hyphen; no doubled hyphen; at most 40
+   # characters. The empty/absent slug is rejected the same way. The
+   # rejection is a stop-and-report state: nothing is created or moved.
+   case "$slug" in
+     ''|*[!a-z0-9-]*|-*|*-|*--*)
+       echo 'state=bad_slug'
+       exit 1
+       ;;
+   esac
+   [ "${#slug}" -le 40 ] || { echo 'state=bad_slug'; exit 1; }
    if ! git rev-parse HEAD >/dev/null 2>&1; then
      echo 'state=no_commits'
+     exit 1
+   fi
+   # New-flow tree guard: starting a flow (the change dir is absent AND the
+   # marker branch would be newly created) requires a clean working tree —
+   # the fail-closed `git status --porcelain` check, untracked non-ignored
+   # files included; the user cleans, commits, or gitignores and re-invokes.
+   # Skipped on a resume (change dir present, the flow's own implementation
+   # work legitimately lives in the tree) and on a branch-only reuse (the
+   # marker already exists, so this is not a new-flow start). The refusal
+   # runs before any branch creation or positioning: nothing is created or
+   # moved.
+   if ! br_exists "$slug" && [ ! -d "$root/spdd/changes/$slug" ] \
+      && [ -n "$(git status --porcelain)" ]; then
+     echo 'state=tree_dirty'
      exit 1
    fi
    fresh=no
@@ -70,6 +95,11 @@ ensure)
        echo 'state=created'
      else
        echo 'state=reused'
+       # Advisory machine line (change flow-script-guards): a reuse on a
+       # non-empty porcelain — change-dir resume or branch-only reuse —
+       # names the pre-existing dirt. Advisory only: no routing change,
+       # not a stop. A clean reuse prints exactly state=reused.
+       [ -z "$(git status --porcelain)" ] || echo 'dirty=yes'
      fi
    else
      echo 'state=checkout_refused'

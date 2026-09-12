@@ -247,6 +247,58 @@ identical rule (versioning-06).
     gradation, not a new rubric.
   - No role commits anything; the tag is the human's commit-time follow-up.
 
+## Feature: VERSION bumped to 4.5.0 with a matching CHANGELOG.md entry describing the flow-script guards, graded minor (from 03-bump450.feature, change `flow-script-guards`)
+
+  Background:
+    Given "spdd/specs/versioning.md" as the governing policy: a commit
+      changing "agents/prompts/", "agents/meta/", or "install.sh" bumps
+      "VERSION" and adds a matching "CHANGELOG.md" entry in the same commit
+    And "VERSION" reads "4.4.0" at this change's start, with CHANGELOG.md's
+      newest entry "## [4.4.0] - 2026-09-12"
+
+  # ADD - bump450-01: the bump is present — VERSION reads 4.5.0 and
+  # CHANGELOG.md gains a matching [4.5.0] section above [4.4.0].
+  Scenario: bump450-01
+    When the reader reads "VERSION"
+    Then it reads exactly "4.5.0" (the version value plus one trailing
+      newline, its only content) and agrees with the newest topmost
+      CHANGELOG entry
+    And "CHANGELOG.md" carries a dated "## [4.5.0] - <date>" section above
+      "## [4.4.0]", in the file's Keep a Changelog style (category headings
+      with bold lead-in bullets)
+    And the "## [4.4.0]" section and every entry below it are byte-for-byte
+      unchanged
+
+  # ADD - bump450-02: the [4.5.0] entry describes the change and states the
+  # minor grade with its versioning-table justification.
+  Scenario: bump450-02
+    When the reader reads the "## [4.5.0]" section
+    Then it describes the flow script's mechanical slug validation
+      ("state=bad_slug", non-destructive), the new-flow tree guard
+      ("state=tree_dirty" only when the change dir is absent and the marker
+      branch would be newly created, skipped on resume), and the advisory
+      "dirty=yes" resume line
+    And it describes the orchestrator prompt wiring (the step-1 ensure
+      instructions, the latch, and the Report Format now name the new states)
+      and the rewritten/added flow-suite tests (including the scripts
+      byte-unchanged guard re-scoped off antz-flow.sh)
+    And it states the grade as minor, not patch and not major, naming the
+      behavior change to the flow script and orchestrator routing (not the
+      wording-only patch) and the surviving workflow contract, marker format,
+      access model, directory layout, install locations, four subcommands,
+      probe output vocabulary, release machine lines, and receipt grammar (not
+      major)
+    And it states that install.sh itself is untouched and the bump reaches
+      installed copies only through the normal "./install.sh --all" re-render,
+      and that no role creates the v4.5.0 tag (it is the human's commit-time
+      follow-up)
+
+  ### Invariants
+  - The versioning policy is unchanged: this bump follows the existing
+    gradation, not a new rubric.
+  - No role commits anything; the v4.5.0 tag is the human's commit-time
+    follow-up.
+
 ## End-to-end QA suite
 
 Operates through the real product UI: the repo's policy docs read by a user,

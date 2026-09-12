@@ -15,10 +15,13 @@ And the session is now on branch "antz/<slug>"
 And "refs/heads/antz/<slug>" points at the same commit HEAD pointed at before the call
 And no new commit exists anywhere in the repository
 
-### ADD ensure-02
-Uncommitted working-tree work survives the positioning: on the fresh path, the
-dirty files carry over rather than being destroyed or stashed ("state=created",
-byte-identical contents, change still uncommitted, no stash entry).
+### MODIFY ensure-02
+A dirty tree at a new flow's start is refused with `state=tree_dirty` (exit 1)
+before any branch is created or checked out — uncommitted work is neither carried
+in nor destroyed. The guard fires when the change dir `spdd/changes/<slug>/` is
+absent AND the marker branch would be newly created, and `git status --porcelain`
+is non-empty (untracked non-ignored files included). Nothing is created or moved
+on refusal; no stash entry exists.
 
 ### ADD ensure-03
 The resume path reports "state=reused", positions the session onto the existing
@@ -28,11 +31,13 @@ branch, and never rewrites the branch ref (no -B semantics).
 Re-running ensure while already positioned is a safe no-op: "state=reused",
 HEAD and every branch ref unchanged, working tree untouched.
 
-### ADD ensure-05
+### MODIFY ensure-05
 When git refuses the positioning (a destructive-checkout conflict), the script
 prints exactly "state=checkout_refused" with exit status 1; the working tree,
 HEAD position, and every branch ref are identical before and after; nothing was
-forced, stashed, reset, or deleted.
+forced, stashed, reset, or deleted. This now lives on the resume path — the
+change dir exists (`spdd/changes/<slug>/` present), so the tree guard is skipped
+and the plain switch is what refuses.
 
 ### ADD ensure-06
 Static backstop: no git invocation carries "-B", "--force", or "-f"; no
@@ -83,13 +88,67 @@ State is unchanged: verifies the marker branch, resolves the repo root, runs
 the probe verbatim with CHANGE_DIR at the working tree's "spdd/changes/<slug>";
 "branch=missing" (exit 1) when the marker branch is absent.
 
+### ADD ensure-15 (outline)
+A mechanically invalid slug is rejected with exactly "state=bad_slug" (exit 1)
+before any branch or positioning work — non-destructively: no antz/* branch is
+created, the session stays put, HEAD, every branch ref, and the working tree are
+byte-unchanged, and no stash entry exists. The rule: lowercase letters, digits,
+and hyphen only; no leading/trailing hyphen; no double hyphen; length at most 40.
+| slug reason | slug |
+|---|---|
+| empty | (empty) |
+| uppercase | Bad-Upper |
+| underscore | under_score |
+| dot | foo.bar |
+| slash | foo/bar |
+| leading - | -leading |
+| trailing - | trailing- |
+| double -- | double--hyphen |
+| 41 chars | aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa |
+
+### ADD ensure-16
+The length boundary: a slug of exactly 40 lowercase characters is valid — the
+fresh path runs through it and reports "state=created" (exit 0), positioned on
+"antz/<slug>".
+
+### ADD ensure-17
+Non-empty "git status --porcelain" is the whole trigger: an untracked,
+non-ignored file blocks a new flow the same way a tracked modification does
+(fail-closed by design).
+
+### ADD ensure-18
+The guard is skipped on resume: a dirty tree still positions, and the reuse
+reports the pre-existing dirt as an advisory machine line ("dirty=yes" immediately
+after "state=reused", exit 0). The advisory is emitted on any
+non-empty-porcelain "state=reused": the change-dir resume and the branch-only
+reuse whose change dir is still absent alike. A clean reuse still prints exactly
+"state=reused".
+
+### ADD ensure-19
+The flow suite's "scripts/orchestration/" byte-unchanged guard (in flow-09) is
+re-scoped off "antz-flow.sh" — the file this change edits — onto the two files
+it leaves untouched ("antz-probe.sh", "antz-skills.sh"). The probe's
+"change_dir=missing" assertion and every structural constraint stay enforced.
+
+### ADD ensure-20
+The render-injection suite's ("tests/renderinject_test.sh") pre-change
+byte-identity gate also retires when an injected "scripts/orchestration/" file
+differs from the base tree, so a script-only change does not fail it. The
+marker-substitution reconstruction, the no-marker-survives assertion, the fence
+shape, and the structural render assertions stay enforced. Once the prompt prose
+of a later sub-spec also changes, the gate retires for that reason too, with no
+double failure.
+
 ### Invariants
 - Stdout is exactly one machine line per invocation (discover: one "candidate="
   line per match, possibly none); one-line vocabulary: `state=created` (0),
   `state=reused` (0), `state=no_commits` (1), `state=checkout_refused` (1),
   `state=no_branch` (1), `state=no_git`/`state=no_repo` (1),
+  `state=bad_slug` (1), `state=tree_dirty` (1),
   `branch=missing` (1), `gate=refused reason=…` (1),
-  `released branch=antz/<slug>` (0).
+  `released branch=antz/<slug>` (0); plus the advisory `dirty=yes` second line
+  appended after any `state=reused` on a non-empty porcelain (no routing change,
+  not a stop).
 - No subcommand ever commits; the marker branch points at the commit the flow
   started from forever.
 - No destructive git ever (-B/--force/-f, reset, clean, stash, restore,
@@ -112,13 +171,24 @@ the probe verbatim with CHANGE_DIR at the working tree's "spdd/changes/<slug>";
 
 ## Feature: orchestrator (from 02-orchestrator.feature)
 
-### ADD orchestrator-01
+### MODIFY orchestrator-01
 Step 1's ensure instructions document "state=created"/"state=reused" as having
 positioned the session on "antz/<slug>" (work uncommitted on that branch),
 document the "state=checkout_refused" stop (git refused the positioning because
 it would overwrite uncommitted changes; user resolves themselves and
 re-invokes; never forced) and the "state=no_branch" stop the same way, and
-"state=no_commits" keeps its meaning.
+"state=no_commits" keeps its meaning. They document `state=tree_dirty` as the
+rejection a new flow gets when the change dir does not exist, the marker branch
+would be newly created, and "git status --porcelain" is non-empty — fail-closed
+by design, with nothing created or moved, and the user's resume action being to
+clean, commit, or gitignore the dirt and re-invoke. They document `state=bad_slug`
+as the mechanical rejection of an invalid slug (charset, no leading/trailing or
+doubled hyphen, bounded length) before any branch or positioning work, with
+nothing changed on disk or in git, and the user's resume action being to re-invoke
+with a valid slug. They document `dirty=yes` as an advisory line appended after
+any `state=reused` whose working tree is already dirty (a resume or a branch-only
+reuse): it changes no routing and is not a stop, and the orchestrator's report
+warns that the pre-existing dirt will ride into the human's commit.
 
 ### ADD orchestrator-02
 Step 5's human follow-up print states the finished work sits uncommitted on
@@ -145,6 +215,16 @@ Everything else in the prompt is unchanged: the discover and state-output
 tables, step 3 classification, step 4 rejection routing, the release-output
 table's four machine lines, the Report Format; no new subcommand, probe, or
 process step.
+
+### ADD orchestrator-06
+The Session guards' latch bullet and the Report Format's stopped enumeration
+name the new machine-line stops "state=tree_dirty" and "state=bad_slug" (each
+as the hard status=stopped variant, not waiting-user, naming its resume
+action); "dirty=yes" is documented as advisory only — not a latch outcome, not
+a stop, and never a change of routing. The numbered steps still end at 6, no
+new fenced block was added (still 14 fence lines across 7 blocks, exactly one
+sh fence), the four tables survive, and the dedup guard's exactly-two
+exceptions are untouched.
 
 ## Feature: orchestrator — flow routing and stop vocabulary (from 01-flow.feature, change `fix-orchestrator-flow`)
 
@@ -247,14 +327,20 @@ Every other stop reports `status=stopped` — the hard state stops are
 enumerated, so the classification is closed: the stops reported as
 `status=stopped` include at least: the flow script's machine-line stops
 (`state=no_git`, `state=no_repo`, `state=no_commits`,
-`state=checkout_refused`, `state=no_branch`), `branch=missing`, the
+`state=checkout_refused`, `state=no_branch`, `state=tree_dirty`,
+`state=bad_slug`), `branch=missing`, the
 mid-session change-dir deletion stop, the post-verifier fail-closed stop, any
 `gate=refused reason=...` line, a `BLOCKED:`-reasoned sub-spec found in
 classification (stop at the first one found, relay its reason),
 `rejected_count=2`, a non-attributable blocker in a rejected entry, and the
 empty-ids stop-and-ask. Each of those stops still names the resume action in
 the report body; `stopped` versus `waiting-user` changes only the closing
-status value.
+status value. Extended by change `flow-script-guards` (orchestrator-06,
+merged 2026-09-12): the stopped enumeration also names `state=tree_dirty` and
+`state=bad_slug`, each as the hard `status=stopped` variant (not
+`waiting-user`) with its resume action — the report's stopped definition in
+the prompt carries them; this entry's list is "include at least", so the id
+stays valid.
 
 ### ADD flow-09
 The unchanged surface stays unchanged — the probe keeps `change_dir=missing`
@@ -522,11 +608,14 @@ After any stop-and-report outcome the session performs no further delegation of
 any kind, reporting and ending instead; resumption is always a fresh invocation.
 The named stop outcomes include at least: `open_questions=yes`; `state=no_git`,
 `state=no_repo`, `state=no_commits`, `state=checkout_refused`,
-`state=no_branch`, `branch=missing`, `change_dir=missing`,
+`state=no_branch`, `state=tree_dirty`, `state=bad_slug`,
+`branch=missing`, `change_dir=missing`,
 `gate=refused reason=...`; a `BLOCKED:`-reasoned sub-spec found in
 classification; `rejected_count=2`; a non-attributable blocker in a rejected
 entry; and a slug-ambiguity stop (no unambiguous on-disk candidate). The latch
 covers delegation only — the orchestrator's own read-only probing is unchanged.
+The advisory `dirty=yes` line is documented as advisory only — not a latch
+outcome, not a stop, and never a change of routing.
 
 ### ADD sessionguards-03
 The guards are prompt prose only: no new embedded or extracted script, no new
@@ -699,3 +788,65 @@ Against pre-change 4.3.0 installed copies, `--check` reports the drift to
 installed file; a fresh `--check` reports already up to date (antz 4.4.0) for
 both clients; AGENTS.md and CLAUDE.md carry the updated strict-ownership
 gotcha bullet identically in both files.
+
+## Feature: e2e-qa — flow-script-guards (from e2e-qa.feature, change `flow-script-guards`)
+
+Verified at merge (2026-09-12) by the verifier. e2e-slug-01 and
+e2e-version-01 executed fully; e2e-version-01 against a temp HOME holding a
+genuine pre-change install rendered from the flow's base commit (marker
+4.4.0, `git archive` of HEAD). e2e-tree-01's script-level half executed
+fully; its live-orchestrator routing half is judged by mechanism.
+
+- **e2e-slug-01** executed fully: in a fresh fixture repo, `ensure Bad-Upper`
+  and a 41-character slug each printed exactly `state=bad_slug` (exit 1) with
+  no `antz/*` branch created, the session still on its branch, and a clean
+  `git status`; a follow-up valid kebab-case slug printed `state=created`,
+  positioned on `antz/my-slug`, with `git rev-list --count HEAD` unchanged.
+- **e2e-tree-01** script half executed fully: a new flow on a dirty tree
+  printed exactly `state=tree_dirty` (exit 1), no branch created, the
+  modification intact; after the user's own commit, a re-run printed
+  `state=created` positioned on `antz/<slug>`; a later dirty resume printed
+  `state=reused` followed by `dirty=yes`, positioned, the dirt carried. The
+  live-orchestrator half is judged by the mechanism it exercises (per the
+  repo's established e2e convention — no role can spawn a live client
+  session): the prompt's step 1 documents both new stops with their trigger
+  and resume actions, the latch lists them among the machine-line stops, the
+  Report Format reports them `status=stopped` (not `waiting-user`), and
+  `dirty=yes` is documented advisory-only — all pinned by
+  orchestrator-01/orchestrator-06/sessionguards-02's tests and verified live
+  against the working tree.
+- **e2e-version-01** executed fully: with 4.4.0-stamped installed copies in a
+  temp HOME (12-file inventory), `./install.sh --check` reported
+  "Claude Code: antz 4.4.0 -> 4.5.0" and "OpenCode: antz 4.4.0 -> 4.5.0",
+  printed the full [4.5.0] CHANGELOG entry for both clients, and wrote
+  nothing (md5-verified); `./install.sh --all` restamped every installed file
+  `antz:generated version=4.5.0` with the updated orchestrator prose and the
+  injected flow script rendered verbatim (no `antz-include:` survivor); a
+  fresh `--check` reported "already up to date (antz 4.5.0)" for both
+  clients.
+
+### ADD e2e-slug-01
+The mechanical slug rejection a user sees through the flow script's CLI
+affordance: invalid slugs (uppercase, over-40-characters) print exactly
+"state=bad_slug" and exit non-zero, with no "antz/..." branch created, the
+session unmoved, and "git status" unchanged — a non-destructive rejection; a
+valid short kebab-case slug then prints "state=created", positions on
+"antz/<slug>", and "git log" shows no new commit.
+
+### ADD e2e-tree-01
+The tree guard a user meets at a new flow's start and the advisory a resume
+carries (script-level half runnable; live-orchestrator routing half judged by
+mechanism): "ensure" on a dirty tree with no change dir and no marker branch
+prints exactly "state=tree_dirty" (non-zero), nothing created, the dirt
+intact; after the user commits or discards, a re-run prints "state=created"
+positioned; a dirty resume prints "state=reused" followed by "dirty=yes" and
+still positions. In a live /antz invocation meeting either new state the
+orchestrator stops, reports "status=stopped", and names the state's resume
+action (clean/commit/gitignore the dirt and re-invoke; choose a valid slug).
+
+### ADD e2e-version-01
+Against pre-change 4.4.0 installed copies, `--check` reports the drift to
+4.5.0 for both clients and prints the [4.5.0] entry writing nothing; `--all`
+restamps every installed file with the updated orchestrator and flow-script
+content rendered verbatim; a fresh `--check` reports already up to date
+(antz 4.5.0) for both clients.

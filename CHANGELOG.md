@@ -9,6 +9,18 @@ changes to the workflow contract (directory layout, access model, etc).
 
 This branch (`master`) carries the branch-marked, no-commit variant of antz.
 
+## [4.5.0] - 2026-09-12
+
+### Added
+- **The flow script validates the slug mechanically: `ensure` rejects an invalid slug with exactly `state=bad_slug` (exit 1) before any branch or positioning work** — lowercase letters, digits, and hyphen only, no leading, trailing, or doubled hyphen, bounded at 40 characters — and the empty/absent slug is rejected the same way. The rejection is non-destructive: no branch, no checkout, no file or ref change; the user's resume action is to re-invoke with a valid slug.
+- **New-flow tree guard: `ensure` refuses with exactly `state=tree_dirty` (exit 1) when it is starting a new flow on a dirty working tree — the change dir `spdd/changes/<slug>/` is absent AND the marker branch would be newly created — and the guard is skipped on a resume.** Fail-closed by design: the `git status --porcelain` check counts untracked non-ignored files; nothing is created or moved at refusal, and the user cleans, commits, or gitignores and re-invokes. The guard is skipped on a resume (the change dir is present) because the flow's implementation work legitimately lives outside `spdd/` in the working tree.
+- **Advisory resume line: any `state=reused` on a non-empty porcelain — a change-dir resume or a branch-only reuse — is followed by `dirty=yes`.** It is a machine line with no behavior change: not a stop, no routing change, and the orchestrator only warns that the pre-existing dirt will ride into the human's commit. A clean reuse still prints exactly `state=reused`.
+
+### Changed
+- **The orchestrator prompt wires the new states: step 1's ensure instructions, the post-stop latch's machine-line stop list, and the Report Format's `stopped` enumeration now name `state=tree_dirty` and `state=bad_slug`** as hard `status=stopped` state stops, each naming its resume action, and document the advisory `dirty=yes` line as not a stop and no routing change. Without this wiring the orchestrator could not route the new machine lines.
+- **The flow-suite tests moved to the new contract**: `tests/antz-flow_test.sh`'s `ensure-02` (a dirty tree at a new flow's start) and `ensure-05` (the refused switch, now exercised on the resume path where the tree guard is skipped) are rewritten to the new behavior; new cases cover the invalid-slug rejection, the 40-character boundary, the untracked-file `tree_dirty`, and the `dirty=yes` resume paths; and `flow-09`'s scripts byte-unchanged guard is re-scoped off `antz-flow.sh` — the one script this change edits — to the scripts it leaves untouched (`antz-probe.sh`, `antz-skills.sh`).
+- This grades as **minor**, not patch and not major: the flow script's behavior changes — two new rejection states and one advisory machine line — and the orchestrator's routing prose names them, so the rendered agent body and the script's behavior both change; this is not the wording-only kind of change that grades as patch. Not major: the workflow contract, the `antz:generated` marker format, the access model, the directory layout, and the install locations are all unchanged — the flow script's four subcommands, the probe's output vocabulary, the release machine lines, and the receipt grammar all survive, so no consumer breaks. `install.sh` itself is untouched: the bump reaches installed copies only through the normal `./install.sh --all` re-render (a re-run, not an edit), and no role creates the `v4.5.0` tag — it is the human's commit-time follow-up.
+
 ## [4.4.0] - 2026-09-12
 
 ### Added
