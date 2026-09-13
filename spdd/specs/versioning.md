@@ -299,6 +299,52 @@ identical rule (versioning-06).
   - No role commits anything; the v4.5.0 tag is the human's commit-time
     follow-up.
 
+## Feature: VERSION bumped to 4.6.0 with a matching CHANGELOG.md entry describing the precision-gap fixes, graded minor (from 05-bump460.feature, change `precision-gaps`)
+
+  Background:
+    Given "spdd/specs/versioning.md" as the governing policy: a commit
+      changing "agents/prompts/", "agents/meta/", or "install.sh" bumps
+      "VERSION" and adds a matching "CHANGELOG.md" entry in the same commit
+    And "VERSION" reads "4.5.0" at this change's start, with CHANGELOG.md's
+      newest entry "## [4.5.0] - 2026-09-12"
+
+  # ADD - bump460-01: the bump is present — VERSION reads 4.6.0 and
+  # CHANGELOG.md gains a matching [4.6.0] section above [4.5.0].
+  Scenario: bump460-01
+    When the reader reads "VERSION"
+    Then it reads exactly "4.6.0" (the version value plus one trailing
+      newline, its only content) and agrees with the newest topmost
+      CHANGELOG entry
+    And "CHANGELOG.md" carries a dated "## [4.6.0] - <date>" section above
+      "## [4.5.0]", in the file's Keep a Changelog style
+    And the "## [4.6.0]" entry describes the precision-gap fixes: the
+      specifier's conventions, the coder's mechanical checks, the verifier's
+      mechanical "code present" criterion and per-domain spec-file rule, the
+      orchestrator's bounded slug derivation, and the probe's
+      convention-aligned id extraction with its test and spec updates
+    And the "## [4.5.0]" section and every entry below it are byte-for-byte
+      unchanged
+
+  # ADD - bump460-02: the grade is minor, stated and justified.
+  Scenario: bump460-02
+    When the reader reads the "## [4.6.0]" entry
+    Then it states the grade as minor, not patch and not major, naming the
+      justification: role-prompt behavior changes are changes to rendered
+      agent bodies, and the probe's extraction behavior changes — not the
+      wording-only patch
+    And it names what survives unchanged (not major): the workflow contract,
+      the "antz:generated" marker format, the access model, the directory
+      layout, and the install locations
+    And it states that "install.sh" itself is untouched and the bump reaches
+      installed copies only through the normal "./install.sh --all"
+      re-render, and that no role creates the "v4.6.0" tag
+
+  ### Invariants
+  - The versioning policy is unchanged: this bump follows the existing
+    gradation, not a new rubric.
+  - No role commits anything; the v4.6.0 tag is the human's commit-time
+    follow-up.
+
 ## End-to-end QA suite
 
 Operates through the real product UI: the repo's policy docs read by a user,

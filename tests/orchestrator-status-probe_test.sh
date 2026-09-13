@@ -33,12 +33,22 @@
 # test_command= value as well-formed non-empty (complete may be yes) with no
 # probe code change -- scripts/orchestration/antz-probe.sh stays
 # byte-unchanged by that change.
+#
+# Grown by change precision-gaps (sub-spec 03-probealign, scenarios
+# probealign-01..03): the probe's id extraction is aligned with the specifier's
+# id convention ("<feature>" is one word -- letters, digits, underscores, no
+# hyphens), so a violating hyphenated tag surfaces as an id mismatch instead of
+# being tolerated whole. The old tolerant pin
+# (test_probe_subspec_ids_hyphenated_feature) now pins both sides, the two
+# fixtures that carried hyphenated-feature ids are convention-shaped, and the
+# probealign-* assertions added below pin the aligned extraction.
 
 set -u
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 ORCHESTRATOR_PROMPT="$SCRIPT_DIR/agents/prompts/orchestrator.prompt"
 PROBE_SH="$SCRIPT_DIR/scripts/orchestration/antz-probe.sh"
+SUITE_FILE="$SCRIPT_DIR/tests/orchestrator-status-probe_test.sh"
 
 pass_count=0
 fail_count=0
@@ -377,18 +387,26 @@ EOF
 }
 
 # =============================================================================
-# probe-subspec-ids-hyphenated-feature: a hyphenated feature name survives the
-# extraction whole (user-profile-1, not the split-off profile-1 the old regex
-# produced), so the probe stays in sync with the ids the coder tags tests with
-# even when the specifier's one-word naming rule is violated.
+# probe-subspec-ids-hyphenated-feature (retagged probealign-02 by change
+# precision-gaps): the extraction pins both sides of the aligned rule. A
+# convention-shaped one-word feature name ("userprofile-1") survives whole; a
+# hyphenated feature name ("user-profile-1") is no longer tolerated whole --
+# only the trailing convention-shaped portion ("profile-1") is reported, so the
+# violation surfaces (as an id mismatch downstream) instead of being smoothed
+# over. Pre-change this test pinned the tolerant behavior (the whole hyphenated
+# id surviving), which kept a violating sub-spec classifiable done against a
+# phantom id no convention-following coder would ever tag a test with.
 # =============================================================================
 test_probe_subspec_ids_hyphenated_feature() {
   dir=$(new_change_dir)
-  printf 'Feature: User profile\n\n# user-profile-1\nScenario: shows the profile\n  Given a user\n' > "$dir/01-user-profile.feature"
+  printf 'Feature: User profile\n\n# userprofile-1\nScenario: shows the profile\n  Given a user\n' > "$dir/01-userprofile.feature"
+  printf 'Feature: User profile\n\n# user-profile-1\nScenario: shows the profile\n  Given a user\n' > "$dir/02-user-profile.feature"
   ok=0
   out=$(run_probe "$dir")
-  echo "$out" | grep -qxF "$(subspec_line_no_receipt 01-user-profile.feature 'user-profile-1' 1)" \
-    || { echo "  hyphenated id was split: $out"; ok=1; }
+  echo "$out" | grep -qxF "$(subspec_line_no_receipt 01-userprofile.feature 'userprofile-1' 1)" \
+    || { echo "  conforming one-word feature id was not extracted whole: $out"; ok=1; }
+  echo "$out" | grep -qxF "$(subspec_line_no_receipt 02-user-profile.feature 'profile-1' 1)" \
+    || { echo "  hyphenated feature id was still tolerated whole (expected ids=profile-1): $out"; ok=1; }
   rm -rf "$dir"
   return $ok
 }
@@ -446,22 +464,27 @@ EOF
 # Scenario may span several lines (the repo's own convention:
 # `# ADD - <id>: description` with the description wrapping), with the id on
 # the first line -- the whole comment block counts, not just its last line.
+# (The fixture id was "command-install-01", a hyphenated feature name, until
+# change precision-gaps aligned the extraction; the id is now convention-
+# shaped so the pinned expectation is exactly what the aligned extraction
+# reports, and the test's own property -- pickup from the tag's first line --
+# is unchanged.)
 # =============================================================================
 test_probe_subspec_ids_multiline_tag() {
   dir=$(new_change_dir)
   cat > "$dir/01-install.feature" <<'EOF'
 Feature: install.sh installs the command
 
-  # ADD - command-install-01: install.sh installs the Claude Code copy with
+  # ADD - install-01: install.sh installs the Claude Code copy with
   # the expected frontmatter shape, mirroring how it already installs /antz.
-  Scenario: command-install-01
+  Scenario: install-01
     Given a clean commands directory
     When the user runs the installer
     Then the command file is created
 EOF
   ok=0
   out=$(run_probe "$dir")
-  echo "$out" | grep -qxF "$(subspec_line_no_receipt 01-install.feature 'command-install-01' 1)" \
+  echo "$out" | grep -qxF "$(subspec_line_no_receipt 01-install.feature 'install-01' 1)" \
     || { echo "  multi-line tag id was missed: $out"; ok=1; }
   rm -rf "$dir"
   return $ok
@@ -472,25 +495,306 @@ EOF
 # tag's description continuation line (a cross-reference like "same refusal
 # message as set-model-cmd-06", present in the repo's own archived specs) is
 # NOT a declared id -- only the tag's first line carries the id.
+# (The fixture's own id was "picker-cmd-01", a hyphenated feature name, until
+# change precision-gaps aligned the extraction; it is now convention-shaped,
+# and the leak check is tightened to the cross-reference's trailing portion so
+# a violation-splitting leak would also be caught. The test's own property --
+# cross-reference non-extraction -- is unchanged.)
 # =============================================================================
 test_probe_subspec_ids_ignore_tag_crossrefs() {
   dir=$(new_change_dir)
   cat > "$dir/01-picker.feature" <<'EOF'
 Feature: picker
 
-  # ADD - picker-cmd-01: an unknown agent is refused before any question is
+  # ADD - picker-01: an unknown agent is refused before any question is
   # asked -- same refusal message as set-model-cmd-06.
-  Scenario: picker-cmd-01
+  Scenario: picker-01
     Given no file exists
     When the command is invoked
     Then the reply explains the refusal
 EOF
   ok=0
   out=$(run_probe "$dir")
-  echo "$out" | grep -qxF "$(subspec_line_no_receipt 01-picker.feature 'picker-cmd-01' 1)" \
-    || { echo "  expected exactly ids=picker-cmd-01, got: $out"; ok=1; }
-  echo "$out" | grep -q 'set-model-cmd-06' && { echo "  cross-reference leaked as id: $out"; ok=1; }
+  echo "$out" | grep -qxF "$(subspec_line_no_receipt 01-picker.feature 'picker-01' 1)" \
+    || { echo "  expected exactly ids=picker-01, got: $out"; ok=1; }
+  echo "$out" | grep -q 'cmd-06' && { echo "  cross-reference leaked as id: $out"; ok=1; }
   rm -rf "$dir"
+  return $ok
+}
+
+# =============================================================================
+# probealign-01: the probe's declared-id extraction matches only convention-
+# shaped ids -- the feature portion before the final "-<index>" admits letters,
+# digits, and underscores and NO hyphen (the aligned shape is
+# [A-Za-z][A-Za-z0-9_]*-[0-9]+) -- and every conforming id extracts exactly as
+# before: multiple ids from one sub-spec ("api-1", "api-2"), a single id from
+# another ("client-1"), a multi-line tag's id from its first line, a
+# "Scenario Outline:" tag like a plain "Scenario:" tag, and an underscore in the
+# feature name (the convention admits underscores). The index portion stays
+# one-or-more digits -- the probe does not enforce the two-digit padding (that is
+# the specifier's authoring rule), so these single-digit ids still extract.
+# =============================================================================
+test_probealign_01_extraction_admits_no_hyphen_in_feature() {
+  dir=$(new_change_dir)
+  cat > "$dir/01-api.feature" <<'EOF'
+Feature: API
+
+# api-1
+Scenario: creates a resource
+  Given a valid payload
+
+# api-2
+Scenario: rejects an invalid payload
+  Given an invalid payload
+EOF
+  cat > "$dir/02-client.feature" <<'EOF'
+Feature: Client
+
+# client-1
+Scenario: renders the result
+  Given a successful API response
+EOF
+  cat > "$dir/03-install.feature" <<'EOF'
+Feature: install.sh installs the command
+
+  # ADD - install-01: install.sh installs the Claude Code copy with
+  # the expected frontmatter shape.
+  Scenario: install-01
+    Given a clean commands directory
+EOF
+  cat > "$dir/04-outline.feature" <<'EOF'
+Feature: Outline
+
+# outline-1
+Scenario Outline: creates a resource
+  Given a "<status>" payload
+
+  Examples:
+    | status | code |
+    | valid  | 201  |
+EOF
+  cat > "$dir/05-userprofile.feature" <<'EOF'
+Feature: User profile
+
+# user_profile-1
+Scenario: shows the profile
+  Given a user
+EOF
+  cat > "$dir/06-violation.feature" <<'EOF'
+Feature: User profile
+
+# user-profile-1
+Scenario: shows the profile
+  Given a user
+EOF
+  ok=0
+  out=$(run_probe "$dir")
+
+  # Every conforming id extracts exactly as before.
+  echo "$out" | grep -qxF "$(subspec_line_no_receipt 01-api.feature 'api-1,api-2' 2)" \
+    || { echo "  multiple conforming ids in one sub-spec no longer extract as before: $out"; ok=1; }
+  echo "$out" | grep -qxF "$(subspec_line_no_receipt 02-client.feature 'client-1' 1)" \
+    || { echo "  a single conforming id in another sub-spec no longer extracts as before: $out"; ok=1; }
+  echo "$out" | grep -qxF "$(subspec_line_no_receipt 03-install.feature 'install-01' 1)" \
+    || { echo "  a multi-line tag's first-line id no longer extracts as before: $out"; ok=1; }
+  echo "$out" | grep -qxF "$(subspec_line_no_receipt 04-outline.feature 'outline-1' 1)" \
+    || { echo "  a Scenario Outline tag's id no longer extracts as before: $out"; ok=1; }
+  echo "$out" | grep -qxF "$(subspec_line_no_receipt 05-userprofile.feature 'user_profile-1' 1)" \
+    || { echo "  a conforming underscore feature name no longer extracts whole: $out"; ok=1; }
+
+  # Only convention-shaped ids are ever reported: the violating fixture's
+  # hyphenated tag never survives whole in the output.
+  echo "$out" | grep -q 'user-profile-1' \
+    && { echo "  the hyphenated feature tag was reported whole (tolerant extraction): $out"; ok=1; }
+  reported=$(printf '%s\n' "$out" | sed -n 's/^subspec=[^ ]* ids=\([^ ]*\).*$/\1/p' | tr ',' '\n')
+  bad=$(printf '%s\n' "$reported" | grep -v '^$' | grep -vE '^[A-Za-z][A-Za-z0-9_]*-[0-9]+$' || true)
+  [ -z "$bad" ] \
+    || { echo "  reported ids outside the convention shape [A-Za-z][A-Za-z0-9_]*-[0-9]+:"; printf '%s\n' "$bad"; ok=1; }
+
+  # The extraction's pattern is exactly the aligned shape: the tolerant class
+  # carrying the hyphen is gone from the id-extraction grep, and the grep
+  # carries the contract's shape instead.
+  if grep -qF "grep -oE '[A-Za-z][A-Za-z0-9_-]*-[0-9]+'" "$PROBE_SH"; then
+    echo "  the probe's id-extraction grep still carries the tolerant hyphen-admitting class"
+    ok=1
+  fi
+  grep -qF "grep -oE '[A-Za-z][A-Za-z0-9_]*-[0-9]+'" "$PROBE_SH" \
+    || { echo "  the probe's id-extraction grep does not carry the aligned shape [A-Za-z][A-Za-z0-9_]*-[0-9]+"; ok=1; }
+  rm -rf "$dir"
+  return $ok
+}
+
+# =============================================================================
+# probealign-02: a sub-spec whose tag carries a hyphenated feature name
+# ("user-profile-1") reports only the trailing convention-shaped portion
+# ("ids=profile-1") -- the pre-change tolerant whole-id behavior is gone -- and
+# the violation surfaces downstream as an id mismatch: a receipt naming the
+# whole hyphenated id reads as a foreign id (complete=no) instead of classifying
+# done a sub-spec whose phantom id a convention-following coder can never
+# satisfy. Every other probe output is byte-unchanged: open_questions=,
+# rejected_count=, the change_dir=missing short-circuit, and the
+# receipt=/covered=/complete=/class= fields with their mapping.
+# =============================================================================
+test_probealign_02_hyphenated_tag_surfaces_as_mismatch() {
+  dir=$(new_change_dir)
+  printf 'Feature: User profile\n\n# user-profile-1\nScenario: shows the profile\n  Given a user\n' > "$dir/01-user-profile.feature"
+  ok=0
+  out=$(run_probe "$dir")
+  echo "$out" | grep -qxF "$(subspec_line_no_receipt 01-user-profile.feature 'profile-1' 1)" \
+    || { echo "  expected ids=profile-1 for the hyphenated tag, got: $out"; ok=1; }
+  echo "$out" | grep -q 'user-profile-1' \
+    && { echo "  the tolerant whole-hyphenated-id report survives: $out"; ok=1; }
+
+  # Downstream: a receipt naming the whole hyphenated id is a foreign id for a
+  # sub-spec whose declared id is the trailing portion -- complete=no, never
+  # done.
+  printf 'test_command=sh tests/userprofile_test.sh\nid=user-profile-1 result=green reason=the tolerant extraction was satisfied\n' > "$dir/01-user-profile.result"
+  out=$(run_probe "$dir")
+  echo "$out" | grep -qxF 'subspec=01-user-profile.feature ids=profile-1 receipt=01-user-profile.result covered=0/1 complete=no class=in_progress' \
+    || { echo "  expected the violating receipt to read as a foreign-id mismatch, got: $out"; ok=1; }
+
+  # The mapping itself is unchanged: the convention-following coder's receipt
+  # (naming the id the probe actually reports) still classifies done.
+  printf 'test_command=sh tests/userprofile_test.sh\nid=profile-1 result=green reason=probealign-02 unit test\n' > "$dir/01-user-profile.result"
+  out=$(run_probe "$dir")
+  echo "$out" | grep -qxF 'subspec=01-user-profile.feature ids=profile-1 receipt=01-user-profile.result covered=1/1 complete=yes class=done' \
+    || { echo "  expected the aligned receipt to classify done (mapping unchanged), got: $out"; ok=1; }
+  rm -f "$dir/01-user-profile.result"
+
+  # The other outputs are byte-unchanged with the violating fixture present.
+  out=$(run_probe "$dir")
+  [ "$(printf '%s\n' "$out" | sed -n '1p')" = "open_questions=no" ] \
+    || { echo "  open_questions= line changed: $out"; ok=1; }
+  [ "$(printf '%s\n' "$out" | sed -n '2p')" = "rejected_count=0" ] \
+    || { echo "  rejected_count= line changed: $out"; ok=1; }
+  printf '## Rejection 1\n\nblocker\n' > "$dir/REJECTED.md"
+  echo "$(run_probe "$dir")" | grep -qxF 'rejected_count=1' \
+    || { echo "  rejected_count= counting changed: $(run_probe "$dir")"; ok=1; }
+  rm -f "$dir/REJECTED.md"
+  : > "$dir/OPEN_QUESTIONS.md"
+  [ "$(run_probe "$dir")" = "open_questions=yes" ] \
+    || { echo "  open_questions=yes short-circuit changed: $(run_probe "$dir")"; ok=1; }
+  rm -rf "$dir"
+
+  root=$(mktemp -d)
+  mout=$(CHANGE_DIR="$root/spdd/changes/no-such-slug" sh "$PROBE_SH" 2>&1)
+  mstatus=$?
+  [ "$mstatus" -ne 0 ] || { echo "  expected non-zero exit for a missing change dir, got 0"; ok=1; }
+  echo "$mout" | grep -qxF 'change_dir=missing' \
+    || { echo "  change_dir=missing short-circuit changed: $mout"; ok=1; }
+  rm -rf "$root"
+  return $ok
+}
+
+# =============================================================================
+# probealign-03: the second-review-mandated test update, delivered in this same
+# change -- this suite pins the aligned extraction. The tolerant-behavior pin is
+# rewritten (a conforming "userprofile-1" extracts whole, a hyphenated
+# "user-profile-1" yields "profile-1"), the two fixtures that carried
+# hyphenated-feature ids ("command-install-01", "picker-cmd-01") are updated so
+# each pinned expectation is exactly what the aligned extraction reports while
+# each test's own property (multi-line pickup, cross-reference non-extraction)
+# keeps being exercised, the aligned assertions live in this same self-contained
+# suite tagged with the probealign ids in their reported names, and every other
+# assertion of the suite stays unchanged (its functions byte-identical to HEAD's:
+# the open-questions, rejection-count, ids-extraction, receipt-field, empty-ids,
+# and change-dir groups).
+# =============================================================================
+
+suite_fn_body() {
+  # $1 = function name: print that function's text (from its "name() {" line
+  # through the first column-0 "}") out of file $2.
+  awk -v fn="$1" '
+    index($0, fn "() {") == 1 { flag = 1 }
+    flag { print }
+    flag && $0 == "}" { exit }
+  ' "$2"
+}
+
+test_probealign_03_suite_pins_the_aligned_extraction() {
+  ok=0
+
+  # The aligned-extraction assertions were added to this same suite, tagged
+  # with this sub-spec's ids in their reported names.
+  for id in probealign-01 probealign-02 probealign-03; do
+    grep -E '^run_test ' "$SUITE_FILE" | grep -qF "$id" \
+      || { echo "  no reported test name in this suite carries $id"; ok=1; }
+  done
+
+  # The tolerant pin is gone: nothing in the suite still expects the probe to
+  # report a hyphenated feature id whole.
+  if grep -qE "subspec_line_no_receipt [^)]*'user-profile-1'" "$SUITE_FILE"; then
+    echo "  the suite still pins the tolerant whole-hyphenated-id extraction"
+    ok=1
+  fi
+
+  # The hyphenated-feature test pins both sides.
+  HY=$(mktemp)
+  suite_fn_body test_probe_subspec_ids_hyphenated_feature "$SUITE_FILE" > "$HY"
+  [ -s "$HY" ] || { echo "  test_probe_subspec_ids_hyphenated_feature not found in this suite"; rm -f "$HY"; return 1; }
+  grep -qF "'userprofile-1' 1)" "$HY" \
+    || { echo "  the hyphenated-feature test does not pin the conforming id extracting whole"; ok=1; }
+  grep -qF "'profile-1' 1)" "$HY" \
+    || { echo "  the hyphenated-feature test does not pin the violating tag yielding profile-1"; ok=1; }
+  grep -qF '# user-profile-1' "$HY" \
+    || { echo "  the hyphenated-feature test lost its violating-tag fixture"; ok=1; }
+  rm -f "$HY"
+
+  # The fixtures that carried hyphenated-feature ids are updated to convention-
+  # shaped ones (the ids were renamed; only the explanatory comments above the
+  # two tests still name the old hyphenated ones), while each test's own
+  # property keeps being exercised.
+  ML=$(mktemp)
+  suite_fn_body test_probe_subspec_ids_multiline_tag "$SUITE_FILE" > "$ML"
+  grep -qF 'command-install-01' "$ML" \
+    && { echo "  the multi-line-tag fixture still carries the hyphenated id command-install-01"; ok=1; }
+  [ "$(grep -c '^[[:space:]]*#' "$ML")" -ge 2 ] \
+    || { echo "  the multi-line-tag test no longer carries a tag spanning several lines"; ok=1; }
+  grep -qF "subspec_line_no_receipt 01-install.feature 'install-01' 1" "$ML" \
+    || { echo "  the multi-line-tag expectation is not what the aligned extraction reports"; ok=1; }
+  rm -f "$ML"
+  XR=$(mktemp)
+  suite_fn_body test_probe_subspec_ids_ignore_tag_crossrefs "$SUITE_FILE" > "$XR"
+  grep -qF 'picker-cmd-01' "$XR" \
+    && { echo "  the tag-crossref fixture still carries the hyphenated id picker-cmd-01"; ok=1; }
+  grep -qF 'set-model-cmd-06' "$XR" \
+    || { echo "  the tag-crossref test lost the cross-reference it must not extract"; ok=1; }
+  grep -qF "'picker-01' 1)" "$XR" \
+    || { echo "  the tag-crossref expectation is not what the aligned extraction reports"; ok=1; }
+  grep -qF "grep -q 'cmd-06'" "$XR" \
+    || { echo "  the tag-crossref leak check no longer catches a violation-splitting leak"; ok=1; }
+  rm -f "$XR"
+
+  # Every other assertion of the suite stays unchanged (byte-identical to HEAD's
+  # copy of this file). Git-gated: with no readable HEAD copy the rest of this
+  # scenario's clauses above still run.
+  if command -v git >/dev/null 2>&1 && [ -e "$SCRIPT_DIR/.git" ] \
+     && git -C "$SCRIPT_DIR" cat-file -e HEAD:tests/orchestrator-status-probe_test.sh 2>/dev/null; then
+    HEADSUITE=$(mktemp)
+    git -C "$SCRIPT_DIR" show HEAD:tests/orchestrator-status-probe_test.sh > "$HEADSUITE"
+    pinned="test_probe_extracted test_testharness_02_file_source
+      test_probe_open_questions test_probe_no_open_questions
+      test_probe_rejected_count_one test_probe_rejected_count_two
+      test_probe_rejected_count_malformed_not_counted
+      test_probe_rejected_count_trailing_space
+      test_probe_subspec_ids_from_comments test_probe_subspec_ids_ignore_prose
+      test_probe_subspec_ids_ignore_loose_comments test_probe_subspec_ids_tag_reset
+      test_probe_subspec_ids_scenario_outline
+      test_probe_subspec_empty_ids test_probe_no_subspecs
+      test_probe_change_dir_missing_path test_probe_missing_change_dir
+      $(grep -oE '^test_receipts_06_[a-z0-9_]+' "$HEADSUITE" | tr '\n' ' ')"
+    for fn in $pinned; do
+      a=$(mktemp); b=$(mktemp)
+      suite_fn_body "$fn" "$SUITE_FILE" > "$a"
+      suite_fn_body "$fn" "$HEADSUITE" > "$b"
+      [ -s "$a" ] || { echo "  $fn is missing from the working suite"; ok=1; }
+      cmp -s "$a" "$b" || { echo "  $fn differs from HEAD (it must stay unchanged)"; ok=1; }
+      rm -f "$a" "$b"
+    done
+    rm -f "$HEADSUITE"
+  else
+    echo "  note: no readable git HEAD copy of this suite; the unchanged-surface clause was not checked"
+  fi
   return $ok
 }
 
@@ -774,7 +1078,10 @@ run_test "probe-subspec-ids-from-comments: ids are read from the comment tag abo
 run_test "probe-subspec-ids-ignore-prose: an id-shaped token in ordinary prose (not a comment) is not picked up" test_probe_subspec_ids_ignore_prose
 run_test "probe-subspec-ids-ignore-loose-comments: an id-shaped token in a comment not above a Scenario is not picked up" test_probe_subspec_ids_ignore_loose_comments
 run_test "probe-subspec-ids-tag-reset: a tagless Scenario following a tagged one inherits no id" test_probe_subspec_ids_tag_reset
-run_test "probe-subspec-ids-hyphenated-feature: a hyphenated feature name survives extraction whole" test_probe_subspec_ids_hyphenated_feature
+run_test "probealign-02 probe-subspec-ids-hyphenated-feature: a conforming one-word feature name extracts whole while a hyphenated feature name yields only its trailing convention-shaped portion" test_probe_subspec_ids_hyphenated_feature
+run_test "probealign-01: the extraction admits no hyphen in the feature portion (shape [A-Za-z][A-Za-z0-9_]*-[0-9]+) and every conforming id extracts exactly as before" test_probealign_01_extraction_admits_no_hyphen_in_feature
+run_test "probealign-02: a hyphenated feature tag reports only its trailing convention-shaped portion, surfaces downstream as a foreign-id mismatch, and every other probe output is byte-unchanged" test_probealign_02_hyphenated_tag_surfaces_as_mismatch
+run_test "probealign-03: this suite pins the aligned extraction -- the tolerant pin is rewritten both-sided, the hyphenated-feature fixtures are updated with their properties intact, the assertions carry the probealign ids, and every other assertion stays byte-identical to HEAD" test_probealign_03_suite_pins_the_aligned_extraction
 run_test "probe-subspec-ids-scenario-outline: the tag above a Scenario Outline is picked up like a plain Scenario" test_probe_subspec_ids_scenario_outline
 run_test "probe-subspec-ids-multiline-tag: an id on the first line of a multi-line tag comment is picked up" test_probe_subspec_ids_multiline_tag
 run_test "probe-subspec-ids-ignore-tag-crossrefs: another scenario's id in a tag description line is not picked up" test_probe_subspec_ids_ignore_tag_crossrefs

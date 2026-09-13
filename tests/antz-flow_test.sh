@@ -59,6 +59,14 @@
 # state tests) as files directly — no extraction from the prompt anymore
 # (testharness-01); a prompt fence can no longer drift from the tested code.
 #
+# Extended again by change precision-gaps (sub-spec 03-probealign): the probe's
+# declared-id extraction is aligned with the specifier's id convention, so
+# antz-probe.sh is that change's subject and flow-09's scripts byte-unchanged
+# guard moves off it — it now covers antz-flow.sh + antz-skills.sh, the two
+# scripts precision-gaps leaves untouched (ensure-19 pins the re-scope; the
+# flow-script-guards notes above describe the earlier, pre-precision-gaps
+# scope).
+#
 # Self-contained bash test harness, mirroring the harness style of
 # tests/orchestrator-status-probe_test.sh. Run:
 #   sh tests/antz-flow_test.sh
@@ -789,12 +797,15 @@ test_ensure_18_change_dir_no_branch() { ensure_18_row change-dir-nobranch; }
 # =============================================================================
 # ensure-19: the scripts byte-unchanged guard (in flow-09) is re-scoped off
 # scripts/orchestration/antz-flow.sh — the file the flow-script-guards change
-# edits — onto the two files it leaves untouched (antz-probe.sh,
-# antz-skills.sh). This change's own working tree is the live evidence that
-# an edited antz-flow.sh doesn't fail the guard (flow-09 runs green with it
+# edits — onto the two files it leaves untouched, and re-scoped again onto
+# "antz-flow.sh" + "antz-skills.sh" by change precision-gaps (03-probealign),
+# which edits antz-probe.sh (the aligned id extraction) and leaves those two
+# byte-unchanged. This change's own working tree is the live evidence that an
+# edited antz-probe.sh doesn't fail the guard (flow-09 runs green with it
 # modified); this test pins the re-scope itself, asserted against flow-09's
 # own body extracted from this file: the guard names exactly the two
-# untouched scripts, the whole-directory form is gone, and the probe's
+# untouched scripts, the probe is out of its file list, the whole-directory
+# form is gone, and the probe's
 # change_dir=missing assertion plus the scenario's structural constraints
 # (14 fence lines / one sh fence / steps end at 6 / the four tables) stay
 # enforced.
@@ -803,10 +814,15 @@ test_ensure_19_scripts_guard_rescoped() {
   ok=0
   body=$(awk '/^test_flow_09_unchanged_surface\(\)/,/^}$/' "$0")
   [ -n "$body" ] || { echo "  test_flow_09_unchanged_surface not found in this file"; return 1; }
-  # The guard compares exactly the two files this change leaves untouched…
+  # The guard compares exactly the two files precision-gaps leaves untouched…
   printf '%s\n' "$body" \
-    | grep -qF 'diff --quiet HEAD -- scripts/orchestration/antz-probe.sh scripts/orchestration/antz-skills.sh' \
+    | grep -qF 'diff --quiet HEAD -- scripts/orchestration/antz-flow.sh scripts/orchestration/antz-skills.sh' \
     || { echo "  flow-09's guard no longer names the two untouched scripts exactly"; ok=1; }
+  # …and the file precision-gaps edits is out of its list (it would fail on an
+  # edited antz-probe.sh).
+  printf '%s\n' "$body" \
+    | grep -qF 'diff --quiet HEAD -- scripts/orchestration/antz-probe.sh' \
+    && { echo "  flow-09's guard still names the probe script this change edits"; ok=1; }
   # …and the whole-directory form is gone (it would fail on an edited antz-flow.sh).
   if printf '%s\n' "$body" | grep -qE 'diff --quiet HEAD -- scripts/orchestration/([[:space:]]|\\$)'; then
     echo "  a whole-scripts-directory byte-unchanged check survives in flow-09"
@@ -830,12 +846,12 @@ test_ensure_19_scripts_guard_rescoped() {
       || { echo "  flow-09 lost the four-tables constraint ($t)"; ok=1; }
   done
   # Live non-failure: the re-scoped guard command really passes with
-  # antz-flow.sh edited (same git-availability gate flow-09 uses).
+  # antz-probe.sh edited (same git-availability gate flow-09 uses).
   if command -v git >/dev/null 2>&1 && [ -e "$SCRIPT_DIR/.git" ] \
-     && git -C "$SCRIPT_DIR" cat-file -e HEAD:scripts/orchestration/antz-probe.sh 2>/dev/null; then
+     && git -C "$SCRIPT_DIR" cat-file -e HEAD:scripts/orchestration/antz-flow.sh 2>/dev/null; then
     git -C "$SCRIPT_DIR" diff --quiet HEAD -- \
-      scripts/orchestration/antz-probe.sh scripts/orchestration/antz-skills.sh \
-      || { echo "  the untouched probe/skills scripts differ from HEAD after all"; ok=1; }
+      scripts/orchestration/antz-flow.sh scripts/orchestration/antz-skills.sh \
+      || { echo "  the untouched flow/skills scripts differ from HEAD after all"; ok=1; }
   fi
   return $ok
 }
@@ -1294,9 +1310,10 @@ test_flow_08_stopped_enumeration() {
 # =============================================================================
 # flow-09: the unchanged surface stays unchanged — change_dir=missing keeps
 # its probe-table row (only its routing meaning changed) and the probe script
-# still prints it (the untouched scripts/orchestration/ probe+skills byte-
-# unchanged; re-scoped off antz-flow.sh by change flow-script-guards, which
-# edits that file — see ensure-19), the latch still
+# still prints it (the untouched scripts/orchestration/ flow+skills byte-
+# unchanged; re-scoped off antz-flow.sh by change flow-script-guards and onto
+# flow+skills again by change precision-gaps, which edits antz-probe.sh — see
+# ensure-19), the latch still
 # names it, the four tables survive, the steps still end at 6, and no new
 # fenced block was added (14 fence lines, one ```sh fence).
 # =============================================================================
@@ -1310,12 +1327,13 @@ test_flow_09_unchanged_surface() {
   # The untouched scripts stay byte-unchanged (checked against HEAD when
   # git is readable — same gating as the sessionguards additive guard).
   # Re-scoped by change flow-script-guards (ensure-19) off the whole
-  # scripts/orchestration/ directory: antz-flow.sh is that change's subject,
-  # so the guard covers only the two files it leaves untouched.
+  # scripts/orchestration/ directory, and re-scoped again by change
+  # precision-gaps (03-probealign): antz-probe.sh is that change's subject, so
+  # the guard now covers the two files precision-gaps leaves untouched.
   if command -v git >/dev/null 2>&1 && [ -e "$SCRIPT_DIR/.git" ] \
-     && git -C "$SCRIPT_DIR" cat-file -e HEAD:scripts/orchestration/antz-probe.sh 2>/dev/null; then
-    git -C "$SCRIPT_DIR" diff --quiet HEAD -- scripts/orchestration/antz-probe.sh scripts/orchestration/antz-skills.sh \
-      || { echo "  the untouched probe/skills scripts are not byte-unchanged vs HEAD"; ok=1; }
+     && git -C "$SCRIPT_DIR" cat-file -e HEAD:scripts/orchestration/antz-flow.sh 2>/dev/null; then
+    git -C "$SCRIPT_DIR" diff --quiet HEAD -- scripts/orchestration/antz-flow.sh scripts/orchestration/antz-skills.sh \
+      || { echo "  the untouched flow/skills scripts are not byte-unchanged vs HEAD"; ok=1; }
   fi
   require "$PROSE_GUARDS" 'change_dir=missing' || ok=1
   # The four tables survive with their headers.
@@ -1404,7 +1422,7 @@ run_test "ensure-17: an untracked non-ignored file blocks a new flow with state=
 run_test "ensure-18: a dirty change-dir resume positions and appends the advisory dirty=yes" test_ensure_18_change_dir_resume
 run_test "ensure-18: a dirty branch-only reuse (no change dir) positions and appends dirty=yes" test_ensure_18_branch_only_reuse
 run_test "ensure-18: a dirty change-dir resume with no marker branch is a resume, not a guarded new flow" test_ensure_18_change_dir_no_branch
-run_test "ensure-19: flow-09's scripts byte-unchanged guard is re-scoped to probe+skills, antz-flow.sh edits don't fail it" test_ensure_19_scripts_guard_rescoped
+run_test "ensure-19: flow-09's scripts byte-unchanged guard is re-scoped to flow+skills, antz-probe.sh edits don't fail it" test_ensure_19_scripts_guard_rescoped
 
 run_test "orchestrator-01: step 1's ensure instructions document the new state meanings" test_orchestrator_01_state_meanings
 run_test "orchestrator-02: step 5's human follow-up print is user-controlled with a placeholder merge target" test_orchestrator_02_followups

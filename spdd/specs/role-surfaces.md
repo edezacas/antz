@@ -6,6 +6,13 @@
   this change no spec domain covered the coder's write-surface ownership or
   the verifier's archive-step instruction. Plan items 1.4 and 1.6 of
   `docs/plan-revision-2026-09.md` §3 Cambio A.
+- Extended by change `precision-gaps` (merged 2026-09-13): adds five
+  rolechecks-scenarios to this domain (ADD `rolechecks-01..05`), covering
+  the coder's literal-grep id search and fixed plan threshold, the
+  verifier's mechanical "code present" criterion and per-domain spec-file
+  rule with create-when-new, and the re-scoped roles-03 pin. The change's
+  scenarios and end-to-end QA are preserved for history in
+  `spdd/archive/precision-gaps/`, not reproduced here.
 
 ## Goal
 The coder's directory ownership is stated by write surface, not read surface,
@@ -104,6 +111,66 @@ its reason stated in the prompt.
   `git mv`, no test pins the coder's "Read only from" wording, and the
   closingblock/receipts/skills-activation extracts of the coder and verifier
   report and receipt sections keep passing.
+
+## Feature: the coder's and verifier's checks are mechanical (from 02-rolechecks.feature, change `precision-gaps`)
+
+  Background:
+    Given "agents/prompts/coder.prompt" carrying the "## Process" section's
+      pre-planning id check and "Plan briefly" bullets
+    And "agents/prompts/verifier.prompt" carrying the Input Rule's code-present
+      bullet and the Merge & Archive merge bullet
+
+  # ADD - rolechecks-01: the id search is a literal grep of the id in the
+  # project's test files.
+  Scenario: rolechecks-01
+    When the reader reads the coder prompt's pre-planning bullet
+    Then it states the search mechanism: a literal grep of the sub-spec's
+      scenario id in the project's test files (the files carrying the
+      unit-test suite)
+    And it keeps the bullet's meaning otherwise unchanged: ids that already
+      have a passing or skipped test are treated as done rather than redone
+
+  # ADD - rolechecks-02: the plan threshold is fixed at N=8.
+  Scenario: rolechecks-02
+    When the reader reads the coder prompt's "Plan briefly" bullet
+    Then it states the mechanical threshold: a plan of more than 8
+      implementation steps for the sub-spec, or more than 1 shared contract
+      needing change, marks the change for splitting
+    And the vague "if the plan for one sub-spec is long" wording is gone
+
+  # ADD - rolechecks-03: "code present" is a mechanical criterion.
+  Scenario: rolechecks-03
+    When the reader reads the verifier prompt's Input Rule bullet about
+      sub-specs with no code changes yet
+    Then it defines "code present" mechanically: a sub-spec has code present
+      when its declared scenario ids appear in the project's test files — the
+      same literal grep of the id as rolechecks-01 — or its result receipt
+      ("spdd/changes/<slug>/NN-<feature>.result") exists
+    And it keeps the routing meaning unchanged
+
+  # ADD - rolechecks-04: one spec file per domain, created when the domain is
+  # new; the destination domain is read from the change's README.
+  Scenario: rolechecks-04
+    When the reader reads the verifier prompt's Merge & Archive merge bullet
+    Then it states the domain-file rule: one file per domain, at
+      "spdd/specs/<domain>.md", domain names kebab-case
+    And it states the resolution: each sub-spec's destination domain is read
+      from the change README's section for that sub-spec
+    And it states the creation rule: when the domain is new, the verifier
+      creates the file
+    And it keeps the never-overwrite rule: an existing domain file is read
+      first and merged scenario-by-scenario (ADD/MODIFY/REMOVE), never
+      overwritten wholesale
+
+  # ADD - rolechecks-05: the exact-string pin of the merge bullet follows the
+  # legitimate reword.
+  Scenario: rolechecks-05
+    Given "tests/roles_test.sh"'s roles-03 assertion pins the pre-change
+      merge-bullet sentence verbatim
+    When the verifier prompt's merge bullet is extended by rolechecks-04
+    Then the pin is re-scoped to the extended bullet
+    And roles-01, roles-02, roles-04, and roles-05's assertions keep passing
+      unmodified, and the rest of the suite stays green
 
 ## Invariants
 - The governing rule holds: no role, including the orchestrator, may depend on

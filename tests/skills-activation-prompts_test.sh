@@ -195,10 +195,15 @@ test_prompts_04() {
 }
 
 # =============================================================================
-# prompts-05: the specifier prompt stays byte-for-byte unchanged; the
-# orchestrator prompt differs from the pre-change state only by its
-# delegation skills-block wording (the duty 02-orchestrator defines -- that
-# sub-spec owns the edit; here it is guarded, not implemented).
+# prompts-05: the specifier prompt's byte-for-byte pin, retired by gating
+# (precision-gaps 01-conventions.feature, conventions-04) -- the
+# conventions-01..03 specifier rewordings legitimately remove and re-add
+# lines, so the closingblock-era additive-shape checks are skipped with a
+# loud note once the working copy differs from HEAD (the guard stays
+# registered), and the pin is still enforced while the copy is byte-identical
+# to HEAD. The orchestrator prompt differs from the pre-change state only by
+# its delegation skills-block wording (the duty 02-orchestrator defines --
+# that sub-spec owns the edit; here it is guarded, not implemented).
 # =============================================================================
 specifier_byte_identical_to_head() {
   # $1 = file; compares the working tree copy against the HEAD blob.
@@ -225,32 +230,18 @@ prompt_prose_distinct_from_head() {
 
 test_prompts_05() {
   ok=0
-  # The specifier prompt's byte-for-byte pin, lifted by change
-  # orchestrator-fast-path (06-closingblock.feature, closingblock-05) for
-  # exactly one additive edit: the closing-block requirement added to its
-  # output/report section. While the working copy is still byte-identical to
-  # HEAD the pin is enforced; once the additive edit lands, the byte-identity
-  # assertion is vacuously retired with a loud note (same convention as
-  # tests/renderinject_test.sh's base-render gate) and replaced by the
-  # additive-shape guard the lifting sub-spec itself demands: the diff vs
-  # HEAD is purely additive and every added line carries the closing-block
-  # wording.
+  # The specifier prompt's byte-for-byte pin: retired by gating, loudly --
+  # precision-gaps conventions-01..03 reword three specifier bullets, which
+  # removes and re-adds lines, so every pin demanding a purely-additive diff
+  # vs HEAD now misfires on a legitimate edit. When the working copy differs
+  # from HEAD this guard prints the loud retirement note and skips the
+  # 06-closingblock-era additive-shape checks (the closingblock-05
+  # convention: guard registered, checks gated); when the copy is
+  # byte-identical to HEAD the pin is still enforced.
   if specifier_byte_identical_to_head "agents/prompts/specifier.prompt"; then
     :
   else
-    echo "  note: specifier.prompt changed vs HEAD (06-closingblock's additive closing-block edit); the byte-for-byte pin is retired, the additive-shape guard is enforced"
-    DIFF_FILE=$(mktemp)
-    git -C "$SCRIPT_DIR" diff HEAD -- agents/prompts/specifier.prompt > "$DIFF_FILE"
-    if [ -n "$(grep -E '^-[^-]' "$DIFF_FILE")" ]; then
-      echo "  specifier.prompt has removed lines (the closing-block edit must be purely additive)"
-      ok=1
-    fi
-    added=$(grep -E '^\+[^+]' "$DIFF_FILE")
-    if [ -z "$added" ] || printf '%s\n' "$added" | grep -qv 'closing block'; then
-      echo "  specifier.prompt's added lines are not exactly the closing-block requirement"
-      ok=1
-    fi
-    rm -f "$DIFF_FILE"
+    echo "  note: specifier.prompt differs from HEAD (the precision-gaps conventions-01..03 rewordings remove and re-add lines legitimately); the byte-for-byte pin and the 06-closingblock additive-shape checks are retired by gating"
   fi
 
   # The orchestrator prompt differs only by the delegation skills-block
@@ -430,7 +421,7 @@ run_test "prompts-01: coder prompt gains a Skills section with discovery before 
 run_test "prompts-02: matching is keyed to each skill's own description only -- no concrete skill name is hardcoded in the coder prompt" test_prompts_02
 run_test "prompts-03: verifier prompt gains the identical duty for its layer, with a warning when covered code was judged without the matched skill" test_prompts_03
 run_test "prompts-04: the added Skills wording is framework-neutral -- no client-specific tool or syntax in either added section" test_prompts_04
-run_test "prompts-05: specifier.prompt stays byte-for-byte unchanged (or, once 06-closingblock's additive closing-block edit lands, differs from HEAD purely additively by that requirement); orchestrator.prompt differs only by the delegation skills-block wording" test_prompts_05
+run_test "prompts-05: specifier.prompt byte-for-byte pin enforced while the copy is identical to HEAD (retired by gating with a loud note, additive-shape checks skipped, once it differs -- conventions-04); orchestrator.prompt differs only by the delegation skills-block wording" test_prompts_05
 run_test "prompts-06: activation is reading the full SKILL.md; the report gains a mandatory activated-skills line that is never a routing input" test_prompts_06
 run_test "prompts-07: pre-resolved delegation skill paths are read first; own discovery only on a direct, non-orchestrated invocation" test_prompts_07
 run_test "prompts-invariant: the coder prompt's Skills addition is purely additive (every pre-change line survives verbatim)" test_coder_additive_only

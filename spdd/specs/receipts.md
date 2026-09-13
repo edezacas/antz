@@ -9,6 +9,14 @@
   (the probe's extended `subspec=` line, step 3's file-reading classification,
   the doubtful-receipt exception, the no-pre-verifier-gate rule) merged into
   `spdd/specs/flow-branch.md` (its receipts-06..09 entries).
+- Extended by change `precision-gaps` (merged 2026-09-13): updates the
+  probe's id-extraction contract — the `<feature>` portion admits no hyphen
+  (`[A-Za-z][A-Za-z0-9_]*-[0-9]+`), so a violating hyphenated tag surfaces
+  as a foreign-id mismatch instead of being tolerated whole. The test suite
+  is updated in the same change (probealign-01..03 in
+  `tests/orchestrator-status-probe_test.sh`). The change's scenarios and
+  end-to-end QA are preserved for history in
+  `spdd/archive/precision-gaps/`, not reproduced here.
 - Reported defect it fixes: the orchestrator classified sub-specs by discovering
   and running each project's unit suite itself — slow, ambiguous to discover,
   and it made the orchestrator run tests as a pre-verifier gate. With receipts,
@@ -194,6 +202,47 @@ wherever both exist.
     agents/ and/or install.sh carries its own bump per the versioning rule —
     the modeled working-tree outcome is the single 4.3.0 state above.
   - "agents/meta/*" stay byte-for-byte unchanged.
+
+## Feature: the probe's declared-id extraction matches the specifier's id convention (from 03-probealign.feature, change `precision-gaps`)
+
+  Background:
+    Given "scripts/orchestration/antz-probe.sh" extracting each sub-spec's
+      declared scenario ids from the tag-comment first line above each
+      "Scenario:"/"Scenario Outline:" line
+    And the specifier's id convention: "<feature>" is one word (letters,
+      digits, underscores — no hyphens or spaces) and "<index>" is digits
+
+  # ADD - probealign-01: the extraction's feature portion admits no hyphen.
+  Scenario: probealign-01
+    When the probe extracts a sub-spec's declared ids
+    Then the extraction matches only convention-shaped ids — the feature
+      portion before the final "-<index>" admits letters, digits, and
+      underscores, no hyphen (shape "[A-Za-z][A-Za-z0-9_]*-[0-9]+")
+    And every conforming id extracts exactly as before
+
+  # ADD - probealign-02: a hyphenated feature tag is no longer tolerated
+  # whole — the violation surfaces instead of being smoothed over.
+  Scenario: probealign-02
+    When a sub-spec's tag carries a hyphenated feature name ("user-profile-1")
+    Then the probe reports only the trailing convention-shaped portion
+      ("ids=profile-1") — the pre-change tolerant behavior is gone
+    And the violation surfaces downstream as an id mismatch: a receipt naming
+      the whole hyphenated id reads as a foreign id (complete=no) instead of
+      classifying done
+
+  # ADD - probealign-03: the probe suite pins the aligned extraction — the
+  # second-review-mandated test update, in this same change.
+  Scenario: probealign-03
+    Given "tests/orchestrator-status-probe_test.sh" currently pins the
+      tolerant extraction
+    When the probe's extraction is aligned by probealign-01
+    Then the suite is updated in this same change: the hyphenated-feature
+      test pins both sides, and the fixtures carrying hyphenated-feature ids
+      are updated so each pinned expectation is exactly what the aligned
+      extraction reports
+    And the aligned-extraction assertions are added to the same
+      self-contained suite, tagged with this sub-spec's probealign ids
+    And every other assertion of the suite keeps passing unchanged
 
 ## Out of scope
 - A formalized Result Contract beyond the receipt grammar and the closing

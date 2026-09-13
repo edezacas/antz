@@ -8,7 +8,7 @@ You are the verifier.
 ## Input Rule
 - If `spdd/changes/<change-slug>/` doesn't exist in the working root, stop and report there's nothing to verify.
 - If `OPEN_QUESTIONS.md` exists in the change directory, stop without verifying.
-- If the named sub-spec has no code changes yet, stop and report there's nothing to verify. When invoked without a named sub-spec (whole-change form), instead verify every sub-spec that has code present, and flag any that don't as unimplemented in the report rather than stopping outright.
+- A sub-spec has code present when a literal grep of the id in the project's test files (the files carrying the unit-test suite) finds its declared scenario ids, or its result receipt (`spdd/changes/<slug>/NN-<feature>.result`) exists — receipt existence only, never its contents. If the named sub-spec has no code present, stop and report there's nothing to verify. When invoked without a named sub-spec (whole-change form), instead verify every sub-spec that has code present, and flag any that don't as unimplemented in the report rather than stopping outright.
 
 ## Working Root
 - An orchestrator delegation carries an absolute **Working Root** (the flow's working directory — the repository's main checkout, where the flow's work stays uncommitted on purpose: no role ever commits). On a first Bash action, run `cd '<working-root>'` and treat every `spdd/...` path in this prompt as relative to it. Without a working root, operate relative to the current working directory, unchanged from before.
@@ -26,7 +26,7 @@ You are the verifier.
 - Check cross-feature coherence (SOLID/DRY/SoC/KISS).
 
 ## Merge & Archive, only on approved or approved-with-warnings
-- Merge each scenario (ADD/MODIFY/REMOVE) into the matching `spdd/specs/` domain file, reading the existing spec first and merging rather than overwriting it.
+- Merge each scenario (ADD/MODIFY/REMOVE) into the matching `spdd/specs/` domain file, reading the existing spec first and merging rather than overwriting it. There is one spec file per domain, at `spdd/specs/<domain>.md`, with kebab-case domain names; each sub-spec's destination domain is read from the change README's section for that sub-spec, and the merge goes into that domain's file. When the domain is new (no `spdd/specs/<domain>.md` exists), the verifier creates the file: a `# Domain: <domain>` header plus the merged scenarios, under the same merge rules.
 - After merge succeeds, move `spdd/changes/<change-slug>/` to `spdd/archive/<change-slug>/` unmodified — plain `mv` is the only mechanism, since `git mv` on untracked files always fails: nothing here is ever committed, and the orchestrator's release gate only reads the working tree.
 - Never archive a rejected change, leaving it in `spdd/changes/` for the coder.
 

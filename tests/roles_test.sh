@@ -174,6 +174,16 @@ test_roles_03() {
   # never-overwrite rule, and never archiving a rejected change.
   require "$VERIFIER_MERGE" 'Merge each scenario (ADD/MODIFY/REMOVE) into the matching `spdd/specs/` domain file, reading the existing spec first and merging rather than overwriting it.' || ok=1
   require "$VERIFIER_MERGE" 'Never archive a rejected change, leaving it in `spdd/changes/` for the coder.' || ok=1
+
+  # The merge bullet's exact-string pin, re-scoped (precision-gaps
+  # rolechecks-05) to the bullet extended by rolechecks-04: alongside the
+  # surviving merge and never-overwrite sentence pinned above, the pin now
+  # asserts the new content -- the per-domain file rule, the kebab-case
+  # naming, the README resolution, and the create-when-new rule.
+  require "$VERIFIER_MERGE" 'one spec file per domain, at `spdd/specs/<domain>.md`, with kebab-case domain names' || ok=1
+  require "$VERIFIER_MERGE" 'destination domain is read from the change README'"'"'s section for that sub-spec' || ok=1
+  require "$VERIFIER_MERGE" 'When the domain is new (no `spdd/specs/<domain>.md` exists), the verifier creates the file' || ok=1
+  require "$VERIFIER_MERGE" 'a `# Domain: <domain>` header plus the merged scenarios, under the same merge rules' || ok=1
   return $ok
 }
 

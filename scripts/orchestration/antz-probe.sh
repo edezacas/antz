@@ -101,8 +101,16 @@ classify_receipt() {
 
 for f in "$CHANGE_DIR"/[0-9][0-9]-*.feature; do
   [ -e "$f" ] || continue
+  # Declared ids are read from the first line of the comment tag immediately
+  # above each Scenario:/Scenario Outline: (continuation lines are description,
+  # not ids) and matched against the specifier's id convention: "<feature>" is
+  # one word (letters, digits, underscores -- no hyphens) and "<index>" is
+  # digits. The feature portion admits no hyphen, so a violating hyphenated tag
+  # surfaces as an id mismatch downstream instead of being tolerated whole. The
+  # index portion stays one-or-more digits: the probe does not enforce the
+  # two-digit padding (that is the specifier's authoring rule).
   ids=$(awk '/^[[:space:]]*#/ { if (buf == "") first = $0; buf = buf $0 "\n"; next }
              /^[[:space:]]*Scenario([[:space:]]+Outline)?:/ { print first }
-             { buf = ""; first = "" }' "$f" | grep -oE '[A-Za-z][A-Za-z0-9_-]*-[0-9]+' | sort -u | tr '\n' ',' | sed 's/,$//')
+             { buf = ""; first = "" }' "$f" | grep -oE '[A-Za-z][A-Za-z0-9_]*-[0-9]+' | sort -u | tr '\n' ',' | sed 's/,$//')
   printf 'subspec=%s ids=%s %s\n' "$(basename "$f")" "$ids" "$(classify_receipt "${f%.feature}.result" "$ids")"
 done

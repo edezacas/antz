@@ -20,7 +20,10 @@
 #                         is lifted for exactly this additive edit: the diff
 #                         vs git HEAD is purely additive and carries the
 #                         closing-block wording, no existing line reworded
-#                         or removed;
+#                         or removed (retired by gating, loudly, once the
+#                         working copy differs from HEAD -- precision-gaps
+#                         conventions-04; the degenerate no-diff state check
+#                         stays);
 #   closingblock-06    -- the bump is present: VERSION agrees with the
 #                         newest (topmost) CHANGELOG entry, the
 #                         '## [4.3.0] - 2026-09-11' section sits above
@@ -309,11 +312,15 @@ test_closingblock_04_docs_bullet_present_and_identical() {
 }
 
 # =============================================================================
-# closingblock-05: the specifier prompt's historical byte-for-byte pin
-# (tests/skills-activation-prompts_test.sh prompts-05) is lifted for exactly
-# this additive edit: the diff vs git HEAD is purely additive and the added
-# lines carry the closing-block requirement; no existing line is reworded or
-# removed (every pre-change line survives verbatim).
+# closingblock-05: the specifier prompt's diff-vs-HEAD assertions -- originally
+# lifted from byte-for-byte to "purely additive, closing-block only" for the
+# closing-block edit, and now retired by gating, loudly (precision-gaps
+# 01-conventions.feature, conventions-04): the conventions-01..03 specifier
+# rewordings legitimately remove and re-add lines, so once the working copy
+# differs from HEAD each assertion prints a loud retirement note and skips its
+# diff-window checks (both stay registered); the degenerate no-diff state
+# check (the closing-block bullet must be present when the copy equals HEAD)
+# stays enforced.
 # =============================================================================
 
 test_closingblock_05_specifier_diff_purely_additive_closing_block_only() {
@@ -321,33 +328,19 @@ test_closingblock_05_specifier_diff_purely_additive_closing_block_only() {
   DIFF_FILE=$(mktemp)
   git -C "$SCRIPT_DIR" diff HEAD -- agents/prompts/specifier.prompt > "$DIFF_FILE"
   if [ ! -s "$DIFF_FILE" ]; then
-    # Time-robustness (the 94938da lesson): once the closing-block edit is
-    # committed, the working tree equals HEAD and the diff-vs-HEAD window is
-    # gone. In that state the assertion degrades to a state check: the
-    # closing-block bullet must be present in the current prompt.
+    # Time-robustness (the 94938da lesson), kept: with no diff window this
+    # assertion degrades to a state check -- the closing-block bullet must be
+    # present in the current prompt.
     if ! grep -q 'closing block' "$SCRIPT_DIR/agents/prompts/specifier.prompt"; then
       echo "  specifier.prompt has no diff vs HEAD and carries no closing-block bullet"
       ok=1
     fi
   else
-    # Purely additive: no removed content lines (a removed content line
-    # starts with '-' followed by a non-'-' character; '^---' headers
-    # excluded).
-    if [ -n "$(grep -E '^-[^-]' "$DIFF_FILE")" ]; then
-      echo "  specifier.prompt has removed lines (the edit must be purely additive)"
-      ok=1
-    fi
-    # Every added content line carries the closing-block requirement (the
-    # edit is exactly that requirement, nothing else).
-    added=$(grep -E '^\+[^+]' "$DIFF_FILE")
-    if [ -z "$added" ]; then
-      echo "  specifier.prompt diff has no added content lines"
-      ok=1
-    elif printf '%s\n' "$added" | grep -qv 'closing block'; then
-      echo "  specifier.prompt has an added line that is not the closing-block requirement:"
-      printf '%s\n' "$added" | grep -v 'closing block'
-      ok=1
-    fi
+    # conventions-04 gating: the working copy differs from HEAD (the
+    # precision-gaps rewordings remove and re-add lines -- a legitimate edit
+    # this pin cannot distinguish), so the additive-shape diff-window checks
+    # retire with this loud note.
+    echo "  note: specifier.prompt differs from HEAD (the precision-gaps conventions-01..03 rewordings remove and re-add lines legitimately); the purely-additive/closing-block-only diff-window checks are retired by gating"
   fi
   rm -f "$DIFF_FILE"
   return $ok
@@ -360,6 +353,12 @@ test_closingblock_05_specifier_no_existing_line_reworded_or_removed() {
     echo "  cannot read HEAD:agents/prompts/specifier.prompt (is the change already committed?)"
     rm -f "$HEAD_SPECIFIER"
     return 1
+  fi
+  if ! cmp -s "$HEAD_SPECIFIER" "$SPECIFIER_PROMPT"; then
+    # conventions-04 gating: same retirement as the diff-window sibling.
+    echo "  note: specifier.prompt differs from HEAD (the precision-gaps conventions-01..03 rewordings remove and re-add lines legitimately); the verbatim-survival diff-window check is retired by gating"
+    rm -f "$HEAD_SPECIFIER"
+    return 0
   fi
   while IFS= read -r line; do
     if ! grep -qxF -- "$line" "$SPECIFIER_PROMPT"; then

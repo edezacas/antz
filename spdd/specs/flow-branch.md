@@ -129,6 +129,9 @@ The flow suite's "scripts/orchestration/" byte-unchanged guard (in flow-09) is
 re-scoped off "antz-flow.sh" — the file this change edits — onto the two files
 it leaves untouched ("antz-probe.sh", "antz-skills.sh"). The probe's
 "change_dir=missing" assertion and every structural constraint stay enforced.
+**Updated by change `precision-gaps`**: the guard is re-scoped again —
+"antz-probe.sh" is no longer untouched (sub-spec 03 modifies its id-extraction
+regex), so the guard now covers only "antz-flow.sh" and "antz-skills.sh".
 
 ### ADD ensure-20
 The render-injection suite's ("tests/renderinject_test.sh") pre-change
@@ -750,6 +753,34 @@ entries and is never retried again (live-session half judged by mechanism).
 Against pre-change 4.2.1 installed copies, `--check` reports the drift to 4.3.0
 for both clients and prints the [4.3.0] entry writing nothing; `--all` restamps
 every installed file; a fresh `--check` reports already up to date (antz 4.3.0).
+
+## Feature: the orchestrator's slug derivation is bounded by the mechanical rule (from 04-sluglimit.feature, change `precision-gaps`)
+
+  Background:
+    Given "agents/prompts/orchestrator.prompt" step 1's slug-derivation
+      bullet ("For new work: derive a short kebab-case slug ...")
+    And the flow script's mechanical slug rule ("state=bad_slug"): lowercase
+      letters, digits, and hyphen only; no leading/trailing or doubled
+      hyphen; length at most 40
+
+  # ADD - sluglimit-01: the derivation states the length limit.
+  Scenario: sluglimit-01
+    When the reader reads the slug-derivation bullet
+    Then it states the derived slug is at most 40 characters — the flow
+      script's mechanical limit — in place of the undefined "short"
+    And the intent holds: a derived slug passes the "state=bad_slug" gate
+      rather than relying on the gate as a catch
+
+  # ADD - sluglimit-02: the collision rules keep their pinned meaning.
+  Scenario: sluglimit-02
+    When the reader reads the slug-derivation bullet
+    Then it keeps: suffixing ("-2", ...) only when the request continues an
+      existing, already-claimed change, with the slug checked against
+      "spdd/changes/", "spdd/archive/", and "git branch --list 'antz/*'" for
+      collisions
+    And it keeps: a semantically unclear continuation of an already-claimed
+      slug stops and asks the user — never a bare "-2" suffix without
+      semantic continuation
 
 ## Feature: e2e-qa — fix-orchestrator-flow (from e2e-qa.feature, change `fix-orchestrator-flow`)
 

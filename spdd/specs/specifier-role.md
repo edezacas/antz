@@ -33,6 +33,15 @@
   `agents/meta/specifier.yaml`; the verifier updated it during its merge
   (the coder never edits `spdd/specs/`). No scenario of this domain file
   changed meaning.
+- Extended by change `precision-gaps` (merged 2026-09-13): adds three
+  convention-scenarios to this domain (ADD `conventions-01..03`), pins the
+  e2e QA suite as exactly one per change directory in the fixed file
+  `e2e-qa.feature` (reconciling the old "One per feature" wording), pins the
+  relevant-files bullet as one section per sub-spec with the declared
+  destination domain in kebab-case, and retires the specifier diff-window
+  pins by gating (ADD `conventions-04`). The change's scenarios and
+  end-to-end QA are preserved for history in
+  `spdd/archive/precision-gaps/`, not reproduced here.
 
 ## Goal
 `agents/prompts/specifier.prompt`'s `## Output` section documents an
@@ -214,6 +223,70 @@ defined once, identically, within its own Feature.
   repeated across or within bullets.
 - No alternative or rejected file name (e.g. `OVERVIEW.md`, `SUMMARY.md`,
   `NOTES.md`) is named anywhere in `## Output`.
+
+## Feature: the specifier's specification conventions are mechanically precise (from 01-conventions.feature, change `precision-gaps`)
+
+  Background:
+    Given "agents/prompts/specifier.prompt" carrying the "## Specification
+      Rules", "## End-To-End QA Suite", and "## Output" sections
+
+  # ADD - conventions-01: the <index> of a scenario id is defined — two
+  # zero-padded digits, sequential from 01 within the sub-spec.
+  Scenario: conventions-01
+    When the reader reads the "## Specification Rules" scenario-naming bullet
+    Then it states that "<index>" is two zero-padded digits, sequential from
+      01 within the sub-spec (the first scenario is "<feature>-01", the next
+      "<feature>-02", and so on)
+    And the rest of the bullet keeps its meaning: the one-word "<feature>"
+      rule (letters, digits, underscores only — no hyphens or spaces), the
+      tag-comment format with the id on its first line, and the rule that a
+      tag's description never carries another scenario's id
+
+  # ADD - conventions-02: the end-to-end QA suite is one file per change dir,
+  # in the fixed file e2e-qa.feature — not one per feature.
+  Scenario: conventions-02
+    When the reader reads the "## End-To-End QA Suite" section
+    Then its first bullet states the change carries exactly one end-to-end QA
+      suite, written to the fixed file "e2e-qa.feature" in the change
+      directory — one per change, not one per feature
+    And the section keeps its operating rules: the suite operates at the UI
+      with no internal API calls, CLI flags/QA commands are allowed only as
+      UI affordances, and it specifies user-visible workflows, inputs,
+      outputs, and observable states
+    And the "One per feature" wording is gone
+
+  # ADD - conventions-03: the relevant-files bullet becomes one section per
+  # sub-spec, carrying that sub-spec's relevant files and its declared
+  # destination domain.
+  Scenario: conventions-03
+    When the reader reads the "## Output" section's relevant-files bullet
+    Then it states the relevant files found during investigation are written
+      as one section per sub-spec in the overview file, each section carrying
+      that sub-spec's relevant files (pointers only, not a code walkthrough)
+      and its declared destination domain
+    And it states a declared domain name is kebab-case
+    And the bullet does not contain the literal string "README.md" — it
+      refers to the overview file, whose fixed name the existing bullet
+      already states exactly once
+    And the overview bullet's own enumeration is byte-for-byte unchanged
+
+  # ADD - conventions-04: the specifier diff-window pins are retired by
+  # gating, loudly — the rewordings are legitimate.
+  Scenario: conventions-04
+    Given the specifier prompt rewordings of conventions-01..03 remove and
+      re-add lines, so every pin that demands the file's diff vs HEAD be
+      purely additive now misfires
+    When the suites carrying those pins run
+    Then "tests/skills-activation-prompts_test.sh"'s prompts-05 specifier
+      guard retires by gating: when the working copy differs from HEAD it
+      prints a loud retirement note and skips the closingblock-era
+      additive-shape checks (the guard function stays registered, not
+      deleted), and when the copy is byte-identical to HEAD the pin is still
+      enforced
+    And "tests/closingblock_test.sh"'s two closingblock-05 specifier
+      diff-window assertions retire by gating the same way (a loud note when
+      the copy differs from HEAD; the degenerate no-diff state check stays)
+    And every other assertion of both suites keeps passing
 
 ## End-to-end QA suite
 
