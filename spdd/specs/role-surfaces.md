@@ -172,6 +172,65 @@ its reason stated in the prompt.
     And roles-01, roles-02, roles-04, and roles-05's assertions keep passing
       unmodified, and the rest of the suite stays green
 
+## Feature: the verifier's rejection-entry duty is a short list with the same contract (from 03-verifier.feature, change `style-rewrite`)
+
+  Background:
+    Given "agents/prompts/verifier.prompt" whose "## On Rejection" section
+      opens with a single 100-130-word sentence
+
+  # MODIFY - verifier-01: the rejection-entry sentence becomes a short list.
+  Scenario: verifier-01
+    When the "## On Rejection" opening bullet is rewritten as a lead line
+      plus a short list
+    Then the lead line states the duty: before reporting, append (never
+      overwrite) one entry to the change's REJECTED.md, via Bash
+    And the list carries, one item each: the entry's heading line reading
+      exactly "## Rejection <n>" and nothing else; the reason it must be
+      literal; and the content that follows the heading
+    And the section's second bullet (naming the sub-spec each blocker traces
+      to) is unchanged
+    And no item carries nested parentheticals deeper than one level
+
+  # ADD - verifier-02: the new pins live with the verifier-suite home.
+  Scenario: verifier-02
+    When tests/roles_test.sh is extended with verifier-01 and verifier-02
+      test functions and runs
+    Then the new pins require the lead-line duty, the exact-heading item,
+      the probe-counts reason, and the blockers-content item
+    And tests/orchestrator-status-probe_test.sh passes unmodified
+    And the extended suite exits 0
+
+## Feature: one form per concept, and the Working-Root triplication is a documented editing rule (from 06-terminology.feature, change `style-rewrite`)
+
+  Background:
+    Given the four prompts spelling the slug placeholder two ways
+
+  # MODIFY - terminology-01: `<change-slug>` becomes `<slug>` at all seven
+  # sites; the suite pins follow loudly.
+  Scenario: terminology-01
+    When the seven `<change-slug>` sites are rewritten to `<slug>`
+    Then the string "change-slug" no longer appears in any of the four prompts
+    And the machine-line formats are untouched
+    And the suite pins follow in the same change
+
+  # ADD - terminology-02: one form per concept, swept and pinned.
+  Scenario: terminology-02
+    When the four prompts are swept for variant spellings
+    Then the sweep passes: no prompt contains "sub spec" or "subspecs", no
+      prompt uses "framework" where the client is meant, and the slug
+      placeholder is `<slug>` everywhere prose names it
+    And the sweep's declared exemptions hold
+
+  # ADD - terminology-03: the Working-Root triplication becomes a documented,
+  # pinned editing rule.
+  Scenario: terminology-03
+    When the editing rule is documented and pinned
+    Then AGENTS.md and CLAUDE.md each carry one new gotcha bullet,
+      byte-identical between the two files
+    And a test asserts the three prompts' "## Working Root" sections are
+      byte-identical to each other
+    And the new docs bullet is additive
+
 ## Invariants
 - The governing rule holds: no role, including the orchestrator, may depend on
   another role's conversational output — every routing decision is derived

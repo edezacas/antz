@@ -350,6 +350,41 @@ invocation produced, read back.
     Then the Entities/Operations table appears inside "spdd/changes/<slug>/README.md", not in any separate file
     And the numbered ".feature" files still contain the actual testable behavior for each operation (the table never substitutes for the Gherkin scenarios)
 
+## Feature: the specifier's Entities/Operations table rule is stated in two positive lines (from 01-specifier.feature, change `style-rewrite`)
+
+  Background:
+    Given "agents/prompts/specifier.prompt" whose "## Output" section carries
+      the two table bullets to be rewritten
+    And "tests/entities-operations-table_test.sh" pinning both bullets'
+      component strings
+
+  # MODIFY - specifier-01: the two table bullets become the plan's two-line
+  # rewrite — the triple negation is gone, the pinned semantics survive.
+  Scenario: specifier-01
+    When the style rewrite replaces the two table bullets with exactly two
+      bullets in the "## Output" section
+    Then the first bullet starts "- When a change introduces a new data shape"
+      and states, in one line, the trigger, the two tables with their exact
+      column sets, and column pruning per the Specification Rules' example-table rule
+    And the first bullet does not contain the literal string "README.md"
+    And the second bullet states, in one line, that the table is a scannable
+      complement to the prose contract sections, that the tagged Gherkin
+      scenarios remain the actual testable behavior spec, never replaced by
+      the table, and that a change with neither a new data shape nor multiple
+      named operations includes no table
+    And the triple-negation strings no longer appear anywhere in the prompt
+
+  # ADD - specifier-02: the suite pins follow the rewrite loudly.
+  Scenario: specifier-02
+    When tests/entities-operations-table_test.sh is updated in the same
+      change and runs
+    Then the legacy entities-table-01..05 test functions are re-scoped in
+      place to the rewritten bullets, and the suite carries new test functions
+      named specifier-01 and specifier-02
+    And the suite exits 0
+    And tests/readmefile_test.sh and tests/conventions_test.sh pass
+      unmodified
+
 ## Out of scope
 - Any change to `coder.prompt`, `verifier.prompt`, or `orchestrator.prompt`.
 - Any change to `install.sh` or `agents/meta/*.yaml`.

@@ -26,6 +26,17 @@
 # observable criterion never read git HEAD and stay enforced in every repo
 # state.
 #
+# Amended by change style-rewrite (sub-spec 06-terminology, terminology-01):
+# the verifier prompt's `<change-slug>` -> `<slug>` unification rewrites two
+# of the bullets this suite byte-compares against HEAD (rolechecks-03's
+# missing-change-dir Input Rule bullet and rolechecks-04's archive-move
+# bullet). Those two windows are gated from birth on the same pattern:
+# enforced only while verifier.prompt differs from HEAD AND HEAD's bullet
+# still reads `<change-slug>` (the unification pending), retired with a loud
+# "note:" otherwise; within the window the working bullet must equal HEAD's
+# bullet with exactly the placeholder rewrite applied, so any change beyond
+# the unification still fails.
+#
 # Self-contained bash test harness (no external framework/dependency -- this
 # repo has no package manager or build system), mirroring the harness style
 # of tests/roles_test.sh. Run directly:
@@ -154,6 +165,17 @@ line_of "$HEAD_CODER" 'check the working tree for scenario ids' "$HEAD_IDCHECK_B
 HEAD_ROLES_03=$(mktemp)
 extract_fn "$HEAD_ROLES" test_roles_03 "$HEAD_ROLES_03"
 
+# HEAD baselines for the terminology-01 windows: the two verifier bullets
+# whose `spdd/changes/<change-slug>/` placeholder this change rewrites to
+# `<slug>` (rolechecks-03's missing-change-dir Input Rule bullet,
+# rolechecks-04's archive-move bullet). The extraction keys are the stable
+# prose around the placeholder ("doesn't exist", the move-verb prefix), so
+# they find the bullet in HEAD under either spelling.
+HEAD_B1_BULLET=$(mktemp)
+line_of "$HEAD_VERIFIER" "doesn't exist" "$HEAD_B1_BULLET"
+HEAD_M1_BULLET=$(mktemp)
+line_of "$HEAD_VERIFIER" 'move `spdd/changes/' "$HEAD_M1_BULLET"
+
 # ---- per-artifact change_pending() gates (the bump440/450/460 pattern) -------
 # A working-vs-HEAD window assertion is enforced only while the guarded
 # artifact differs from HEAD AND HEAD does not yet carry this change's marker
@@ -176,6 +198,23 @@ roles_change_pending() {
   # HEAD's roles-03 does not yet pin the extended bullet's new content.
   ! git -C "$SCRIPT_DIR" diff --quiet HEAD -- tests/roles_test.sh 2>/dev/null \
     && ! grep -qF 'one spec file per domain, at `spdd/specs/<domain>.md`, with kebab-case domain names' "$HEAD_ROLES_03"
+}
+
+# The two terminology-01 windows (style-rewrite 06-terminology): each is
+# enforced only while verifier.prompt differs from HEAD AND the bullet's HEAD
+# baseline still reads `<change-slug>` — the unification pending. Once HEAD
+# carries the `<slug>` form (the committed state) the window is retired for
+# good: a later legitimate edit of the prompt differs from HEAD but HEAD no
+# longer reads the old spelling, so the window never resurrects against it.
+
+b1_slug_rewrite_pending() {
+  ! git -C "$SCRIPT_DIR" diff --quiet HEAD -- agents/prompts/verifier.prompt 2>/dev/null \
+    && grep -qF 'change-slug' "$HEAD_B1_BULLET"
+}
+
+m1_slug_rewrite_pending() {
+  ! git -C "$SCRIPT_DIR" diff --quiet HEAD -- agents/prompts/verifier.prompt 2>/dev/null \
+    && grep -qF 'change-slug' "$HEAD_M1_BULLET"
 }
 
 # =============================================================================
@@ -302,19 +341,32 @@ test_rolechecks_03() {
   refuse "$VERIFIER_PROMPT" 'code changes yet' || ok=1
 
   # The rest of the Input Rule is unchanged, byte-identical vs HEAD, and the
-  # section keeps its 3 bullets -- the reword is an in-place edit.
+  # section keeps its 3 bullets -- the reword is an in-place edit. The
+  # OPEN_QUESTIONS.md bullet is touched by no change, so it compares
+  # unconditionally; the missing-change-dir bullet was rewritten by style-
+  # rewrite terminology-01 (`<change-slug>` -> `<slug>`), so its window is
+  # born gated: while the unification is pending the working bullet must
+  # equal HEAD's bullet with exactly the placeholder rewrite applied, and
+  # once committed vs HEAD the check retires vacuously with a loud note. The
+  # absolute pins (the 3-bullet count, the mechanical code-present
+  # definition above) stay enforced in every repo state.
   n=$(grep -c '^- ' "$VERIFIER_INPUT")
   [ "$n" -eq 3 ] || { echo "  Input Rule has $n bullets, expected 3"; ok=1; }
-  B1_CUR=$(mktemp); B1_HEAD=$(mktemp); B2_CUR=$(mktemp); B2_HEAD=$(mktemp)
-  grep -F 'change-slug' "$VERIFIER_INPUT" | grep -F "doesn't exist" > "$B1_CUR"
-  grep -F 'change-slug' "$HEAD_VERIFIER" | grep -F "doesn't exist" > "$B1_HEAD"
-  cmp -s "$B1_CUR" "$B1_HEAD" \
-    || { echo "  the missing-change-dir bullet changed vs HEAD"; ok=1; }
+  B2_CUR=$(mktemp); B2_HEAD=$(mktemp)
   grep -F 'OPEN_QUESTIONS.md' "$VERIFIER_INPUT" > "$B2_CUR"
   grep -F 'OPEN_QUESTIONS.md' "$HEAD_VERIFIER" > "$B2_HEAD"
   cmp -s "$B2_CUR" "$B2_HEAD" \
     || { echo "  the OPEN_QUESTIONS.md bullet changed vs HEAD"; ok=1; }
-  rm -f "$B1_CUR" "$B1_HEAD" "$B2_CUR" "$B2_HEAD"
+  rm -f "$B2_CUR" "$B2_HEAD"
+  B1_CUR=$(mktemp)
+  line_of "$VERIFIER_INPUT" "doesn't exist" "$B1_CUR"
+  if ! b1_slug_rewrite_pending; then
+    echo "  note: the verifier prompt's missing-change-dir \`<change-slug>\` -> \`<slug>\` unification is committed vs HEAD (or HEAD's bullet no longer reads the old spelling); the byte-identity window is vacuously retired, the absolute pins stay enforced"
+  elif [ "$(cat "$B1_CUR")" != "$(sed -e 's|<change-slug>|<slug>|g' "$HEAD_B1_BULLET")" ]; then
+    echo "  the missing-change-dir bullet changed beyond the <change-slug> -> <slug> unification"
+    ok=1
+  fi
+  rm -f "$B1_CUR"
   return $ok
 }
 
@@ -350,19 +402,31 @@ test_rolechecks_04() {
   require "$VERIFIER_MERGE" 'reading the existing spec first and merging rather than overwriting it' || ok=1
 
   # The bullet stays a single physical line, and the rest of Merge & Archive
-  # (plain-mv bullet, rejected-change bullet) is unchanged vs HEAD.
+  # (plain-mv bullet, rejected-change bullet) is unchanged vs HEAD. The
+  # rejected-change bullet is touched by no change, so it compares
+  # unconditionally; the plain-mv archive-move bullet was rewritten by style-
+  # rewrite terminology-01 (`<change-slug>` -> `<slug>` at both of its
+  # spots), so its window is born gated the same way -- within the pending
+  # window the working bullet must equal HEAD's bullet with exactly the
+  # placeholder rewrite applied, and it retires vacuously with a loud note
+  # once the rewrite is committed vs HEAD.
   n=$(grep -c '^- ' "$VERIFIER_MERGE")
   [ "$n" -eq 3 ] || { echo "  Merge & Archive has $n bullets, expected 3"; ok=1; }
-  M1_CUR=$(mktemp); M1_HEAD=$(mktemp); M2_CUR=$(mktemp); M2_HEAD=$(mktemp)
-  grep -F 'move `spdd/changes/<change-slug>/`' "$VERIFIER_MERGE" > "$M1_CUR"
-  grep -F 'move `spdd/changes/<change-slug>/`' "$HEAD_VERIFIER" > "$M1_HEAD"
-  cmp -s "$M1_CUR" "$M1_HEAD" \
-    || { echo "  the archive-move bullet changed vs HEAD"; ok=1; }
+  M2_CUR=$(mktemp); M2_HEAD=$(mktemp)
   grep -F 'Never archive a rejected change' "$VERIFIER_MERGE" > "$M2_CUR"
   grep -F 'Never archive a rejected change' "$HEAD_VERIFIER" > "$M2_HEAD"
   cmp -s "$M2_CUR" "$M2_HEAD" \
     || { echo "  the rejected-change bullet changed vs HEAD"; ok=1; }
-  rm -f "$M1_CUR" "$M1_HEAD" "$M2_CUR" "$M2_HEAD"
+  rm -f "$M2_CUR" "$M2_HEAD"
+  M1_CUR=$(mktemp)
+  grep -F 'move `spdd/changes/' "$VERIFIER_MERGE" > "$M1_CUR"
+  if ! m1_slug_rewrite_pending; then
+    echo "  note: the verifier prompt's archive-move \`<change-slug>\` -> \`<slug>\` unification is committed vs HEAD (or HEAD's bullet no longer reads the old spelling); the byte-identity window is vacuously retired, the absolute pins stay enforced"
+  elif [ "$(cat "$M1_CUR")" != "$(sed -e 's|<change-slug>|<slug>|g' "$HEAD_M1_BULLET")" ]; then
+    echo "  the archive-move bullet changed beyond the <change-slug> -> <slug> unification"
+    ok=1
+  fi
+  rm -f "$M1_CUR"
   return $ok
 }
 

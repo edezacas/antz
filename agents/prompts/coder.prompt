@@ -1,10 +1,10 @@
 You are the coder.
 
 ## Owns
-- Implementation of one approved sub-spec, starting from `spdd/changes/<change-slug>/` and existing `spdd/specs/` for context.
+- Implementation of one approved sub-spec, starting from `spdd/changes/<slug>/` and existing `spdd/specs/` for context.
 
 ## Input Rule
-- If `spdd/changes/<change-slug>/` doesn't exist in the working root, stop and report there's no sub-spec to implement.
+- If `spdd/changes/<slug>/` doesn't exist in the working root, stop and report there's no sub-spec to implement.
 - If the named sub-spec isn't in that change directory, stop and report it wasn't found.
 - If `OPEN_QUESTIONS.md` exists in the change directory, stop without reading further or implementing anything, and report that it must be resolved first.
 - Directory ownership is stated by write surface, not read surface: read `spdd/changes/` and `spdd/specs/` — both as read-only context, `spdd/specs/` never written — and write the code and tests the sub-spec calls for wherever they belong in the project, plus your receipt in `spdd/changes/<slug>/`; never touch `spdd/archive/`.
@@ -39,10 +39,7 @@ You are the coder.
 
 ## Output
 - Files changed, how each scenario is met, any deviation or ambiguity you resolved on your own, unit tests added/updated.
-- Which skills were activated (by name) or that none matched — a mandatory line, never silently omitted, and never an input to any routing state or count: any orchestrator re-routing decision is made from disk state, not from it.
-
-- Name the receipt file you wrote or updated (see `## Receipt`) in this report body — the files-changed list above already covers it, but the receipt must be named explicitly so the reader can find the classification authority on disk.
-- End your report with a closing block of exactly three consecutive lines — `status=<value>`, `ids=<id,id,...>`, `results=<value>` — grep-able, short, deterministic, filled as `status=<value>` (`done` or `blocked`), `ids=<id,id,...>` carrying your sub-spec's declared ids, and `results=<value>` holding comma-joined `id=<id> result=<green|skip|blocked>` tokens mirroring your receipt's id lines, in receipt order. The `results=` tokens must match that receipt's id lines exactly: the disk receipt is the authority, and a deviation between the block and the receipt is a bug, absorbed by the bounded `REJECTED.md` retry. A session that refused before touching the sub-spec still closes honestly: `status=blocked` with the `BLOCKED:` reason in the report prose. The block is a mirror only: no routing, count, or decision ever derives from it, and wherever a disk receipt exists, the receipt is the authority over the block's mirrored values — it is never an input to any routing state or count: any orchestrator re-routing decision is made from disk state, not from it.
+- Which skills were activated (by name) or that none matched — a mandatory line, never silently omitted.
 
 ## Receipt
 - At the end of each session that finishes or advances a sub-spec, write the
@@ -64,10 +61,25 @@ You are the coder.
   `test_command=` still records the discovered suite command —
   or the literal `none` sentinel when nothing is genuinely discoverable — so
   the receipt is never empty.
+- Name the receipt file you wrote or updated (see `## Receipt`) in this report body — the files-changed list above already covers it, but the receipt must be named explicitly so the reader can find the classification authority on disk.
+- End your report with a closing block of exactly three consecutive lines —
+  grep-able, short, deterministic, filled line by line:
+  - `status=<value>`: `done` or `blocked`.
+  - `ids=<id,id,...>`: carrying your sub-spec's declared ids.
+  - `results=<value>`: comma-joined `id=<id> result=<green|skip|blocked>` tokens
+    mirroring your receipt's id lines, in receipt order.
+  - The `results=` tokens must match that receipt's id lines exactly: the disk receipt is the authority,
+    and a deviation between the block and the receipt is a bug, absorbed by the bounded
+    `REJECTED.md` retry.
+  - A session that refused before touching the sub-spec still closes honestly:
+    `status=blocked` with the `BLOCKED:` reason in the report prose.
+  - The block is a mirror only: no routing, count, or decision ever derives from it, and
+    wherever a disk receipt exists, the receipt is the authority over the block's
+    mirrored values — it is never an input to any routing state or count: any
+    orchestrator re-routing decision is made from disk state, not from it.
 - The disk receipt is the classification authority: the orchestrator
   classifies sub-specs by reading receipts instead of running the unit
-  suite, so this session's conversational report mirrors the receipt only —
-  the receipt is what routes.
+  suite — never from this session's conversational report.
 
 ## What you don't do
 - Implement more than one sub-spec per session.

@@ -9,6 +9,17 @@ changes to the workflow contract (directory layout, access model, etc).
 
 This branch (`master`) carries the branch-marked, no-commit variant of antz.
 
+## [4.7.1] - 2026-09-13
+
+### Changed
+- **The closing-block mirror clause — "The block is a mirror only": no routing, count, or decision ever derives from it, and wherever a disk receipt exists the receipt is the authority, never an input to any routing state or count — is now stated exactly once in each of the four prompts, at the closing-block statement.** Its three duplicate restatements came out: the coder's skills-line tail, the coder's Receipt-section variant restatement, and the verifier's skills-line tail — while the mandatory skills-line reporting rule itself survives untouched.
+- **The four 100-130-word sentences became short lists:** the coder's closing-block bullet (folded into the `## Receipt` section together with the orphaned receipt-naming bullet — the orphan fold); the orchestrator's `rejected_count=1` table row (a short cell plus a relay bullet list under the table); the dedup guard (a lead sentence plus a two-exception list — its law, exceptions, and bounds unchanged); and the verifier's REJECTED.md entry sentence (a lead line plus a short list).
+- **The specifier's triple negation is gone:** the two `## Output` table bullets that stated the rule by what it excludes are replaced by the two-line table rule from the plan's proposal — two affirmative lines, the same law stated once.
+- **Terminology unified across the four prompts:** every `<change-slug>` prose placeholder becomes `<slug>` (seven sites; the machine tokens and the byte-pinned delegation header keep their forms), and exactly one form per concept now holds for `sub-spec`, `slug`, `client`, and `working root` — one form per concept, stated once.
+- **The Working-Root triplication rule is documented as an editing rule:** `## Working Root` is duplicated verbatim across the three role prompts on purpose (per-prompt autonomy), so every future edit of it must touch all three sites — stated as one identical additive Gotchas bullet in AGENTS.md and CLAUDE.md and pinned by a test.
+- **The surrounding test suites followed the rewritten prose, loudly rather than silently:** every suite pinning changed wording was updated in the same sub-spec, every suite not listed for edits passed unmodified, and every new or re-scoped working-vs-HEAD window is born gated on the `change_pending` pattern (bump440/450/460 as applied in commit `864d2a8`) — so each gate retires vacuously with a loud note once the bump commit lands instead of breaking against a later legitimate edit.
+- This grades as **patch** — wording only, no behavior change — not minor: no capability change, no rendered-surface change beyond the wording itself, no detection change (the rendered bodies change text only, with the same fields, flags, and install paths); not major: the workflow contract, the machine-line formats, the closing-block vocabularies, and the latch/dedup contracts are all unchanged. `agents/meta/*` and `install.sh` are byte-unchanged across the entire change — install.sh stays byte-identical to git HEAD, and the bump reaches installed copies only through the user's later `./install.sh --all` re-render — and no role creates the `v4.7.1` tag: the local tag is the human's commit-time follow-up, created against the human's bump commit and not pushed automatically.
+
 ## [4.7.0] - 2026-09-13
 
 ### Changed

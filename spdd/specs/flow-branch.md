@@ -881,3 +881,46 @@ Against pre-change 4.4.0 installed copies, `--check` reports the drift to
 restamps every installed file with the updated orchestrator and flow-script
 content rendered verbatim; a fresh `--check` reports already up to date
 (antz 4.5.0) for both clients.
+
+## Feature: the orchestrator's rejection routing and dedup law read as short lists (from 05-orchprose.feature, change `style-rewrite`)
+
+  Background:
+    Given "agents/prompts/orchestrator.prompt" whose step 4 routes on
+      rejected_count with a three-row table, and whose Session guards'
+      "**Dedup.**" bullet is a single 100-130-word sentence
+
+  # MODIFY - orchprose-01: the rejected_count=1 row becomes a short cell
+  # plus a bullet list under the table, with the same routing.
+  Scenario: orchprose-01
+    When the `rejected_count=1` row's cell is shortened and the relay detail
+      moves to a short bullet list directly under the step-4 table
+    Then the row still reads as a routing instruction
+    And the list carries, one item each, the same three outcomes with the
+      same meaning
+    And the rows for rejected_count=0 and rejected_count=2 are unchanged
+    And the structure pins hold: still exactly four tables, 14 fence lines,
+      one ```sh fence, steps ending at 6, and no new fenced block
+
+  # MODIFY - orchprose-02: the dedup guard becomes a lead sentence plus a
+  # short list, preserving every pinned phrase.
+  Scenario: orchprose-02
+    When the "**Dedup.**" bullet is rewritten as a lead sentence plus a short
+      list inside the Session guards block
+    Then the lead keeps the law and its mechanism
+    And the list enumerates exactly two exceptions, both step 4's, one item
+      each
+    And the close keeps "No third exception exists"
+    And the guards' standing wording survives around the list
+    And the "**Latch.**" bullet is byte-unchanged
+
+  # ADD - orchprose-03: the new shape pins live in the orchestrator-prose
+  # suite, and the neighboring suites pass unmodified.
+  Scenario: orchprose-03
+    When tests/orchestrator-sessionguards_test.sh is extended with
+      orchprose-01/02/03 test functions and runs
+    Then the new pins assert the step-4 row-plus-list shape and the dedup
+      lead-plus-list shape
+    And tests/antz-flow_test.sh passes unmodified
+    And tests/receipts_test.sh passes unmodified
+    And tests/orchestrator-status-probe_test.sh passes unmodified
+    And every suite exits 0

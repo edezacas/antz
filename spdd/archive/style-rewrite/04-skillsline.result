@@ -1,0 +1,5 @@
+test_command=for t in tests/*.sh; do sh "$t"; done
+id=skillsline-01 result=green reason=skillsline-01: coder half of the split prompts-06 -- the skills bullet keeps the mandatory-reporting rule, the mirror tail is gone from ## Output, and coder.prompt states each mirror string exactly once
+id=skillsline-02 result=green reason=skillsline-02: verifier half of the split prompts-06 -- the skills bullet keeps the mandatory-reporting rule, the mirror tail is gone from the bullet, and verifier.prompt states each mirror string exactly once
+id=skillsline-03 result=green reason=skillsline-03: the mirror principle is stated exactly once per prompt, at the closing-block mirror statement, not in a skills bullet
+id=skillsline-04 result=green reason=skillsline-04: the skills suite follows loudly -- prompts-06 split into per-role halves, the other tests byte-identical to HEAD, the docs suite untouched and green, both suites exit 0

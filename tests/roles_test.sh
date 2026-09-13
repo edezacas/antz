@@ -6,6 +6,19 @@
 # the write-surface contract byte-identically, and the loud retirement of the
 # prompt guards that pinned every pre-change line.
 #
+# Also hosts spdd/changes/style-rewrite/03-verifier.feature (verifier-01..02):
+# the verifier's "## On Rejection" opening bullet rewritten from one
+# 100-130-word run-on sentence into a lead line plus a short list, with the
+# rejection contract (literal machine-countable heading, append-never-overwrite,
+# via Bash, blockers content, attribution) intact.
+#
+# Also hosts spdd/changes/style-rewrite/06-terminology.feature
+# (terminology-01..03): the `<change-slug>` -> `<slug>` unification at the
+# seven sites with the suite pins following, the one-form-per-concept sweep
+# over the four prompts (with its declared machine-format / byte-pinned
+# exemptions), and the Working-Root triplication rule -- three prompts
+# byte-identical, one identical gotcha bullet in AGENTS.md and CLAUDE.md.
+#
 # Self-contained bash test harness (no external framework/dependency -- this
 # repo has no package manager or build system), mirroring the harness style of
 # tests/skills-activation-prompts_test.sh. Run directly:
@@ -15,7 +28,9 @@ set -u
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 CODER_PROMPT="$SCRIPT_DIR/agents/prompts/coder.prompt"
+SPECIFIER_PROMPT="$SCRIPT_DIR/agents/prompts/specifier.prompt"
 VERIFIER_PROMPT="$SCRIPT_DIR/agents/prompts/verifier.prompt"
+ORCHESTRATOR_PROMPT="$SCRIPT_DIR/agents/prompts/orchestrator.prompt"
 AGENTS_MD="$SCRIPT_DIR/AGENTS.md"
 CLAUDE_MD="$SCRIPT_DIR/CLAUDE.md"
 
@@ -74,11 +89,26 @@ extract_bullet_line() {
 CODER_OWNS=$(mktemp)
 CODER_INPUT=$(mktemp)
 CODER_RECEIPT=$(mktemp)
+VERIFIER_INPUT=$(mktemp)
 VERIFIER_MERGE=$(mktemp)
+VERIFIER_REJECT=$(mktemp)
+SPECIFIER_OUTPUT=$(mktemp)
 extract_section "$CODER_PROMPT" "Owns" "$CODER_OWNS"
 extract_section "$CODER_PROMPT" "Input Rule" "$CODER_INPUT"
 extract_section "$CODER_PROMPT" "Receipt" "$CODER_RECEIPT"
+extract_section "$VERIFIER_PROMPT" "Input Rule" "$VERIFIER_INPUT"
 extract_section "$VERIFIER_PROMPT" "Merge & Archive, only on approved or approved-with-warnings" "$VERIFIER_MERGE"
+extract_section "$VERIFIER_PROMPT" "On Rejection" "$VERIFIER_REJECT"
+# The specifier's report section, keyed on the post-terminology-01 heading
+# text (`<slug>`); the WR_* files are the three role prompts' "## Working
+# Root" sections, whose byte-identity is the documented triplication.
+extract_section "$SPECIFIER_PROMPT" 'Output, written to `spdd/changes/<slug>/`' "$SPECIFIER_OUTPUT"
+WR_SPECIFIER=$(mktemp)
+WR_CODER=$(mktemp)
+WR_VERIFIER=$(mktemp)
+extract_section "$SPECIFIER_PROMPT" "Working Root" "$WR_SPECIFIER"
+extract_section "$CODER_PROMPT" "Working Root" "$WR_CODER"
+extract_section "$VERIFIER_PROMPT" "Working Root" "$WR_VERIFIER"
 
 # =============================================================================
 # roles-01: the coder prompt's Input Rule directory-ownership bullet is
@@ -103,7 +133,7 @@ test_roles_01() {
   # The rest of the Input Rule is unchanged, one bullet per stop: missing
   # change dir, missing sub-spec, OPEN_QUESTIONS.md hard stop, multi-layer
   # refusal, plus the one rewritten ownership bullet -- five in total.
-  require "$CODER_INPUT" 'If `spdd/changes/<change-slug>/` doesn'"'"'t exist in the working root, stop and report there'"'"'s no sub-spec to implement.' || ok=1
+  require "$CODER_INPUT" 'If `spdd/changes/<slug>/` doesn'"'"'t exist in the working root, stop and report there'"'"'s no sub-spec to implement.' || ok=1
   require "$CODER_INPUT" 'If the named sub-spec isn'"'"'t in that change directory, stop and report it wasn'"'"'t found.' || ok=1
   require "$CODER_INPUT" 'If `OPEN_QUESTIONS.md` exists in the change directory, stop without reading further or implementing anything, and report that it must be resolved first.' || ok=1
   require "$CODER_INPUT" 'If given a full multi-layer plan instead of one sub-spec, refuse it and ask for a single sub-spec.' || ok=1
@@ -120,7 +150,7 @@ test_roles_01() {
 test_roles_02() {
   ok=0
   # Owns: both spec surfaces for context, unchanged by this sub-spec.
-  require "$CODER_OWNS" 'starting from `spdd/changes/<change-slug>/` and existing `spdd/specs/` for context' || ok=1
+  require "$CODER_OWNS" 'starting from `spdd/changes/<slug>/` and existing `spdd/specs/` for context' || ok=1
 
   # The bullet names the same read pair and the receipt location inside
   # spdd/changes/<slug>/ (asserted again here for the consistency claim).
@@ -152,7 +182,7 @@ test_roles_03() {
   require "$VERIFIER_PROMPT" '## Merge & Archive, only on approved or approved-with-warnings' || ok=1
 
   # Plain mv is the only instruction, and the reason is in the prompt.
-  require "$VERIFIER_MERGE" 'move `spdd/changes/<change-slug>/` to `spdd/archive/<change-slug>/` unmodified' || ok=1
+  require "$VERIFIER_MERGE" 'move `spdd/changes/<slug>/` to `spdd/archive/<slug>/` unmodified' || ok=1
   require "$VERIFIER_MERGE" 'plain `mv`' || ok=1
   require "$VERIFIER_MERGE" 'the only mechanism' || ok=1
   require "$VERIFIER_MERGE" '`git mv` on untracked files always fails' || ok=1
@@ -289,6 +319,283 @@ test_roles_05() {
   return $ok
 }
 
+# =============================================================================
+# verifier-01 / verifier-02 (style-rewrite/03-verifier): the verifier's
+# "## On Rejection" opening bullet is a lead line plus a short list, with the
+# rejection contract (append never overwrite, via Bash, the literal
+# machine-countable heading, the blockers content, and the unchanged
+# attribution bullet) intact.
+# =============================================================================
+
+# The canonical strings of the new short list (scenario verifier-01's parts).
+# The lead line's path placeholder carries the terminology-01 `<slug>`
+# spelling (the one form per concept; the old `<change-slug>` shape appears
+# nowhere in the prompts any more).
+REJECT_LEAD='- Before reporting, append (never overwrite) one entry to `spdd/changes/<slug>/REJECTED.md`, via Bash. The entry:'
+REJECT_ITEM_HEADING='is headed by its own line reading exactly `## Rejection <n>` and nothing else (`<n>` = 1 for the first entry in the file, incrementing by one per further entry)'
+REJECT_ITEM_REASON="must keep that heading literal, because the orchestrator's probe script counts this exact heading, not just numbered in spirit"
+REJECT_ITEM_CONTENT='carries the reported blockers on the lines that follow the heading (severity, evidence, offending scenario — the same content already in the Report Format)'
+
+# The old run-on sentence's nesting shape (scenario verifier-02's refusals):
+# the exact span the sub-spec quotes ("the strings ... no longer appear as
+# one line"), plus the old lead-into-heading join.
+REJECT_OLD_JOIN='and nothing else (`<n>` = 1 for the first entry in the file, incrementing by one per further entry) — the orchestrator'"'"'s probe script counts this exact heading, so it must be literal, not just numbered in spirit. Put the reported blockers'
+REJECT_OLD_LEAD_JOIN='`spdd/changes/<change-slug>/REJECTED.md` (via Bash), headed by'
+
+# The section's second bullet, unchanged by this sub-spec.
+REJECT_ATTRIBUTION='- For each blocker, name the sub-spec it traces to when one applies (via its scenario id), or state explicitly that it doesn'"'"'t trace to a single sub-spec (e.g. cross-feature coherence, or an e2e QA step not owned by any one sub-spec).'
+
+# Writes the section's lead-plus-list region (the lines before the unchanged
+# attribution bullet) into $2; returns 1 when the attribution bullet is gone.
+reject_lead_region() {
+  # $1 = section extract, $2 = output file
+  split_at=$(grep -n 'For each blocker' "$1" | head -n 1 | cut -d: -f1)
+  if [ -z "$split_at" ]; then
+    : > "$2"
+    return 1
+  fi
+  head -n $((split_at - 1)) "$1" > "$2"
+}
+
+# The contract parts both verifier scenarios pin inside the extract: the
+# lead-line duty, the exact-heading item, the probe-counts reason, and the
+# blockers-content item.
+on_rejection_contract() {
+  # $1 = section extract file
+  cok=0
+  require "$1" "$REJECT_LEAD" || cok=1
+  require "$1" "$REJECT_ITEM_HEADING" || cok=1
+  require "$1" "$REJECT_ITEM_REASON" || cok=1
+  require "$1" "$REJECT_ITEM_CONTENT" || cok=1
+  return $cok
+}
+
+test_verifier_01() {
+  ok=0
+  # The section still exists under its unchanged heading.
+  require "$VERIFIER_PROMPT" '## On Rejection' || ok=1
+
+  # The lead line states the duty, as its own line: before reporting, append
+  # (never overwrite) one entry to the change's REJECTED.md, via Bash.
+  grep -qxF -- "$REJECT_LEAD" "$VERIFIER_REJECT" \
+    || { echo "  no lead line stating the append-never-overwrite duty on its own line"; ok=1; }
+
+  # The lead introduces a short list: at least three sub-items before the
+  # attribution bullet, carrying the heading / reason / content parts.
+  LEAD_REGION=$(mktemp)
+  reject_lead_region "$VERIFIER_REJECT" "$LEAD_REGION" \
+    || { echo "  the unchanged attribution bullet is missing from the section"; rm -f "$LEAD_REGION"; return 1; }
+  on_rejection_contract "$VERIFIER_REJECT" || ok=1
+  n=$(grep -c '^  - ' "$LEAD_REGION")
+  [ "$n" -ge 3 ] || { echo "  lead region has $n list items, expected at least 3"; ok=1; }
+
+  # The old run-on's nesting shape is gone: no line opens more than one
+  # parenthetical, and no line carries the old single 100-130-word sentence.
+  shape=$(awk '
+    {
+      n = gsub(/\(/, "(")
+      w = split($0, words, /[ \t]+/)
+      if (n > 1) { print "  line " NR " opens " n " parentheticals: " $0; bad = 1 }
+      if (w > 60) { print "  line " NR " carries a " w "-word sentence: " $0; bad = 1 }
+    }
+    END { exit bad ? 1 : 0 }
+  ' "$LEAD_REGION")
+  if [ -n "$shape" ]; then echo "$shape"; ok=1; fi
+  rm -f "$LEAD_REGION"
+
+  # The section's second bullet (per-blocker attribution) is unchanged.
+  require "$VERIFIER_REJECT" "$REJECT_ATTRIBUTION" || ok=1
+  return $ok
+}
+
+test_verifier_02() {
+  ok=0
+  # The new pins live with the verifier-suite home: roles_test.sh is extended
+  # in the same change with test functions named after this sub-spec's ids,
+  # and the reported test names carry the scenario ids.
+  require "$SCRIPT_DIR/tests/roles_test.sh" 'test_verifier_01' || ok=1
+  require "$SCRIPT_DIR/tests/roles_test.sh" 'test_verifier_02' || ok=1
+  m=$(grep -c 'run_test "verifier-01:' "$SCRIPT_DIR/tests/roles_test.sh")
+  [ "$m" -ge 1 ] || { echo "  no reported test name carrying the verifier-01 id"; ok=1; }
+  m=$(grep -c 'run_test "verifier-02:' "$SCRIPT_DIR/tests/roles_test.sh")
+  [ "$m" -ge 1 ] || { echo "  no reported test name carrying the verifier-02 id"; ok=1; }
+
+  # The contract parts are required inside the "## On Rejection" extract...
+  on_rejection_contract "$VERIFIER_REJECT" || ok=1
+
+  # ...and the old run-on sentence's strings no longer appear as one line.
+  refuse "$VERIFIER_REJECT" "$REJECT_OLD_JOIN" || ok=1
+  refuse "$VERIFIER_PROMPT" "$REJECT_OLD_LEAD_JOIN" || ok=1
+
+  # The rejection contract stays machine-countable: the probe suite passes
+  # unmodified (its "## Rejection <n>" counting is script behavior), and the
+  # probe script, the meta files, and install.sh are byte-unchanged by this
+  # sub-spec.
+  sh "$SCRIPT_DIR/tests/orchestrator-status-probe_test.sh" >/dev/null 2>&1 \
+    || { echo "  tests/orchestrator-status-probe_test.sh no longer passes"; ok=1; }
+  git -C "$SCRIPT_DIR" diff --quiet HEAD -- scripts/orchestration/ agents/meta/ install.sh \
+    || { echo "  scripts/orchestration/, agents/meta/ or install.sh changed -- forbidden by this sub-spec's invariants"; ok=1; }
+  return $ok
+}
+
+# =============================================================================
+# terminology-01 / terminology-02 / terminology-03
+# (style-rewrite/06-terminology): the `<change-slug>` -> `<slug>` unification
+# at the seven sites with the suite pins following; the one-form-per-concept
+# sweep with its declared exemptions; the Working-Root triplication as a
+# documented, pinned editing rule.
+# =============================================================================
+
+# The seven rewritten sites, each pinned inside its own section's extract.
+SPEC_HEADING='## Output, written to `spdd/changes/<slug>/`'
+SPEC_OPENQ='Write open questions, if any, to the fixed file `spdd/changes/<slug>/OPEN_QUESTIONS.md` rather than inlining them elsewhere, and only create it when something is actually blocked.'
+CODER_OWNS_LINE='- Implementation of one approved sub-spec, starting from `spdd/changes/<slug>/` and existing `spdd/specs/` for context.'
+CODER_STOP_LINE='- If `spdd/changes/<slug>/` doesn'"'"'t exist in the working root, stop and report there'"'"'s no sub-spec to implement.'
+VERIFIER_STOP_LINE='- If `spdd/changes/<slug>/` doesn'"'"'t exist in the working root, stop and report there'"'"'s nothing to verify.'
+VERIFIER_MOVE_LINE='- After merge succeeds, move `spdd/changes/<slug>/` to `spdd/archive/<slug>/` unmodified — plain `mv` is the only mechanism, since `git mv` on untracked files always fails: nothing here is ever committed, and the orchestrator'"'"'s release gate only reads the working tree.'
+
+test_terminology_01() {
+  ok=0
+  # "change-slug" no longer appears in any of the four prompts.
+  for p in "$SPECIFIER_PROMPT" "$CODER_PROMPT" "$VERIFIER_PROMPT" "$ORCHESTRATOR_PROMPT"; do
+    refuse "$p" 'change-slug' || ok=1
+  done
+
+  # The seven sites read `<slug>`, each pinned at its own site: the specifier
+  # heading line and OPEN_QUESTIONS bullet, the coder's Owns and Input Rule
+  # bullets, the verifier's Input Rule, Merge & Archive move, and On Rejection
+  # lead bullets.
+  grep -qxF -- "$SPEC_HEADING" "$SPECIFIER_PROMPT" \
+    || { echo "  the specifier's Output heading does not read the <slug> form"; ok=1; }
+  require "$SPECIFIER_OUTPUT" "$SPEC_OPENQ" || ok=1
+  grep -qxF -- "$CODER_OWNS_LINE" "$CODER_PROMPT" || { echo "  the coder's Owns bullet is not the <slug> line"; ok=1; }
+  grep -qxF -- "$CODER_STOP_LINE" "$CODER_INPUT" || { echo "  the coder's missing-change-dir bullet is not the <slug> line"; ok=1; }
+  grep -qxF -- "$VERIFIER_STOP_LINE" "$VERIFIER_INPUT" || { echo "  the verifier's missing-change-dir bullet is not the <slug> line"; ok=1; }
+  grep -qxF -- "$VERIFIER_MOVE_LINE" "$VERIFIER_MERGE" || { echo "  the verifier's archive-move bullet is not the <slug> line"; ok=1; }
+  grep -qxF -- "$REJECT_LEAD" "$VERIFIER_REJECT" || { echo "  the verifier's On Rejection lead line does not read the <slug> path"; ok=1; }
+
+  # The machine-line formats are untouched by the sweep (hard constraints):
+  # the delegation-header lines and the flow subcommand invocations, the
+  # probe's output line, and the receipt/closing-block grammars survive
+  # verbatim where they live.
+  require "$ORCHESTRATOR_PROMPT" 'Working root: <repo root absolute path>' || ok=1
+  require "$ORCHESTRATOR_PROMPT" 'Change slug: <slug>' || ok=1
+  require "$ORCHESTRATOR_PROMPT" 'ensure <slug>' || ok=1
+  require "$ORCHESTRATOR_PROMPT" 'state <slug> <probe-tempfile>' || ok=1
+  require "$ORCHESTRATOR_PROMPT" 'release <slug>' || ok=1
+  require "$ORCHESTRATOR_PROMPT" 'subspec=<file> ids=<id,id,...> receipt=<file|missing> covered=<n>/<N> complete=<yes|no> class=<done|blocked|in_progress>' || ok=1
+  require "$ORCHESTRATOR_PROMPT" 'state=checkout_refused' || ok=1
+  require "$ORCHESTRATOR_PROMPT" 'gate=refused reason=' || ok=1
+  require "$CODER_RECEIPT" 'test_command=<discovered unit-suite run command>' || ok=1
+  require "$CODER_RECEIPT" 'id=<feature>-<index> result=<green|skip|blocked> reason=<text>' || ok=1
+  for p in "$SPECIFIER_PROMPT" "$CODER_PROMPT" "$VERIFIER_PROMPT" "$ORCHESTRATOR_PROMPT"; do
+    require "$p" '`status=<value>`' || ok=1
+    require "$p" '`ids=<id,id,...>`' || ok=1
+    require "$p" '`results=<value>`' || ok=1
+  done
+
+  # The suite pins follow in the same change (static pins -- this suite must
+  # not run rolechecks_test.sh, which runs this one; the whole-suite run
+  # establishes their green): closingblock's specifier extract anchor is
+  # re-keyed on the new heading text, and rolechecks-03/04's byte-identity
+  # windows on the changed verifier bullets are born gated on the
+  # change_pending pattern.
+  require "$SCRIPT_DIR/tests/closingblock_test.sh" 'extract_section "$SPECIFIER_PROMPT" '"'"'Output, written to `spdd/changes/<slug>/`'"'"' "$SPECIFIER_REPORT"' || ok=1
+  require "$SCRIPT_DIR/tests/rolechecks_test.sh" 'b1_slug_rewrite_pending' || ok=1
+  require "$SCRIPT_DIR/tests/rolechecks_test.sh" 'm1_slug_rewrite_pending' || ok=1
+  return $ok
+}
+
+test_terminology_02() {
+  ok=0
+  # The sweep: no variant spelling of the four concepts survives in any
+  # prompt. `sub-spec` is the one form (never "sub spec" or "subspecs"),
+  # `client` is the one word for what the delegation runs on (never
+  # "framework" -- mechanically: the word appears nowhere in the prompts),
+  # and the slug placeholder is `<slug>` everywhere prose names it.
+  for p in "$SPECIFIER_PROMPT" "$CODER_PROMPT" "$VERIFIER_PROMPT" "$ORCHESTRATOR_PROMPT"; do
+    refuse "$p" 'sub spec' || ok=1
+    refuse "$p" 'subspecs' || ok=1
+    if grep -qiF -- 'framework' "$p"; then
+      echo "  found forbidden text (the client concept): framework"
+      ok=1
+    fi
+    refuse "$p" '<change-slug>' || ok=1
+  done
+
+  # The sweep's declared exemptions hold untouched: the probe-output tokens
+  # subspec= and <subspec-file>= (machine-line formats) are still there, the
+  # delegation-header line "Working root: <repo root absolute path>" is
+  # byte-intact, and the orchestrator's "main checkout" descriptions survive.
+  require "$ORCHESTRATOR_PROMPT" 'subspec=' || ok=1
+  require "$ORCHESTRATOR_PROMPT" '<subspec-file>=' || ok=1
+  require "$ORCHESTRATOR_PROMPT" 'Working root: <repo root absolute path>' || ok=1
+  require "$ORCHESTRATOR_PROMPT" 'main checkout' || ok=1
+
+  # The sweep is a test named after this scenario id, so a future variant
+  # spelling fails it.
+  grep -qF 'run_test "terminology-02:' "$SCRIPT_DIR/tests/roles_test.sh" \
+    || { echo "  no reported test name carrying the terminology-02 id"; ok=1; }
+  return $ok
+}
+
+test_terminology_03() {
+  ok=0
+  # The triplication is real: all three role prompts carry a "## Working
+  # Root" section, and the three extracts are byte-identical to each other,
+  # so any future edit touching fewer than three sites fails this test.
+  [ -s "$WR_SPECIFIER" ] && [ -s "$WR_CODER" ] && [ -s "$WR_VERIFIER" ] \
+    || { echo "  a role prompt has no ## Working Root section (empty extract)"; ok=1; }
+  cmp -s "$WR_SPECIFIER" "$WR_CODER" \
+    || { echo "  the specifier's and coder's ## Working Root sections differ"; diff "$WR_SPECIFIER" "$WR_CODER" | head -4; ok=1; }
+  cmp -s "$WR_SPECIFIER" "$WR_VERIFIER" \
+    || { echo "  the specifier's and verifier's ## Working Root sections differ"; diff "$WR_SPECIFIER" "$WR_VERIFIER" | head -4; ok=1; }
+  # The sections are the working-root law, not an empty shell.
+  require "$WR_SPECIFIER" '**Working Root**' || ok=1
+  require "$WR_SPECIFIER" "cd '<working-root>'" || ok=1
+  # The tripulation is the three ROLE prompts: the orchestrator carries no
+  # "## Working Root" section of its own.
+  n=$(grep -c '^## Working Root$' "$ORCHESTRATOR_PROMPT")
+  [ "$n" -eq 0 ] || { echo "  orchestrator.prompt carries a ## Working Root section ($n), expected none"; ok=1; }
+
+  # The editing rule is documented: AGENTS.md and CLAUDE.md each carry one
+  # new gotcha bullet, byte-identical between the two files, stating the
+  # verbatim tripulation on purpose (per-prompt autonomy) and the all-three-
+  # sites editing rule.
+  A_TRIP=$(mktemp)
+  C_TRIP=$(mktemp)
+  extract_bullet_line "$AGENTS_MD" '- Working-Root triplication' "$A_TRIP"
+  extract_bullet_line "$CLAUDE_MD" '- Working-Root triplication' "$C_TRIP"
+  n_a=$(grep -c '^- Working-Root triplication' "$AGENTS_MD")
+  n_c=$(grep -c '^- Working-Root triplication' "$CLAUDE_MD")
+  [ "$n_a" -eq 1 ] || { echo "  AGENTS.md has $n_a Working-Root-triplication bullets, expected exactly 1"; ok=1; }
+  [ "$n_c" -eq 1 ] || { echo "  CLAUDE.md has $n_c Working-Root-triplication bullets, expected exactly 1"; ok=1; }
+  [ -s "$A_TRIP" ] || { echo "  AGENTS.md has no Working-Root triplication gotcha bullet"; ok=1; }
+  [ -s "$C_TRIP" ] || { echo "  CLAUDE.md has no Working-Root triplication gotcha bullet"; ok=1; }
+  cmp -s "$A_TRIP" "$C_TRIP" \
+    || { echo "  Working-Root tripulation bullet differs between AGENTS.md and CLAUDE.md"; diff "$A_TRIP" "$C_TRIP" | head -4; ok=1; }
+  for b in "$A_TRIP" "$C_TRIP"; do
+    require "$b" '`## Working Root`' || ok=1
+    require "$b" 'duplicated verbatim across the three role prompts (specifier, coder, verifier)' || ok=1
+    require "$b" 'on purpose' || ok=1
+    require "$b" 'per-prompt autonomy' || ok=1
+    require "$b" 'every future edit' || ok=1
+    require "$b" 'all three sites' || ok=1
+  done
+  rm -f "$A_TRIP" "$C_TRIP"
+
+  # The new docs bullet is additive: the docs' existing gotcha bullets pass
+  # their own suites with the new line in place (closing-block bullet:
+  # closingblock-04; receipt-convention bullet: receipts-10; access-model,
+  # skills-activation, and Structure bullets: their suites; the write-
+  # surface bullet: roles-04, which runs in this very suite).
+  for t in closingblock_test.sh receipts_test.sh access-model_test.sh skills-activation-docs_test.sh repodocs_test.sh; do
+    sh "$SCRIPT_DIR/tests/$t" >/dev/null 2>&1 \
+      || { echo "  $t no longer passes with the new docs bullet"; ok=1; }
+  done
+  return $ok
+}
+
 # ---- run everything ----------------------------------------------------------
 
 run_test "roles-01: the coder's Input Rule ownership bullet states the surface by write surface, the read-surface phrasing is gone, the other four bullets keep their meaning" test_roles_01
@@ -296,6 +603,11 @@ run_test "roles-02: the Owns line, the rewritten bullet, and the Receipt section
 run_test "roles-03: the verifier's archive move is a plain mv as the only mechanism with its reason stated; git mv is no longer offered; the rest of Merge & Archive stands" test_roles_03
 run_test "roles-04: the strict-ownership gotcha bullet follows the write-surface contract, byte-identical in AGENTS.md and CLAUDE.md, with the old claims gone from both docs" test_roles_04
 run_test "roles-05: the additive-vs-HEAD prompt guards are retired loudly, no other test pins the removed wording, and the surrounding suites stay green" test_roles_05
+run_test "verifier-01: the ## On Rejection opening bullet is a lead line plus a short list — same duty, exact heading, probe-counts reason, blockers content, unchanged attribution, no run-on nesting" test_verifier_01
+run_test "verifier-02: the new pins live in tests/roles_test.sh, the old run-on strings are refused, and the probe suite passes unmodified with the machine surfaces byte-unchanged" test_verifier_02
+run_test "terminology-01: change-slug is gone from all four prompts, the seven sites read <slug>, the machine-line formats are byte-untouched, and the closingblock/rolechecks pins follow in the same change" test_terminology_01
+run_test "terminology-02: the four prompts carry one form per concept (no sub spec/subspecs variants, no framework-where-client-is-meant, <slug> everywhere prose names it) and the declared machine-format/byte-pinned exemptions hold" test_terminology_02
+run_test "terminology-03: the three role prompts' ## Working Root sections are byte-identical, AGENTS.md and CLAUDE.md carry one identical gotcha bullet stating the triplication editing rule, and the existing docs bullets pass their suites" test_terminology_03
 
 echo ""
 echo "$pass_count passed, $fail_count failed"

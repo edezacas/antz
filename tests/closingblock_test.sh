@@ -33,6 +33,21 @@
 #   closingblock-07    -- the entry grades minor, stated and justified
 #                         against the versioning table.
 #
+# Amended by change style-rewrite (sub-spec 02-coder): the coder's report
+# duty (the receipt-naming bullet + the closing-block bullet) folds out of
+# the "## Output" orphan list into "## Receipt"; the closing-block bullet
+# becomes a short list; the mirror clause is stated exactly once in the
+# prompt, in the folded list. The coder's report-section extract anchor
+# moves from "Output" to "Receipt" (the closingblock-01..04 coder checks keep
+# the same required strings). New scenarios coder-01..04
+# (spdd/changes/style-rewrite/02-coder.feature) are tested below, each
+# reported test name embedding its scenario id.
+#
+# Amended again by style-rewrite sub-spec 06-terminology (terminology-01):
+# the specifier's Output heading re-keys `<change-slug>` -> `<slug>`, so the
+# specifier report-section extract anchor re-keys on the new heading text
+# (the closingblock-01/02/04 specifier checks keep the same required strings).
+#
 # VERSION is NOT pinned as a byte-exact literal: the repo recorded lesson
 # (tests/docs-bump_test.sh comments -- its "asserted VERSION == 4.0.0" pin
 # broke on the next bump) is that a cross-change pin breaks on the next
@@ -123,16 +138,30 @@ extract_section() {
 # ---- report-section extracts -------------------------------------------------
 # Each role's report section, extracted once so every test reads only the
 # scoped text (a required phrase elsewhere in the prompt must never satisfy
-# a report-section assertion).
+# a report-section assertion). The coder's report-closing duty lives in its
+# "## Receipt" section since the style-rewrite 02 orphan fold (it used to be
+# keyed on "Output").
 
 SPECIFIER_REPORT=$(mktemp)
 CODER_REPORT=$(mktemp)
 VERIFIER_REPORT=$(mktemp)
 ORCHESTRATOR_REPORT=$(mktemp)
-extract_section "$SPECIFIER_PROMPT" 'Output, written to `spdd/changes/<change-slug>/`' "$SPECIFIER_REPORT"
-extract_section "$CODER_PROMPT" "Output" "$CODER_REPORT"
+extract_section "$SPECIFIER_PROMPT" 'Output, written to `spdd/changes/<slug>/`' "$SPECIFIER_REPORT"
+extract_section "$CODER_PROMPT" "Receipt" "$CODER_REPORT"
 extract_section "$VERIFIER_PROMPT" "Report Format" "$VERIFIER_REPORT"
 extract_section "$ORCHESTRATOR_PROMPT" "Report Format" "$ORCHESTRATOR_REPORT"
+
+# style-rewrite sub-spec 02 extracts (the coder's report duty moved under
+# "## Receipt"): the Receipt section as it stands, and inside it the folded
+# closing-block list -- from its intro bullet to (excluding) the section's
+# final bullet. Keyed on the Receipt section, not the prompt at large, so the
+# pre-fold orphan bullet can never satisfy these checks.
+CODER_RECEIPT_SEC=$(mktemp)
+CODER_CLOSING_REGION=$(mktemp)
+extract_section "$CODER_PROMPT" "Receipt" "$CODER_RECEIPT_SEC"
+awk '/^- End your report with a closing block/ {flag=1; print; next}
+     flag && /^- / {flag=0}
+     flag {print}' "$CODER_RECEIPT_SEC" > "$CODER_CLOSING_REGION"
 
 # The AGENTS.md/CLAUDE.md closing-block gotcha bullet (single line each),
 # extracted by its fixed prefix so a stray phrase elsewhere in the docs can
@@ -506,6 +535,188 @@ test_meta_files_byte_unchanged() {
   return $ok
 }
 
+# =============================================================================
+# style-rewrite sub-spec 02 (spdd/changes/style-rewrite/02-coder.feature):
+# coder-01 the orphan fold + short list; coder-02 the reworded final
+# statement; coder-03 the mirror clause exactly once, in the folded list;
+# coder-04 the suites follow the fold (anchor moved, receipts suite intact).
+# =============================================================================
+
+check_short_list_region() {
+  # $1 = file: no line has parentheses nested deeper than one level, and no
+  # line carries unbalanced parens (each parenthetical lives on one line).
+  awk '
+    {
+      d = 0; m = 0; n = split($0, ch, "")
+      for (i = 1; i <= n; i++) {
+        if (ch[i] == "(") { d++; if (d > m) m = d }
+        else if (ch[i] == ")") { d--; if (d < 0) m = 99 }
+      }
+      if (m > 1 || d != 0) { print "  parens deeper than one level (or unbalanced): " $0; bad = 1 }
+    }
+    END { exit bad ? 1 : 0 }
+  ' "$1"
+}
+
+test_coder_01_orphan_bullets_fold_into_receipt_as_short_list() {
+  ok=0
+  # "## Output" keeps exactly the two surviving bullets: the files-changed
+  # bullet and the skills bullet -- the blank-line orphan gap is gone (no
+  # further non-blank content in the section).
+  OUT_SEC=$(mktemp)
+  extract_section "$CODER_PROMPT" "Output" "$OUT_SEC"
+  bullets=$(grep -c '^- ' "$OUT_SEC")
+  nonblank=$(grep -c '[^[:space:]]' "$OUT_SEC")
+  if [ "$bullets" -ne 2 ] || [ "$nonblank" -ne 2 ]; then
+    echo "  ## Output holds $bullets bullets / $nonblank non-blank lines, expected exactly 2/2 (the orphan fold left residue or took a survivor)"
+    ok=1
+  fi
+  require "$OUT_SEC" 'Files changed' || ok=1
+  require "$OUT_SEC" 'skills were activated' || ok=1
+  rm -f "$OUT_SEC"
+  # The receipt-naming bullet moved under "## Receipt", content kept (it
+  # names the receipt the report must cite, because the receipt is the
+  # classification authority on disk).
+  require "$CODER_RECEIPT_SEC" 'Name the receipt file you wrote or updated' || ok=1
+  require "$CODER_RECEIPT_SEC" 'receipt file you wrote or updated (see `## Receipt`) in this report body' || ok=1
+  require "$CODER_RECEIPT_SEC" 'the receipt must be named explicitly so the reader can find the classification authority on disk' || ok=1
+  # The closing-block bullet is now a short list under "## Receipt": an intro
+  # plus at least one item per closing-block line and the match rule. The
+  # intro bullet itself stays short (the 100-130-word sentence is gone).
+  if [ ! -s "$CODER_CLOSING_REGION" ]; then
+    echo "  the closing-block list does not live under \"## Receipt\""
+    ok=1
+  else
+    items=$(grep -c '^  - ' "$CODER_CLOSING_REGION")
+    if [ "$items" -lt 4 ]; then
+      echo "  the closing-block region holds $items list items, expected at least 4 (one per line + the match rule)"
+      ok=1
+    fi
+    intro_words=$(head -n 1 "$CODER_CLOSING_REGION" | wc -w)
+    if [ "$intro_words" -ge 40 ]; then
+      echo "  the closing-block intro is still a $intro_words-word sentence, expected a short lead line"
+      ok=1
+    fi
+    # Every pinned string survives, each on a single line of the region.
+    require "$CODER_CLOSING_REGION" 'closing block' || ok=1
+    require "$CODER_CLOSING_REGION" 'three consecutive lines' || ok=1
+    require "$CODER_CLOSING_REGION" '`status=<value>`' || ok=1
+    require "$CODER_CLOSING_REGION" '`ids=<id,id,...>`' || ok=1
+    require "$CODER_CLOSING_REGION" '`results=<value>`' || ok=1
+    require "$CODER_CLOSING_REGION" 'grep-able' || ok=1
+    require "$CODER_CLOSING_REGION" '`done`' || ok=1
+    require "$CODER_CLOSING_REGION" '`blocked`' || ok=1
+    require "$CODER_CLOSING_REGION" "your sub-spec's declared ids" || ok=1
+    require "$CODER_CLOSING_REGION" 'id=<id> result=<green|skip|blocked>' || ok=1
+    require "$CODER_CLOSING_REGION" 'mirroring your receipt' || ok=1
+    require "$CODER_CLOSING_REGION" 'in receipt order' || ok=1
+    require "$CODER_CLOSING_REGION" 'match' || ok=1
+    require "$CODER_CLOSING_REGION" 'exactly' || ok=1
+    require "$CODER_CLOSING_REGION" 'the disk receipt is the authority' || ok=1
+    require "$CODER_CLOSING_REGION" 'REJECTED.md' || ok=1
+    require "$CODER_CLOSING_REGION" 'status=blocked' || ok=1
+    require "$CODER_CLOSING_REGION" 'BLOCKED:' || ok=1
+    require "$CODER_CLOSING_REGION" 'closes honestly' || ok=1
+    # The full duty still reads out of the list: exact match of the results=
+    # tokens against the receipt's id lines, the deviation-is-a-bug rule with
+    # the bounded REJECTED.md retry, and the honest refused-session close.
+    require "$CODER_CLOSING_REGION" 'deviation between the block and the receipt is a bug' || ok=1
+    require "$CODER_CLOSING_REGION" 'bounded' || ok=1
+    require "$CODER_CLOSING_REGION" 'refused before touching the sub-spec still closes honestly' || ok=1
+    require "$CODER_CLOSING_REGION" 'reason in the report prose' || ok=1
+    # No item carries parentheses nested deeper than one level.
+    check_short_list_region "$CODER_CLOSING_REGION" || ok=1
+  fi
+  return $ok
+}
+
+test_coder_03_mirror_clause_stated_exactly_once_in_the_folded_list() {
+  ok=0
+  for s in 'The block is a mirror only' \
+           'no routing, count, or decision ever derives from it' \
+           'the receipt is the authority'; do
+    n=$(grep -oF -- "$s" "$CODER_PROMPT" | wc -l)
+    if [ "$n" -ne 1 ]; then
+      echo "  '$s' occurs $n times in coder.prompt, expected exactly 1"
+      ok=1
+    fi
+    require "$CODER_CLOSING_REGION" "$s" || ok=1
+  done
+  return $ok
+}
+
+test_coder_02_receipt_closing_statement_keeps_authority_drops_restatement() {
+  ok=0
+  # The "## Receipt" section's final bullet still states the
+  # classification-authority duty...
+  LAST_BULLET=$(mktemp)
+  lastln=$(grep -n '^- ' "$CODER_RECEIPT_SEC" | tail -n 1 | cut -d: -f1)
+  [ -n "$lastln" ] && sed -n "${lastln},\$p" "$CODER_RECEIPT_SEC" > "$LAST_BULLET"
+  require "$LAST_BULLET" 'The disk receipt is the classification authority' || ok=1
+  require "$LAST_BULLET" 'classifies sub-specs by reading receipts instead of running the unit' || ok=1
+  # ...and the mirror clause's variant restatements are gone from the whole
+  # prompt (the folded list states the clause once; this bullet no longer
+  # restates it in other words).
+  refuse "$CODER_PROMPT" 'mirrors the receipt only' || ok=1
+  refuse "$CODER_PROMPT" 'the receipt is what routes' || ok=1
+  rm -f "$LAST_BULLET"
+  return $ok
+}
+
+test_coder_04_closingblock_anchor_follows_fold_receipts_suite_untouched() {
+  ok=0
+  SUITE="$SCRIPT_DIR/tests/closingblock_test.sh"
+  # The coder's report-section extract is keyed on the "Receipt" heading now,
+  # so the closingblock-01..04 coder checks read the folded list.
+  grep -qF "extract_section \"\$CODER_PROMPT\" \"Receipt\" \"\$CODER_REPORT\"" "$SUITE" \
+    || { echo "  closingblock_test.sh still keys the coder's report extract on \"Output\""; ok=1; }
+  HEAD_SUITE=$(mktemp)
+  if ! git -C "$SCRIPT_DIR" show HEAD:tests/closingblock_test.sh > "$HEAD_SUITE" 2>/dev/null; then
+    echo "  cannot read HEAD:tests/closingblock_test.sh"; rm -f "$HEAD_SUITE"; return 1
+  fi
+  # The verifier and orchestrator extract lines are unchanged, and the coder
+  # checks keep the same required strings as before (new scope, same pins) --
+  # both verified against HEAD's copy of the suite. The SPECIFIER extract
+  # line is the exception style-rewrite terminology-01 re-keys (its heading
+  # text moves `<change-slug>` -> `<slug>`): a window born gated on the
+  # change_pending pattern -- enforced while this suite differs from HEAD AND
+  # HEAD's SPECIFIER extract line still reads `<change-slug>`, requiring the
+  # working line to equal HEAD's with exactly the placeholder rewrite
+  # applied; retired with a loud note once HEAD carries the rewrite (the
+  # closingblock-01/02/04 specifier content checks, reading the re-keyed
+  # section, stay enforced in every state).
+  for role in VERIFIER ORCHESTRATOR; do
+    a=$(grep -F "extract_section \"\$${role}_PROMPT\"" "$HEAD_SUITE")
+    b=$(grep -F "extract_section \"\$${role}_PROMPT\"" "$SUITE")
+    [ "$a" = "$b" ] || { echo "  the $role extract line changed (must stay unchanged)"; ok=1; }
+  done
+  sa=$(grep '^extract_section "\$SPECIFIER_PROMPT"' "$HEAD_SUITE")
+  sb=$(grep '^extract_section "\$SPECIFIER_PROMPT"' "$SUITE")
+  if ! git -C "$SCRIPT_DIR" diff --quiet HEAD -- tests/closingblock_test.sh 2>/dev/null \
+       && printf '%s\n' "$sa" | grep -qF 'change-slug'; then
+    if [ "$sb" != "$(printf '%s\n' "$sa" | sed -e 's|<change-slug>|<slug>|g')" ]; then
+      echo "  the SPECIFIER extract line changed beyond the <change-slug> -> <slug> re-key"
+      ok=1
+    fi
+  else
+    echo "  note: the specifier-heading re-key is committed vs HEAD (or HEAD's extract line no longer reads \`<change-slug>\`); the SPECIFIER extract-line window is vacuously retired, the content checks stay enforced"
+  fi
+  pat="require \"\$CODER_REPORT\""
+  ca=$(grep -F "$pat" "$HEAD_SUITE")
+  cb=$(grep -F "$pat" "$SUITE")
+  [ "$ca" = "$cb" ] \
+    || { echo "  the coder checks' required strings differ from HEAD's (same strings, moved scope only)"; ok=1; }
+  rm -f "$HEAD_SUITE"
+  # tests/receipts_test.sh passes unmodified: byte-identical to HEAD's copy...
+  git -C "$SCRIPT_DIR" diff --quiet HEAD -- tests/receipts_test.sh \
+    || { echo "  tests/receipts_test.sh was modified (this sub-spec verified it no-break)"; ok=1; }
+  # ...and exits 0 against the folded prompt (both suites exit 0: this very
+  # run is the closingblock half, the nested run the receipts half).
+  sh "$SCRIPT_DIR/tests/receipts_test.sh" > /dev/null 2>&1 \
+    || { echo "  tests/receipts_test.sh exits non-zero against the folded prompt"; ok=1; }
+  return $ok
+}
+
 # ---- run everything -----------------------------------------------------------
 
 run_test "closingblock-01: the specifier prompt's report section requires the three-line closing block, a mirror only, with the receipt as authority" test_closingblock_01_specifier_report_requires_block
@@ -531,6 +742,10 @@ run_test "closingblock-06: the [4.3.0] entry describes change 3 -- the coder-wri
 run_test "closingblock-06: the [4.3.0] entry describes the closing-block convention (a mirror only)" test_closingblock_06_entry_describes_closing_block
 run_test "closingblock-06: every CHANGELOG entry other than this change's own (the [4.2.1]-down tail) is byte-untouched versus git HEAD" test_closingblock_06_earlier_entries_byte_untouched
 run_test "closingblock-07: the [4.3.0] entry grades minor with the versioning-table justification -- not patch (not wording-only), not major (contract/marker format/access model/directory layout/install locations unchanged, the receipt file additive)" test_closingblock_07_entry_grades_minor_with_justification
+run_test "coder-01: the two orphan bullets fold into ## Receipt -- ## Output keeps exactly the two surviving bullets, the receipt-naming bullet keeps its content, and the closing-block bullet becomes a short list carrying every pinned string" test_coder_01_orphan_bullets_fold_into_receipt_as_short_list
+run_test "coder-02: the ## Receipt final bullet still states the classification-authority duty, and the mirror clause's variant restatements are gone from the whole prompt" test_coder_02_receipt_closing_statement_keeps_authority_drops_restatement
+run_test "coder-03: the mirror clause strings each occur exactly once in coder.prompt and the single occurrence lives in the folded closing-block list under ## Receipt" test_coder_03_mirror_clause_stated_exactly_once_in_the_folded_list
+run_test "coder-04: closingblock_test.sh keys the coder's report extract on Receipt with the same required strings and the other three extracts unchanged, and tests/receipts_test.sh passes unmodified (both suites exit 0)" test_coder_04_closingblock_anchor_follows_fold_receipts_suite_untouched
 run_test "invariant: agents/meta/* are byte-for-byte unchanged versus git HEAD" test_meta_files_byte_unchanged
 
 # ---- e2e-only scenario: explicit SKIP stub -----------------------------------
@@ -545,7 +760,8 @@ skip_test "e2e-05: against pre-change 4.2.1 installed copies, --check reports th
   "e2e-only: live install / drift-report semantics, run by the verifier (07-e2e.feature)"
 
 rm -f "$SPECIFIER_REPORT" "$CODER_REPORT" "$VERIFIER_REPORT" "$ORCHESTRATOR_REPORT" \
-  "$AGENTS_CLOSING" "$CLAUDE_CLOSING" "$CHANGELOG_ENTRY"
+  "$AGENTS_CLOSING" "$CLAUDE_CLOSING" "$CHANGELOG_ENTRY" \
+  "$CODER_RECEIPT_SEC" "$CODER_CLOSING_REGION"
 
 echo ""
 echo "$pass_count passed, $fail_count failed, $skip_count skipped (e2e-only, see 07-e2e.feature)"

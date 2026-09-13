@@ -518,6 +518,47 @@ e2e series existed, so ids start at 01).
       "install.sh", "VERSION", and "CHANGELOG.md" each match their committed
       states again
 
+## Feature: VERSION bumped to 4.7.1 with a matching CHANGELOG.md entry describing the style rewrite, graded patch (from 07-bump471.feature, change `style-rewrite`)
+
+  Background:
+    Given "spdd/specs/versioning.md" as the governing policy: a commit
+      changing "agents/prompts/", "agents/meta/", or "install.sh" bumps
+      "VERSION" and adds a matching "CHANGELOG.md" entry in the same commit
+    And "VERSION" reads "4.7.0" at this change's start, with CHANGELOG.md's
+      newest entry "## [4.7.0] - 2026-09-13"
+
+  # ADD - bump471-01: the bump is present — VERSION reads 4.7.1 and
+  # CHANGELOG.md gains a matching [4.7.1] section above [4.7.0].
+  Scenario: bump471-01
+    When tests/bump471_test.sh runs
+    Then VERSION is a semver agreeing with the newest (topmost) CHANGELOG
+      entry — together pinning "VERSION reads exactly 4.7.1" today
+    And CHANGELOG.md carries exactly one dated "## [4.7.1] - <date>" heading
+      sitting above "## [4.7.0]"
+    And the [4.7.1] section describes the style rewrite
+    And the entry states the grade and its justification: patch — wording
+      only, no behavior change
+    And every entry from [4.7.0] down is byte-for-byte unchanged versus git
+      HEAD
+
+  # ADD - bump471-02: the working-vs-HEAD guards are born gated, and the
+  # no-commit law holds.
+  Scenario: bump471-02
+    When the flow's work sits uncommitted on the change's marker branch
+    Then the suite's install.sh-untouched and no-v4.7.1-tag checks are gated
+      on the change_pending predicate
+    And the suite never commits, never tags, and never mutates the working
+      tree
+    And the suite exits 0 in both the pending and the committed state
+
+  ### Invariants
+  - VERSION is never pinned as a cross-change literal.
+  - Every new working-vs-HEAD window is born gated on the change_pending
+    pattern.
+  - The grade is patch: agents/prompts/ wording only — no capability,
+    rendered surface, contract, or detection change; agents/meta/* and
+    install.sh are byte-unchanged across the whole change.
+
 ## Out of scope
 - Any edit to "install.sh" (including its stale line-21 header comment),
   "agents/prompts/", "agents/meta/", "VERSION", "tests/", "docs/",

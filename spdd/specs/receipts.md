@@ -244,6 +244,47 @@ wherever both exist.
       self-contained suite, tagged with this sub-spec's probealign ids
     And every other assertion of the suite keeps passing unchanged
 
+## Feature: the coder's report-closing duty lives in "## Receipt", stated once and listed (from 02-coder.feature, change `style-rewrite`)
+
+  Background:
+    Given "agents/prompts/coder.prompt" whose "## Output" section ends with a
+      blank line followed by two orphaned bullets, and whose "## Receipt"
+      section closes with the classification statement
+
+  # MODIFY - coder-01: the orphan bullets fold into "## Receipt"; the
+  # closing-block bullet becomes a short list carrying every pinned string.
+  Scenario: coder-01
+    When the two orphan bullets move under the "## Receipt" heading
+    Then the receipt-naming bullet keeps its content
+    And the closing-block bullet is rewritten as a short list that keeps every
+      pinned string
+    And the list still states the full duty
+    And no item carries nested parentheticals deeper than one level
+
+  # MODIFY - coder-02: the Receipt section's closing statement keeps the
+  # classification-authority meaning and drops the variant restatement.
+  Scenario: coder-02
+    When the "## Receipt" section's final bullet is reworded
+    Then it still states that the disk receipt is the classification authority
+    And the variant restatements no longer appear anywhere in the prompt
+
+  # ADD - coder-03: the mirror clause is stated exactly once in the prompt.
+  Scenario: coder-03
+    When the whole of agents/prompts/coder.prompt is read
+    Then each of these strings appears exactly once: "The block is a mirror
+      only", "no routing, count, or decision ever derives from it", and "the
+      receipt is the authority"
+    And each single occurrence lives in the folded closing-block list under
+      "## Receipt"
+
+  # MODIFY - coder-04: the closingblock suite follows the fold loudly.
+  Scenario: coder-04
+    When tests/closingblock_test.sh is updated in the same change and runs
+    Then the coder's report-section extract is keyed on the "Receipt"
+      heading instead of "Output"
+    And tests/receipts_test.sh passes unmodified
+    And both suites exit 0
+
 ## Out of scope
 - A formalized Result Contract beyond the receipt grammar and the closing
   block: no new cross-role status protocol, no receipt-derived merge artifacts

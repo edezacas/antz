@@ -738,6 +738,51 @@ SKILL.md exists and reads in full at ~/.agents/skills/); their live-session
 - "spdd/archive/skills-desc-match/" — the delivering change of the
   descmatch layer and the 4.2.1 bump, preserved for history.
 
+## Feature: each skills-mandate line is mandatory-reporting only; the mirror principle is stated once per prompt (from 04-skillsline.feature, change `style-rewrite`)
+
+  Background:
+    Given "agents/prompts/coder.prompt"'s "## Output" skills bullet and
+      "agents/prompts/verifier.prompt"'s "## Report Format" skills bullet,
+      each ending with the mirror tail
+
+  # MODIFY - skillsline-01: the coder's skills bullet keeps the
+  # mandatory-reporting rule and drops the duplicated mirror tail.
+  Scenario: skillsline-01
+    When the coder's skills bullet is reworded
+    Then it still states that the report says which skills were activated (by
+      name) or that none matched — a mandatory line, never silently omitted
+    And it no longer ends with the mirror tail
+
+  # MODIFY - skillsline-02: the verifier's skills bullet gets the same edit.
+  Scenario: skillsline-02
+    When the verifier's skills bullet is reworded
+    Then it still states that the report says which skills were activated (by
+      name) or that none matched — a mandatory line, never silently omitted
+    And it no longer ends with the mirror tail
+
+  # ADD - skillsline-03: the mirror principle is now stated exactly once per
+  # prompt, at the closing-block mirror statement.
+  Scenario: skillsline-03
+    When each of the four prompts is read whole
+    Then the string "never an input to any routing state or count" appears
+      exactly once in each of specifier.prompt, coder.prompt,
+      verifier.prompt, and orchestrator.prompt
+    And the string "disk state" appears exactly once in coder.prompt and
+      verifier.prompt
+    And in coder.prompt and verifier.prompt the single occurrence lives in
+      the closing-block mirror statement, not in a skills bullet
+
+  # MODIFY - skillsline-04: the skills suite follows, loudly and per role.
+  Scenario: skillsline-04
+    When tests/skills-activation-prompts_test.sh is updated and runs
+    Then prompts-06's single test is split into per-role halves (coder and
+      verifier)
+    And each half keeps the mandatory-line pins and moves the not-a-routing-input
+      pins to whole-prompt single-occurrence counts
+    And the suite's other tests pass unmodified
+    And tests/skills-activation-docs_test.sh passes unmodified
+    And both suites exit 0
+
 ## Implementation caution (verifier, 2026-09-11) — RESOLVED by skills-desc-match
 - The `antz-skills.sh` snippet matched against the whole YAML frontmatter
   block (lowercased), not strictly the `description:` field — a keyword
