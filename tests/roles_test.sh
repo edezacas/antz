@@ -429,12 +429,17 @@ test_verifier_02() {
 
   # The rejection contract stays machine-countable: the probe suite passes
   # unmodified (its "## Rejection <n>" counting is script behavior), and the
-  # probe script, the meta files, and install.sh are byte-unchanged by this
-  # sub-spec.
+  # probe script and the meta files are byte-unchanged by this sub-spec.
+  # Split by change deembed-orchestration-scripts (testsuite-06): install.sh
+  # is no longer inside the byte-frozen guard -- THIS change legitimately
+  # edits it (the libdir install and the placeholder substitution are its
+  # subject), and its contract is pinned forever by the install suites
+  # (renderinject, libdirinstall, setmodeldeembed, sluglimit). Scripts and
+  # meta stay frozen: the machine surfaces these tests pin must not move.
   sh "$SCRIPT_DIR/tests/orchestrator-status-probe_test.sh" >/dev/null 2>&1 \
     || { echo "  tests/orchestrator-status-probe_test.sh no longer passes"; ok=1; }
-  git -C "$SCRIPT_DIR" diff --quiet HEAD -- scripts/orchestration/ agents/meta/ install.sh \
-    || { echo "  scripts/orchestration/, agents/meta/ or install.sh changed -- forbidden by this sub-spec's invariants"; ok=1; }
+  git -C "$SCRIPT_DIR" diff --quiet HEAD -- scripts/orchestration/ agents/meta/ \
+    || { echo "  scripts/orchestration/ or agents/meta/ changed -- forbidden by this sub-spec's invariants"; ok=1; }
   return $ok
 }
 
@@ -481,7 +486,9 @@ test_terminology_01() {
   require "$ORCHESTRATOR_PROMPT" 'Working root: <repo root absolute path>' || ok=1
   require "$ORCHESTRATOR_PROMPT" 'Change slug: <slug>' || ok=1
   require "$ORCHESTRATOR_PROMPT" 'ensure <slug>' || ok=1
-  require "$ORCHESTRATOR_PROMPT" 'state <slug> <probe-tempfile>' || ok=1
+  # Re-keyed by change deembed-orchestration-scripts (testsuite-06): the
+  # state invocation names the probe by path, not a tempfile argument.
+  require "$ORCHESTRATOR_PROMPT" 'state <slug> "__ANTZ_SCRIPTS_DIR__/antz-probe.sh"' || ok=1
   require "$ORCHESTRATOR_PROMPT" 'release <slug>' || ok=1
   require "$ORCHESTRATOR_PROMPT" 'subspec=<file> ids=<id,id,...> receipt=<file|missing> covered=<n>/<N> complete=<yes|no> class=<done|blocked|in_progress>' || ok=1
   require "$ORCHESTRATOR_PROMPT" 'state=checkout_refused' || ok=1
@@ -602,12 +609,110 @@ run_test "roles-01: the coder's Input Rule ownership bullet states the surface b
 run_test "roles-02: the Owns line, the rewritten bullet, and the Receipt section name the same surfaces; the receipt duty is untouched" test_roles_02
 run_test "roles-03: the verifier's archive move is a plain mv as the only mechanism with its reason stated; git mv is no longer offered; the rest of Merge & Archive stands" test_roles_03
 run_test "roles-04: the strict-ownership gotcha bullet follows the write-surface contract, byte-identical in AGENTS.md and CLAUDE.md, with the old claims gone from both docs" test_roles_04
+# testsuite-06 (change deembed-orchestration-scripts): the invocation-form
+# hard constraints re-keyed. The state pin reads the path-based form, the
+# ensure/release pins keep their unchanged subcommand forms, no non-comment
+# line of the prompt or this suite still names the retired tempfile argument
+# (the needle is split below so this scan cannot match itself), and the
+# verifier-02 byte-frozen guard covers exactly the surfaces this change
+# leaves frozen.
+test_testsuite_06_roles_pins_rekeyed() {
+  ok=0
+  require "$ORCHESTRATOR_PROMPT" 'sh "__ANTZ_SCRIPTS_DIR__/antz-flow.sh" state <slug> "__ANTZ_SCRIPTS_DIR__/antz-probe.sh"' || ok=1
+  require "$ORCHESTRATOR_PROMPT" 'sh "__ANTZ_SCRIPTS_DIR__/antz-flow.sh" ensure <slug>' || ok=1
+  require "$ORCHESTRATOR_PROMPT" 'sh "__ANTZ_SCRIPTS_DIR__/antz-flow.sh" release <slug>' || ok=1
+  for t in "$ORCHESTRATOR_PROMPT" "$SCRIPT_DIR/tests/roles_test.sh"; do
+    if grep -v '^[[:space:]]*#' "$t" | grep -qF 'probe-temp''file'; then
+      echo "  a non-comment line still pins the retired tempfile-argument form"
+      ok=1
+    fi
+  done
+  require "$SCRIPT_DIR/tests/roles_test.sh" 'diff --quiet HEAD -- scripts/orchestration/ agents/meta/' || ok=1
+  return $ok
+}
+
 run_test "roles-05: the additive-vs-HEAD prompt guards are retired loudly, no other test pins the removed wording, and the surrounding suites stay green" test_roles_05
+# =============================================================================
+# testsuite-08 (change deembed-orchestration-scripts, sub-spec 05): whole-
+# suite coherence. Every suite exits 0 with its scenario ids reported; no
+# test extracts script content from agents/prompts/ or from any rendered
+# command body anymore (prompts and renders carry no marker and no script
+# fence at all, and the retired extractor helpers have no call sites
+# anywhere in tests/); scripts are tested as installed files and as sources.
+# Recursion-guarded like description-quoting's quoting-05 dynamic half: an
+# invocation already running inside another suite's full-suite glob (flag
+# set) returns 0 without re-globbing, and the two glob-running suites
+# (roles_test.sh itself = this file, description-quoting_test.sh = its own
+# dynamic half already proves the same coverage) are excluded from the loop.
+# =============================================================================
+test_testsuite_08_full_suite_coherence() {
+  if [ -n "${ANTZ_COHERENCE_INNER:-}" ]; then
+    echo "  note: invoked inside another suite's full-suite glob -- skipping the nested glob (recursion guard)"
+    return 0
+  fi
+  ok=0
+  d=$(mktemp -d)
+  for t in "$SCRIPT_DIR"/tests/*_test.sh; do
+    suite_name=$(basename -- "$t")
+    case "$suite_name" in
+      roles_test.sh) continue ;;  # self-recursion (this very suite)
+      description-quoting_test.sh) continue ;;  # its quoting-05 runs the full glob, this-file included
+    esac
+    out=$(ANTZ_COHERENCE_INNER=1 env -u XDG_CONFIG_HOME HOME="$d" sh "$t" 2>&1) \
+      || { echo "  suite failed: $suite_name"; printf '%s\n' "$out" | grep -E '^(FAIL|FATAL)' | head -5; ok=1; continue; }
+    printf '%s\n' "$out" | grep -qE '^(PASS|FAIL|SKIP): [a-z0-9-]+-[0-9]+' \
+      || { echo "  $suite_name reports no scenario ids"; ok=1; }
+  done
+  # The no-extraction surface: no prompt carries an include marker or a
+  # script-content fence; the retired extraction-era idioms exist nowhere in
+  # tests/'s non-comment lines -- the marker-substitution body rebuild
+  # (renderinject's old reconstruct, keyed by its ${line##...} idiom), the
+  # marker-tree assertion, and the fence walkers of the render-sync suite
+  # (needles split so this scan can't match itself; invocations_test.sh's
+  # same-named helper is the INVERTED oracle -- prompt+substitution with no
+  # marker idiom -- so it correctly survives this scan).
+  for p in "$SPECIFIER_PROMPT" "$CODER_PROMPT" "$VERIFIER_PROMPT" "$ORCHESTRATOR_PROMPT"; do
+    [ "$(grep -c '# antz-include:' "$p")" -eq 0 ] \
+      || { echo "  ${p##*/} carries an include marker"; ok=1; }
+    [ "$(grep -c '```sh' "$p")" -eq 0 ] \
+      || { echo "  ${p##*/} carries a script-content fence"; ok=1; }
+  done
+  subst_idiom='rel=${line##'"*'# antz-include"
+  for t in "$SCRIPT_DIR"/tests/*_test.sh; do
+    for needle in "$subst_idiom" 'assert_no_marker_''in_tree' 'extract_''fences' 'expected_''block'; do
+      n=$(grep -v '^[[:space:]]*#' "$t" | grep -cF -- "$needle" || true)
+      [ "$n" -eq 0 ] \
+        || { echo "  ${t##*/} still carries the retired script-extraction idiom ($needle)"; ok=1; }
+    done
+  done
+  # Scripts as installed files: a fresh hermetic render puts all four under
+  # the resolved libdir, and no rendered agent/command body carries a marker
+  # or script fence.
+  (cd "$SCRIPT_DIR" && env -u XDG_CONFIG_HOME HOME="$d/render-home" sh ./install.sh --all > "$d/render.log" 2>&1) \
+    || { echo "  hermetic render failed: $(head -3 "$d/render.log")"; ok=1; }
+  for s in antz-flow antz-probe antz-skills antz-set-model; do
+    [ -f "$d/render-home/.config/antz/scripts/$s.sh" ] \
+      || { echo "  installed libdir script missing: $s.sh"; ok=1; }
+  done
+  if grep -rq '```sh' "$d/render-home/.claude" "$d/render-home/.config/opencode" 2>/dev/null; then
+    echo "  a rendered client file still carries a script-content fence"
+    ok=1
+  fi
+  if grep -rq '# antz-include:' "$d/render-home" 2>/dev/null; then
+    echo "  a rendered file still carries an include marker"
+    ok=1
+  fi
+  rm -rf "$d"
+  return $ok
+}
+
+run_test "testsuite-08: the repo's full unit suite runs green with ids reported; no script content survives in prompts, renders, or extractor call sites" test_testsuite_08_full_suite_coherence
 run_test "verifier-01: the ## On Rejection opening bullet is a lead line plus a short list — same duty, exact heading, probe-counts reason, blockers content, unchanged attribution, no run-on nesting" test_verifier_01
 run_test "verifier-02: the new pins live in tests/roles_test.sh, the old run-on strings are refused, and the probe suite passes unmodified with the machine surfaces byte-unchanged" test_verifier_02
 run_test "terminology-01: change-slug is gone from all four prompts, the seven sites read <slug>, the machine-line formats are byte-untouched, and the closingblock/rolechecks pins follow in the same change" test_terminology_01
 run_test "terminology-02: the four prompts carry one form per concept (no sub spec/subspecs variants, no framework-where-client-is-meant, <slug> everywhere prose names it) and the declared machine-format/byte-pinned exemptions hold" test_terminology_02
 run_test "terminology-03: the three role prompts' ## Working Root sections are byte-identical, AGENTS.md and CLAUDE.md carry one identical gotcha bullet stating the triplication editing rule, and the existing docs bullets pass their suites" test_terminology_03
+run_test "testsuite-06: the invocation-form hard constraints re-keyed, the retired tempfile-argument form gone from non-comment lines, and the verifier-02 frozen guard split to scripts+meta" test_testsuite_06_roles_pins_rekeyed
 
 echo ""
 echo "$pass_count passed, $fail_count failed"

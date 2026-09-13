@@ -227,11 +227,17 @@ to the quoted descriptions.
       is overridden by ANTZ_REF
 
   # ADD - refpin-05: fetch architecture preserved (one curl in fetch_file)
+  # Re-scoped by change `deembed-orchestration-scripts` (libdirinstall-07):
+  # subject changed from "include injection" to "script installation".
   Scenario: refpin-05
     When install.sh's executable code is inspected
-    Then the include injection still fetches through `fetch_file "$rel"`
+    Then each of the four scripts is read or fetched through the one
+      `fetch_file` helper (local checkout read, or RAW_BASE fetch honoring
+      ANTZ_REF)
     And there is exactly one executable `curl -fsSL` invocation, inside
       fetch_file
+    And the ref is substituted at the RAW_BASE construction, not per call
+      site
 
 ## Out of scope
 - Any change to `agents/prompts/` or `agents/meta/`.

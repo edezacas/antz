@@ -58,6 +58,24 @@ RAW_BASE="https://raw.githubusercontent.com/$REPO_OWNER/$REPO_NAME/${ANTZ_REF:-m
 AGENTS="specifier coder verifier orchestrator"
 MARKER="antz:generated"
 
+# The shared library directory the orchestration scripts install into, and
+# the scripts themselves (change deembed-orchestration-scripts, libdirinstall):
+# "${XDG_CONFIG_HOME:-$HOME/.config}/antz/scripts" -- resolved ONCE, at
+# runtime, inside resolve_libdir(), never hardcoded, and shared by both
+# clients (one libdir, not a per-client subdirectory). An empty
+# XDG_CONFIG_HOME falls back exactly like an unset one.
+LIBDIR_SUBPATH="antz/scripts"
+SCRIPTS="antz-flow.sh antz-probe.sh antz-skills.sh antz-set-model.sh"
+
+resolve_libdir() {
+  # Echoes the resolved absolute libdir, with no trailing slash. $HOME is
+  # expanded here, by the shell running install.sh -- the fallback literal
+  # never survives into anything written.
+  cfg=${XDG_CONFIG_HOME:-}
+  [ -n "$cfg" ] || cfg="$HOME/.config"
+  printf '%s/%s\n' "${cfg%/}" "$LIBDIR_SUBPATH"
+}
+
 usage() {
   echo "Usage: $0 [--claude] [--opencode] [--all] [--check]" >&2
 }
@@ -117,58 +135,6 @@ fetch_file() {
   else
     curl -fsSL "$RAW_BASE/$rel" || { echo "Failed to fetch: $RAW_BASE/$rel" >&2; exit 1; }
   fi
-}
-
-inject_includes() {
-  # $1 = prompt body. Substitutes every "# antz-include: <relpath>" marker
-  # line with the verbatim content of the named file (fetched through
-  # fetch_file, so both the local-checkout read and the curl | sh fetch apply),
-  # each line prefixed with the marker line's own leading whitespace -- the
-  # fence indentation the embedded snippet carried before the include markers
-  # replaced it. Used only for the orchestrator agent (keyed at the call site).
-  # A marker never survives the render, and a file that cannot be read or
-  # fetched fails the whole render loudly (fetch_file's error names it) --
-  # never a marker left in place, never a partial orchestrator body.
-  # Loop-based on purpose: no heredoc captured inside a command substitution
-  # (the bash-3.2 mis-parse hazard, posixsh-01).
-  body="$1"
-  printf '%s\n' "$body" | while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in
-      *'# antz-include: '*)
-        indent=${line%%'# antz-include: '*}
-        rel=${line##*'# antz-include: '}
-        case "$indent" in
-          *[![:space:]]*)
-            echo "Malformed antz-include marker (non-whitespace indentation): $line" >&2
-            exit 1
-            ;;
-        esac
-        [ -n "$rel" ] || { echo "Empty antz-include marker: $line" >&2; exit 1; }
-        script=$(fetch_file "$rel") || exit 1
-        # Re-apply the fence indentation to the dedented script content, so
-        # the render is byte-identical to the pre-change embedded snippet:
-        # only non-empty lines get the indent (blank lines rendered empty
-        # before). One pinned exception: antz-skills.sh's embedded
-        # counterpart carried a pre-existing under-fence-indent line (a
-        # loop-closer "  done" at two spaces) whose dedent left it untouched
-        # (already shorter than the fence indent) -- byte-identity pins it
-        # verbatim, so the fence indent is not re-applied to it. The file
-        # content alone cannot distinguish that historical line from a
-        # genuinely dedented one, so the exception is keyed to the file and
-        # shape it is known to take (see
-        # spdd/changes/orchestrator-fast-path/02-renderinject.feature).
-        case "$rel" in
-          scripts/orchestration/antz-skills.sh)
-            printf '%s\n' "$script" | sed -e "/./s/^/$indent/" -e 's/^     done$/  done/'
-            ;;
-          *)
-            printf '%s\n' "$script" | sed "/./s/^/$indent/"
-            ;;
-        esac
-        ;;
-      *) printf '%s\n' "$line" ;;
-    esac
-  done
 }
 
 meta_field() {
@@ -259,72 +225,59 @@ render_opencode_command() {
     "$MARKER" "$1"
 }
 
-set_model_script() {
-  # $1 = client ("claude" or "opencode"). Emits the self-contained POSIX sh
-  # script embedded verbatim in that client's installed /antz-set-model
-  # command body. A client session runs this script (via its own Bash tool)
-  # to add, replace, or remove one already-installed agent file's "model:"
-  # frontmatter line -- the same deterministic file-editing contract the
-  # retired set-model.sh implemented, but permanently bound to one client
-  # (no --claude/--opencode flag; see README Client binding). $HOME below is
-  # left as a literal token in the emitted script, resolved by the shell
-  # that later runs it, not by install.sh.
-  #
-  # Hard constraint on the emitted text: it must contain NO dollar-digit
-  # token ($1, $2, $0, ...) and no "$ARGUMENTS". Both clients template the
-  # command body at invocation time -- OpenCode replaces every /\$\d+/g
-  # match plus $ARGUMENTS (missing positionals become the literal string
-  # "undefined"), and Claude Code does the same for $1/$2/$3.../$ARGUMENTS --
-  # inside code fences included. The original awk-based script was corrupted
-  # exactly this way (its positional params and awk's whole-line variable
-  # were rewritten before it ever ran). So the argument loop below avoids
-  # positional parameters entirely (a for-loop with a pending-value state
-  # machine), and the frontmatter rewrite is a plain read/printf loop
-  # instead of awk. Word variables ($arg, $line, $newline, ...) are not
-  # substituted and are safe. Note the emitted script's own comments must
-  # also stay free of dollar-digit and $ARGUMENTS sequences, since comments
-  # are templated too.
-  client="$1"
-  case "$client" in
-    claude) agents_dir='$HOME/.claude/agents' ;;
-    opencode) agents_dir='$HOME/.config/opencode/agents' ;;
-    *) echo "Unknown client: $1" >&2; exit 1 ;;
-  esac
-  script=$(emit_set_model_script)
-  printf '%s\n' "$script" | sed "s|__CLIENT__|$client|; s|__AGENTS_DIR__|$agents_dir|"
-}
-
-# Emits the verbatim body of the set-model script. This lives in its own
-# top-level, no-argument emitter function -- instead of being written inline
-# as a heredoc captured by a command substitution -- because bash 3.2 (macOS
-# /bin/sh in POSIX mode) mis-parses a heredoc whose body sits inside $( ... ):
-# it keeps reading the body as command text, so the first `;;` inside it
-# surfaces as a syntax error (see change fix-install-sh-syntax, posixsh-01).
-# Capturing a function's stdout inside $(...) is plain POSIX and parses under
-# bash 3.2.
+# Emits the COMPLETE bytes of the installed antz-set-model.sh (the fourth
+# libdir file): the "#!/bin/sh" shebang, then the antz:generated marker as a
+# line-start header comment immediately after it (the marker-in-scripts
+# contract, carrying install.sh's own $MARKER and $version), then the script
+# body. install_libdir_scripts redirects this straight into the libdir
+# destination -- plain redirection, no command-substitution capture
+# (setmodeldeembed-03). The emitted file is standalone, never templated by
+# any client, so the body may use positional parameters freely: the client
+# arrives as the script's first positional argument (each per-client
+# /antz-set-model command body passes its own; the user never supplies one)
+# and selects the agents directory. $HOME inside the body is a literal
+# token resolved at edit time by the shell running the script, not by
+# install.sh.
 emit_set_model_script() {
+  printf '#!/bin/sh\n# %s version=%s -- do not edit by hand; regenerate with install.sh\n' "$MARKER" "$version"
   cat <<'SCRIPT'
-#!/bin/sh
 set -eu
 
 MARKER="antz:generated"
 VALID_AGENTS="specifier coder verifier orchestrator"
-CLIENT="__CLIENT__"
-AGENTS_DIR="__AGENTS_DIR__"
 
 usage() {
   echo "Usage: /antz-set-model --agent <specifier|coder|verifier|orchestrator> (--model <value>|--clear)" >&2
 }
+
+# The first positional argument names the client this invocation serves --
+# claude or opencode. It selects the agents directory the editor works in
+# and the client name the messages print. A missing or unknown client is a
+# usage error naming both valid values, and nothing is written.
+case "${1:-}" in
+  claude)
+    CLIENT=claude
+    AGENTS_DIR="$HOME/.claude/agents"
+    ;;
+  opencode)
+    CLIENT=opencode
+    AGENTS_DIR="$HOME/.config/opencode/agents"
+    ;;
+  *)
+    echo "Error: the first argument must be the client: claude or opencode." >&2
+    usage
+    exit 1
+    ;;
+esac
+shift
 
 agent=""
 model_value=""
 have_model=0
 have_clear=0
 
-# No positional parameters here: the client substitutes dollar-digit tokens
-# in the command body at invocation time (missing ones become the literal
-# string "undefined"), so flag values are captured through a pending-flag
-# state machine over a plain for-loop instead.
+# Flag values are captured through a pending-flag state machine over a
+# plain for-loop.
 pending=""
 for arg do
   if [ -n "$pending" ]; then
@@ -418,10 +371,9 @@ else
 fi
 
 # The rewrite loop mirrors the retired awk version, but reads lines into a
-# variable instead of awk's whole-line positional (another dollar-digit
-# token the client would substitute): drop any "model:" line inside the
-# frontmatter (between the first two "---" lines), and optionally insert
-# the new model line directly after the "description:" line.
+# variable instead of awk's whole-line positional: drop any "model:" line
+# inside the frontmatter (between the first two "---" lines), and optionally
+# insert the new model line directly after the "description:" line.
 tmp=$(mktemp)
 # The scratch file is removed on EVERY exit path -- success, the
 # nothing-to-clear no-op (which never reaches the mktemp above), and a
@@ -477,7 +429,7 @@ This command does not delegate to any of the four antz-* subagents -- perform ev
 
 Step 1 -- Validate the arguments, before asking any question. Accepted arguments: `--agent <specifier|coder|verifier|orchestrator>` (required), plus AT MOST one of `--model <value>` / `--clear`. Each of the following is a usage error: an unknown agent name (must be one of specifier, coder, verifier, orchestrator); a missing `--agent` (including an entirely empty invocation); `--agent` or `--model` given without its value; both `--model` and `--clear` given; unknown options or otherwise malformed arguments. On a usage error: refuse with the specific reason, without asking any question, without running the script, and without writing any file.
 
-Step 2 -- Non-interactive bypass. If `--model <value>` or `--clear` WAS given, never ask anything: run the script below with the arguments exactly as given, then reply to the user using exactly what the script printed (on failure, the script's own refusal message and the fact that no file was written are the reply).
+Step 2 -- Non-interactive bypass. If `--model <value>` or `--clear` WAS given, never ask anything: run the installed script (the invocation line at the end of this command) with the arguments exactly as given after its fixed client argument, then reply to the user using exactly what the script printed (on failure, the script's own refusal message and the fact that no file was written are the reply).
 
 Step 3 -- Pre-flight. Only when neither `--model` nor `--clear` was given; still strictly before asking any question:
 - Confirm the target file `__AGENTS_PATH__/antz-<agent>.md` exists and carries the `antz:generated` marker. If it does not exist, refuse with the failure reason: antz-<agent> must be installed for __CLIENT__ first (e.g. via install.sh). If it exists but does not carry the marker, refuse: the file is not antz-managed. Either way, refuse without asking any question and without writing anything.
@@ -487,15 +439,19 @@ FLOWHEAD
 
 set_model_flow_tail() {
   # Emits the shared apply/relay instructions that close the /antz-set-model
-  # command body: how the picker's outcome reaches the embedded script, and
-  # the rule that the reply is exactly what the script printed.
+  # command body: how the picker's outcome reaches the installed script (the
+  # libdir's antz-set-model.sh, invoked by its concrete resolved path with
+  # the copy's own client as the first argument), and the rule that the
+  # reply is exactly what the script printed. __CLIENT__ and
+  # __SET_MODEL_PATH__ are substituted per client by
+  # render_set_model_command.
   cat <<'FLOWTAIL'
 Step 5 -- Apply the answer, then reply. Never invoke the script without exactly one of `--model`/`--clear`: the only two valid invocations are `--agent <agent> --model <chosen>` and `--agent <agent> --clear`.
 - If the user dismissed the question, or answered with an empty value: cancel -- never run the script, write nothing, and reply that nothing was changed.
 - If the user chose the `Revert to default (clear)` option: run the script with `--agent <agent> --clear`.
 - Otherwise: run the script with `--agent <agent> --model <chosen>`, passing the chosen value verbatim -- never validated or translated, including free-form answers.
 
-Run the script by saving it below to a temp file and invoking it with `sh <tempfile>` (e.g. `sh /tmp/antz-set-model.sh --agent coder --model opus`). Then reply to the user using exactly what the script printed: on success, which file changed and what its `model:` line now is (or that it was cleared); on failure, the specific reason and that no file was written. Do not reinterpret, add to, or omit that message.
+The script is the installed file at `__SET_MODEL_PATH__`, and its first argument is always the client this command serves: run it as `sh "__SET_MODEL_PATH__" __CLIENT__` followed by the chosen flags (e.g. `sh "__SET_MODEL_PATH__" __CLIENT__ --agent coder --model opus`). Then reply to the user using exactly what the script printed: on success, which file changed and what its `model:` line now is (or that it was cleared); on failure, the specific reason and that no file was written. Do not reinterpret, add to, or omit that message.
 FLOWTAIL
 }
 
@@ -503,18 +459,19 @@ render_set_model_command() {
   # $1 = client ("claude" or "opencode"), $2 = version. Renders the
   # /antz-set-model command file for that client: unlike /antz, this command
   # never delegates to any antz-* subagent -- its body instructs the
-  # invoking session to validate, pre-flight, then either run the embedded
+  # invoking session to validate, pre-flight, then either run the installed
   # script directly (explicit --model/--clear) or ask the user which model
   # to assign via that client's native question mechanism and feed the
   # chosen value to the same script as --model (the interactive picker; the
   # no-flag form). Each rendered copy is scoped to exactly one client (see
   # README Client binding); the two bodies never mention the other client's
-  # directory or frontmatter position. The embedded script itself
-  # (set_model_script) is unchanged by the picker: the interactive flow is
-  # only a new way to PRODUCE the --model value.
+  # directory or frontmatter position. The command body embeds no script:
+  # the run instruction invokes the installed libdir file by its concrete
+  # resolved path with the copy's client as the first argument
+  # (setmodeldeembed-02), and the script itself is unchanged by the picker:
+  # the interactive flow is only a new way to PRODUCE the --model value.
   client="$1"
   version="$2"
-  script=$(set_model_script "$client")
 
   case "$client" in
     claude)
@@ -551,10 +508,14 @@ render_set_model_command() {
   esac
 
   flow_head=$(set_model_flow_head | sed "s|__CLIENT__|$client|; s|__AGENTS_PATH__|$agents_path|")
-  flow_tail=$(set_model_flow_tail)
+  # The tail names the installed script's concrete resolved path and this
+  # copy's client -- the single run instruction of a body that embeds no
+  # script (setmodeldeembed-02).
+  set_model_path="$ANTZ_SCRIPTS_DIR/antz-set-model.sh"
+  flow_tail=$(set_model_flow_tail | sed "s|__CLIENT__|$client|g; s|__SET_MODEL_PATH__|$set_model_path|g")
 
-  body=$(printf '%s\n\n%s\n\n%s\n\n%s\n\n```sh\n%s\n```\n' \
-    "$intro" "$flow_head" "$picker" "$flow_tail" "$script")
+  body=$(printf '%s\n\n%s\n\n%s\n\n%s\n' \
+    "$intro" "$flow_head" "$picker" "$flow_tail")
 
   desc=$(yaml_quote_desc "$short_desc")
   printf -- '---\n# %s version=%s -- do not edit by hand; regenerate with install.sh\ndescription: %s\n%s---\n\n%s\n' \
@@ -590,18 +551,27 @@ Alongside any enumerated ids, ALWAYS offer an explicit `Type another value` free
 PICKER
 }
 
-install_file() {
-  # $1 destination path, $2 content
+backup_if_unmanaged() {
+  # $1 = destination path. A pre-existing destination that is not
+  # antz-managed is backed up to "<file>.bak.<timestamp>" before being
+  # overwritten, so no user content is ever lost. Antz-managed detection is
+  # anchored to the line-start header comment: a mid-line or mid-body
+  # mention of the marker must not mark a user file as ours (it gets backed
+  # up like any other file). install.sh never reads, renames, or deletes
+  # those backups.
   dest="$1"
-  content="$2"
-  # Antz-managed detection is anchored to the line-start header comment: a
-  # mid-line or mid-body mention of the marker must not mark a user file as
-  # ours (it gets backed up before the overwrite like any other file).
   if [ -f "$dest" ] && ! grep -q "^# $MARKER " "$dest" 2>/dev/null; then
     ts=$(date +%Y%m%d%H%M%S)
     cp "$dest" "$dest.bak.$ts"
     echo "Backed up existing $dest -> $dest.bak.$ts (not antz-managed)"
   fi
+}
+
+install_file() {
+  # $1 destination path, $2 content
+  dest="$1"
+  content="$2"
+  backup_if_unmanaged "$dest"
   printf '%s' "$content" > "$dest"
   echo "Installed $dest"
 }
@@ -614,6 +584,77 @@ installed_version_of() {
   f="$1"
   [ -f "$f" ] || return 0
   sed -n "s/^# $MARKER version=\([^ ]*\).*/\1/p" "$f" | head -n1
+}
+
+# NL is a literal newline, used for exact byte surgery in
+# install_libdir_script (parameter expansion, no external tools, nothing
+# through a command substitution that would strip trailing newlines).
+NL='
+'
+
+install_libdir_script() {
+  # $1 = destination base name, $2 = the script source's exact bytes.
+  # Byte-faithful install (libdirinstall-01): the installed file is the
+  # source plus exactly one inserted line -- the antz:generated marker, as a
+  # line-start header comment immediately after the "#!/bin/sh" shebang --
+  # every other byte (including the source's trailing newline) untouched.
+  # It goes through the same install_file, so the anchored marker detection
+  # and the .bak.<ts> backup policy apply to libdir files unchanged
+  # (libdirinstall-03).
+  name="$1"
+  src="$2"
+  case "$src" in
+    "#!/bin/sh$NL"*) ;;
+    *)
+      echo "Refusing to install $name: its source does not start with a '#!/bin/sh' shebang line." >&2
+      exit 1
+      ;;
+  esac
+  content="${src%%"$NL"*}$NL# $MARKER version=$version -- do not edit by hand; regenerate with install.sh$NL${src#*"$NL"}"
+  install_file "$ANTZ_SCRIPTS_DIR/$name" "$content"
+}
+
+read_script_sources() {
+  # libdirinstall-05 (one atomic pass): read or fetch the three on-disk
+  # script sources into variables BEFORE any destination file is written, so
+  # a failing source aborts the whole install loudly (fetch_file's own error
+  # names the unreadable file; a remote fetch honors ANTZ_REF through
+  # RAW_BASE) and leaves the previous install -- client files and libdir --
+  # completely intact. The "; printf x" sentinel stripped on the next line
+  # preserves each source's exact trailing bytes through command
+  # substitution; no heredoc body sits inside these $( ) captures
+  # (posixsh-01). The set-model script has no external source to read: its
+  # text is static content of install.sh itself, written straight to the
+  # libdir file by emit_set_model_script's redirection at install time
+  # (setmodeldeembed-03).
+  src_flow=$(fetch_file "scripts/orchestration/antz-flow.sh"; printf x)
+  src_flow=${src_flow%x}
+  src_probe=$(fetch_file "scripts/orchestration/antz-probe.sh"; printf x)
+  src_probe=${src_probe%x}
+  src_skills=$(fetch_file "scripts/orchestration/antz-skills.sh"; printf x)
+  src_skills=${src_skills%x}
+}
+
+install_libdir_scripts() {
+  # The four libdir files (libdirinstall-01/06): written in the same single
+  # pass as the client files (one invocation, no post-install step), into the
+  # one shared client-independent libdir resolved once by resolve_libdir;
+  # every invocation of an installed script is `sh "<resolved path>"
+  # <arguments>` -- no exec bit installed or required, nothing added to
+  # PATH, no hook or plugin. The three on-disk sources were all read or
+  # fetched before this runs (read_script_sources; libdirinstall-05). The
+  # set-model script goes through the same backup-if-unmanaged rule and
+  # "Installed" message as every other file, but its text is redirected
+  # straight from its emitter into the destination -- plain redirection, no
+  # command-substitution capture (setmodeldeembed-03).
+  mkdir -p "$ANTZ_SCRIPTS_DIR"
+  install_libdir_script antz-flow.sh "$src_flow"
+  install_libdir_script antz-probe.sh "$src_probe"
+  install_libdir_script antz-skills.sh "$src_skills"
+  dest="$ANTZ_SCRIPTS_DIR/antz-set-model.sh"
+  backup_if_unmanaged "$dest"
+  emit_set_model_script > "$dest"
+  echo "Installed $dest"
 }
 
 changelog_since() {
@@ -644,8 +685,15 @@ report_version() {
     echo "$label: already up to date (antz $new_version)"
   else
     echo "$label: antz $old_version -> $new_version"
-    entries=$(changelog_since "$old_version" "$changelog")
-    [ -n "$entries" ] && printf '%s\n' "$entries"
+    # Any intervening CHANGELOG.md entries print at most once for the whole
+    # report, never once per artifact line (libdirinstall-04).
+    if [ "$changelog_shown" -eq 0 ]; then
+      entries=$(changelog_since "$old_version" "$changelog")
+      if [ -n "$entries" ]; then
+        printf '%s\n' "$entries"
+        changelog_shown=1
+      fi
+    fi
   fi
 }
 
@@ -655,12 +703,32 @@ changelog=$(fetch_file "CHANGELOG.md")
 specifier_meta=$(fetch_file "agents/meta/specifier.yaml")
 specifier_name=$(meta_field "$specifier_meta" name)
 
+# The shared scripts libdir, resolved once for this run (libdirinstall-02;
+# decision 7: from XDG_CONFIG_HOME at runtime, never hardcoded, the concrete
+# resolved absolute path is what any rendered body will carry). Resolution
+# writes nothing: --check must create no libdir.
+ANTZ_SCRIPTS_DIR=$(resolve_libdir)
+
+# The CHANGELOG interval between the installed and current VERSION belongs
+# to the whole report, never to each artifact line (libdirinstall-04).
+changelog_shown=0
+
 [ "$want_claude" -eq 1 ] && report_version "Claude Code" "$HOME/.claude/agents/$specifier_name.md" "$version" "$changelog"
 [ "$want_opencode" -eq 1 ] && report_version "OpenCode" "$HOME/.config/opencode/agents/$specifier_name.md" "$version" "$changelog"
+
+# The same three outcomes for each installed script artifact, keyed off its
+# own marker version, after the per-client report lines (libdirinstall-04).
+for script in $SCRIPTS; do
+  report_version "$script" "$ANTZ_SCRIPTS_DIR/$script" "$version" "$changelog"
+done
 
 if [ "$check_only" -eq 1 ]; then
   exit 0
 fi
+
+# One atomic pass (libdirinstall-05): every script source is read or fetched
+# NOW, before any destination below is written.
+read_script_sources
 
 for agent in $AGENTS; do
   meta_content=$(fetch_file "agents/meta/$agent.yaml")
@@ -669,12 +737,15 @@ for agent in $AGENTS; do
   access=$(meta_field "$meta_content" access)
   body=$(fetch_file "agents/prompts/$agent.prompt")
 
-  # The orchestrator prompt carries one "# antz-include:" marker line per
-  # script fence (source of truth: scripts/orchestration/<name>.sh);
-  # substitution is keyed to this agent only. See inject_includes.
-  if [ "$agent" = "orchestrator" ]; then
-    body=$(inject_includes "$body")
-  fi
+  # The orchestrator prompt carries the "__ANTZ_SCRIPTS_DIR__" placeholder
+  # token at every installed-script path position (it is dollar-digit-free
+  # and carries no $ARGUMENTS sequence, so client command-body templating
+  # cannot corrupt it). Substitute the concrete resolved libdir -- resolved
+  # once above by resolve_libdir, no trailing slash -- so no placeholder
+  # ever survives a rendered or installed file. Bodies that never carry the
+  # token pass through untouched; the command renderers interpolate the same
+  # resolved path directly at render time.
+  body=$(printf '%s\n' "$body" | sed "s|__ANTZ_SCRIPTS_DIR__|$ANTZ_SCRIPTS_DIR|g")
 
   if [ "$want_claude" -eq 1 ]; then
     mkdir -p "$HOME/.claude/agents"
@@ -700,3 +771,6 @@ if [ "$want_opencode" -eq 1 ]; then
   install_file "$HOME/.config/opencode/commands/antz.md" "$(render_opencode_command "$version")"
   install_file "$HOME/.config/opencode/commands/antz-set-model.md" "$(render_set_model_command opencode "$version")"
 fi
+
+# The four orchestration scripts install in the same pass (libdirinstall-01/06).
+install_libdir_scripts

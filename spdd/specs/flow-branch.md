@@ -345,7 +345,7 @@ merged 2026-09-12): the stopped enumeration also names `state=tree_dirty` and
 the prompt carries them; this entry's list is "include at least", so the id
 stays valid.
 
-### ADD flow-09
+### ADD flow-9
 The unchanged surface stays unchanged — the probe keeps `change_dir=missing`
 as an output, the tables and fences survive, the steps still end at 6: the
 step-2 probe table still lists `change_dir=missing` as an output (only its
@@ -354,10 +354,11 @@ routing), and the probe script itself still prints it exactly as before. The
 latch still names `change_dir=missing` among the stop outcomes. The discover
 table, the state-output table, the rejection-routing table, and the
 release-output table survive with their headers and machine lines. The numbered
-steps still end at 6 and no new fenced block was added (still 14 fence lines
-across 7 blocks, exactly one `sh` fence). Step 1's ensure-state meanings
-(created/reused positioned, checkout_refused/no_branch/no_commits stops) keep
-their pinned wording.
+steps still end at 6 and no new fenced block was added (re-scoped by change
+`deembed-orchestration-scripts` to 8 fence lines across 4 blocks, no `sh`
+fence — the three script fences dropped to invocation lines). Step 1's
+ensure-state meanings (created/reused positioned, checkout_refused/no_branch/
+no_commits stops) keep their pinned wording.
 
 ### ADD flow-10
 The historical design record's derivation table reflects the specifier
@@ -463,12 +464,15 @@ meta files, and install.sh are byte-unchanged by it (transient change-time
 guard; the later sub-specs' own declared deltas are the only further changes).
 
 ### Invariants
-- The scripts' runtime contract is untouched: POSIX sh, save-to-temp-file and
-  `sh <tempfile> ...`, nothing installed as a standalone CLI/hook/plugin (the
-  files are repo source, never installed anywhere).
+- The scripts' runtime contract is untouched: POSIX sh, invoke by path
+  (`sh "<libdir>/antz-flow.sh" ...`), nothing installed as a standalone
+  CLI/hook/plugin (the files are installed to the shared libdir, invoked by
+  path from the rendered orchestrator body). Re-scoped by change
+  `deembed-orchestration-scripts` (invocations-04): the temp-file-and-re-
+  materialization convention is replaced by the invoke-by-path convention.
 - Script behavior is unchanged: every pre-existing script-level assertion holds
   against the files.
-- The prompt remains framework-neutral: include markers carry no client-specific
+- The prompt remains framework-neutral: invocation lines carry no client-specific
   syntax; the same body renders into both clients.
 
 ## Feature: renderinject (from 02-renderinject.feature, change `orchestrator-fast-path`)
@@ -531,10 +535,15 @@ is gone; no other header line changes meaning. This closes the drift recorded in
 ### MODIFY renderinject-07
 AGENTS.md and CLAUDE.md's orchestrator-script gotcha wording (the branch-marker
 gotcha's antz-flow.sh sentence and the probe gotcha's sourcing sentence) state
-the scripts' source of truth is `scripts/orchestration/<name>.sh` and that
-install.sh injects their content into the rendered `antz-orchestrator` body for
-both clients, keep the unchanged runtime wording (temp file + `sh <tempfile>
-...`, nothing installed standalone), and state it identically in both files.
+the scripts' source of truth is `scripts/orchestration/<name>.sh`, that
+install.sh installs them as files to the resolved antz scripts libdir
+(`"${XDG_CONFIG_HOME:-$HOME/.config}/antz/scripts/"`), and that the
+orchestrator invokes them there by path (`sh "<libdir>/antz-flow.sh" ...`)
+instead of re-materializing any script into the rendered body or saving any
+temp file. Re-scoped by change `deembed-orchestration-scripts` (docslaw-01,
+docslaw-02): the injected-temp-file wording is replaced by the
+installed-library invocation wording, and the bullet is byte-identical between
+both files.
 
 ### Invariants
 - No behavior change: at the render layer the orchestrator body is byte-identical
@@ -924,3 +933,66 @@ content rendered verbatim; a fresh `--check` reports already up to date
     And tests/receipts_test.sh passes unmodified
     And tests/orchestrator-status-probe_test.sh passes unmodified
     And every suite exits 0
+
+## Feature: docslaw — the runtime law in AGENTS.md/CLAUDE.md and the orchestrator design notes describe installed scripts invoked by path (from change `deembed-orchestration-scripts`)
+
+  Background:
+    Given "AGENTS.md" and "CLAUDE.md", whose Gotchas bullets pin the
+      orchestrator's script runtime convention, duplicated between the two
+      files byte-for-byte wherever a spec pins them identical
+    And "docs/orchestrator.md", the orchestrator design record that states
+      up front it is historical and not kept in sync
+
+  # ADD - docslaw-01: the branch-marker gotcha's antz-flow.sh sentence
+  # states the installed-library law.
+  Scenario: docslaw-01
+    When the reader reads the branch-marker gotcha bullet in AGENTS.md and
+      CLAUDE.md
+    Then its antz-flow.sh sourcing sentence states the scripts' source of
+      truth is "scripts/orchestration/<name>.sh", that install.sh installs
+      them as files to the resolved antz scripts libdir
+      ("${XDG_CONFIG_HOME:-$HOME/.config}/antz/scripts/"), and that the
+      orchestrator invokes them there by path ("sh \"<libdir>/antz-flow.sh\"
+      ...") instead of re-materializing any script into the rendered body
+      or saving any temp file
+    And it keeps stating that the branch is created **and checked out** by
+      the orchestrator's "antz-flow.sh", that nothing is installed as a
+      standalone CLI on PATH, no hook or plugin, and that no role ever
+      commits
+    And the bullet is byte-identical between AGENTS.md and CLAUDE.md
+
+  # ADD - docslaw-02: the probe gotcha's sourcing sentence states the
+  # same law; the probe's deliberate-stops-short clause is untouched.
+  Scenario: docslaw-02
+    When the reader reads the probe gotcha bullet in AGENTS.md and CLAUDE.md
+    Then its sourcing sentence states the probe's source of truth is
+      "scripts/orchestration/antz-probe.sh", installed by install.sh to
+      the resolved libdir and run by the flow script's "state" subcommand
+      by path
+    And the sentence about what the probe deliberately stops short of
+      (never running the unit suite; receipts read as files) is unchanged
+    And the bullet is byte-identical between AGENTS.md and CLAUDE.md
+
+  # ADD - docslaw-03: the Client Integration section names the libdir
+  # among what install.sh installs.
+  Scenario: docslaw-03
+    When the reader reads the Client Integration section of AGENTS.md and
+      CLAUDE.md
+    Then one sentence states that install.sh also installs the three
+      orchestration scripts and the set-model script as files under the
+      resolved "antz/scripts" libdir, shared by both clients, carrying the
+      same "antz:generated" marker, backup, and --check reporting as every
+      other installed file
+    And the sentence is byte-identical between the two files
+
+  # ADD - docslaw-04: docs/orchestrator.md gains a short dated note; its
+  # historical-record framing is preserved.
+  Scenario: docslaw-04
+    When the reader reads "docs/orchestrator.md"
+    Then a short dated note near the top states that, as of change
+      deembed-orchestration-scripts, the runtime convention it describes
+      changed: the orchestration scripts are installed to the resolved
+      antz scripts libdir and invoked by path, and the "temp file" wording
+      in the historical sections below is historical
+    And the note does not rewrite the historical sections; the file's
+      historical-record framing survives intact

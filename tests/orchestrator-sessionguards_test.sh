@@ -53,6 +53,14 @@
 # the step-4 and Session guards blocks, and orchprose-03 runs the
 # neighboring suites (antz-flow, receipts, status-probe) to prove they pass
 # unmodified.
+#
+# Re-keyed by change deembed-orchestration-scripts (sub-spec 05,
+# testsuite-04): the per-script '# antz-include:' marker-count pins in
+# sessionguards-03 become the invocation-line form (each script
+# path-referenced via __ANTZ_SCRIPTS_DIR__/<name>.sh, no marker anywhere),
+# and orchprose-01's structural fence counts move 14/7/1 -> 8/4/0. The
+# dedup/latch law assertions and the no-delegation-ledger checks are
+# unchanged.
 
 set -u
 
@@ -336,12 +344,17 @@ test_sessionguards_03() {
     [ -f "$SCRIPT_DIR/scripts/orchestration/$script.sh" ] \
       || { echo "  missing pre-existing script: $script.sh"; ok=1; }
   done
-  # No new embedded script: the prompt's three script fences still carry
-  # exactly their include markers, each naming an existing file.
+  # No new embedded script: re-keyed by change deembed-orchestration-scripts
+  # (testsuite-04) from the include-marker counts to the invocation-line
+  # form — each script is path-referenced in the prompt (one path-reference
+  # invocation per script at minimum), and no include marker exists anywhere.
   for script in antz-flow antz-probe antz-skills; do
-    c=$(grep -cF "# antz-include: scripts/orchestration/$script.sh" "$ORCHESTRATOR_PROMPT")
-    [ "$c" -eq 1 ] || { echo "  expected exactly 1 include marker for $script.sh, got: $c"; ok=1; }
+    c=$(grep -cF "__ANTZ_SCRIPTS_DIR__/$script.sh" "$ORCHESTRATOR_PROMPT")
+    [ "$c" -ge 1 ] \
+      || { echo "  no __ANTZ_SCRIPTS_DIR__ path reference for $script.sh, got: $c"; ok=1; }
   done
+  m=$(grep -cF "# antz-include:" "$ORCHESTRATOR_PROMPT")
+  [ "$m" -eq 0 ] || { echo "  expected no include marker anywhere, got: $m"; ok=1; }
   # No new flow subcommand: the usage line still names exactly the four
   # pre-existing subcommands.
   require "$FLOW_SCRIPT" 'discover | ensure <slug> | state <slug> <probe-path> | release <slug>' || ok=1
@@ -442,8 +455,10 @@ SELF="$SCRIPT_DIR/tests/orchestrator-sessionguards_test.sh"
 # coder unconditionally; the orchestrated verifier retry when the entry holds
 # no non-attributable blocker; stop-and-report naming the manual verifier
 # pass when it holds one). The rejected_count=0 and rejected_count=2 rows are
-# byte-unchanged, and the structure pins hold: four tables, 14 fence lines /
-# one ```sh fence, steps ending at 6, no new fenced block.
+# byte-unchanged, and the structure pins hold: four tables, 8 fence lines /
+# 4 blocks with no ```sh fence (re-keyed by change
+# deembed-orchestration-scripts, testsuite-04, from the embedded era's 14/7/
+# one-sh-fence counts), steps ending at 6, no new fenced block.
 # =============================================================================
 test_orchprose_01() {
   ok=0
@@ -495,14 +510,16 @@ test_orchprose_01() {
   require "$STEP4" '   | 0 | Delegate the whole change to `verifier`, once (never once per sub-spec — its archive step moves the whole directory). |' || ok=1
   require "$STEP4" '   | 2 | The bounded retry already happened and was rejected again. Stop, report both entries verbatim, and never invoke `coder` or `verifier` again for this change. |' || ok=1
   # The structure pins hold: exactly four tables (four |---|---| separators),
-  # 14 fence lines / one ```sh fence (which is also the no-new-fenced-block
-  # check), and the numbered steps still ending at 6 with no step 7.
+  # 8 fence lines / 4 blocks with no ```sh fence (the no-new-fenced-block
+  # check re-keyed by change deembed-orchestration-scripts, testsuite-04: the
+  # former 14 lines / 7 blocks / one probe fence belonged to the embed era),
+  # and the numbered steps still ending at 6 with no step 7.
   tables=$(grep -cE '^ *\|---\|---\| *$' "$ORCHESTRATOR_PROMPT")
   [ "$tables" -eq 4 ] || { echo "  expected 4 tables, got $tables |---|---| separators"; ok=1; }
-  fences=$(grep -cE '^   ```(sh)?$' "$ORCHESTRATOR_PROMPT")
-  [ "$fences" -eq 14 ] || { echo "  expected 14 fence lines (7 blocks), got: $fences"; ok=1; }
+  fences=$(grep -cE '^   ```$' "$ORCHESTRATOR_PROMPT")
+  [ "$fences" -eq 8 ] || { echo "  expected 8 fence lines (4 blocks), got: $fences"; ok=1; }
   shfences=$(grep -c '^   ```sh$' "$ORCHESTRATOR_PROMPT")
-  [ "$shfences" -eq 1 ] || { echo "  expected exactly 1 probe fence, got: $shfences"; ok=1; }
+  [ "$shfences" -eq 0 ] || { echo "  expected no sh-fence openers, got: $shfences"; ok=1; }
   require "$ORCHESTRATOR_PROMPT" '6. On a fresh rejection' || ok=1
   if grep -qE '^7\. ' "$ORCHESTRATOR_PROMPT"; then
     echo "  a new process step appeared"; ok=1
@@ -639,6 +656,27 @@ test_orchprose_03() {
   return $ok
 }
 
+# =============================================================================
+# testsuite-04 (change deembed-orchestration-scripts, sub-spec 05): the
+# marker-count pins re-key to the invocation-line forms and the structural
+# counts move to the de-embedded shape; the dedup/latch law assertions and
+# the no-delegation-ledger checks are unchanged. This test pins the re-key.
+# =============================================================================
+test_testsuite_04_marker_counts_rekeyed() {
+  ok=0
+  body=$(awk '/^test_sessionguards_03\(\)/,/^}$/' "$SELF")
+  printf '%s\n' "$body" | grep -qF '__ANTZ_SCRIPTS_DIR__/$script.sh' \
+    || { echo "  sessionguards-03 does not count path-reference lines"; ok=1; }
+  printf '%s\n' "$body" | grep -qF '# antz-include: scripts/orchestration/$script.sh' \
+    && { echo "  sessionguards-03 still counts include markers"; ok=1; }
+  b1=$(awk '/^test_orchprose_01\(\)/,/^}$/' "$SELF")
+  printf '%s\n' "$b1" | grep -qF 'expected 8 fence lines' \
+    || { echo "  orchprose-01 lost the de-embedded fence-line count"; ok=1; }
+  printf '%s\n' "$b1" | grep -qF 'expected no sh-fence openers' \
+    || { echo "  orchprose-01 lost the no-sh-fence count"; ok=1; }
+  return $ok
+}
+
 # ---- run everything ----------------------------------------------------------
 
 run_test "sessionguards-01: the dedup law -- a (sub-spec, role) pair is never delegated twice in one invocation; routing never re-delegates; exactly two exceptions, both step 4's, each REJECTED.md-bounded" test_sessionguards_01
@@ -648,6 +686,7 @@ run_test "sessionguards-04: everything else keeps its meaning -- additive outsid
 run_test "orchprose-01: step 4's rejected_count=1 row is a short routing cell and the relay detail is a three-bullet list directly under the table; the 0/2 rows and the four-table/fence/steps structure are unchanged" test_orchprose_01
 run_test "orchprose-02: the **Dedup.** bullet becomes a lead line plus a two-item exception list with the no-third-exception close kept as prose; the guards' standing wording survives and the **Latch.** bullet is byte-unchanged" test_orchprose_02
 run_test "orchprose-03: the new shape pins live in this suite (id-named, extract-scoped, step-4 intro strings intact) and the neighboring antz-flow/receipts/status-probe suites pass unmodified" test_orchprose_03
+run_test "testsuite-04: sessionguards-03's include-marker counts re-key to path-reference invocation lines (no marker anywhere, exactly the three scripts on disk) and orchprose-01's structural counts move to 8 fence lines / 4 blocks / no sh fence" test_testsuite_04_marker_counts_rekeyed
 
 # ---- e2e-only scenario: explicit SKIP stub -----------------------------------
 # e2e-04 (spdd/changes/orchestrator-fast-path/07-e2e.feature) is the change's

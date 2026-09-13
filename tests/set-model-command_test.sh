@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Unit tests for install.sh's /antz-set-model command (rendering/install
-# side) and the self-contained script embedded in its body (invocation
-# side), covering every scenario in
+# side) and the self-contained set-model script it invokes by path from the
+# shared libdir (invocation side), covering every scenario in
 # spdd/changes/set-model-native-command/01-set-model-command.feature, the
 # unit-testable (rendering-level) scenarios in
 # spdd/changes/set-model-interactive-picker/01-interactive-picker.feature,
-# and the embedded-script hardening scenarios setmodel-01..04 in
+# and the script hardening scenarios setmodel-01..04 in
 # spdd/changes/hardening-installsh/04-setmodel.feature (anchored
-# line-start header-marker check + mktemp cleanup trap).
+# line-start header-marker check + mktemp cleanup trap), which since change
+# deembed-orchestration-scripts run against the installed libdir file.
 #
 # Self-contained bash test harness (no external framework/dependency -- this
 # repo has no package manager or build system). Run directly:
@@ -20,6 +21,18 @@
 # touches the filesystem runs against an isolated $HOME (a fresh temp dir
 # per test), so tests never touch the real ~/.claude or ~/.config/opencode
 # directories and never interfere with each other.
+#
+# Re-scoped by change deembed-orchestration-scripts (sub-spec 03,
+# setmodeldeembed-05, loud note per the repo's re-scope convention): the
+# script is no longer embedded in the command bodies, so this suite's
+# embedded-script extraction is replaced by running the INSTALLED libdir
+# file (setmodeldeembed-03/05) -- invoked as the command bodies invoke it,
+# `sh "<libdir>/antz-set-model.sh" <claude|opencode> ...`, which is exactly
+# how each per-client copy is scoped. All scenario ids above are still
+# reported and passing; command-install-01's "embedded script fence" clause
+# and setmodel-04's extraction-based token checks re-scope to the new shape
+# (setmodeldeembed-02/04), the same observable contracts now pinned through
+# the installed file.
 #
 # The command-level interactive-picker scenarios (picker-cmd-01..13,
 # picker-claude-01..03, picker-opencode-01..04) are observable only in a
@@ -150,29 +163,23 @@ write_midbody_marker_fixture() {
   } > "$dest"
 }
 
-# ---- extracting the embedded script from a rendered command file -----------
+# ---- the installed libdir set-model script -----------------------------------
+# Since change deembed-orchestration-scripts (sub-spec 03) the command bodies
+# embed no script; this suite runs the INSTALLED libdir file itself, passing
+# the client as its required first argument (the per-client command copies
+# bind it the same way -- setmodeldeembed-01).
 
-extract_script() {
-  # $1 = path to an installed antz-set-model.md; prints just the fenced
-  # ```sh ... ``` script embedded in its body.
-  awk '/^```sh$/{flag=1; next} /^```$/{flag=0} flag' "$1"
-}
+SET_MODEL=""
+SET_MODEL_HOME=""
 
-# Extracted once (rendering is deterministic and $HOME-independent), reused
-# by every set-model-cmd-* invocation test below so those tests don't each
-# pay the cost of a full install.sh run just to get the script.
-CLAUDE_SCRIPT=""
-OPENCODE_SCRIPT=""
-
-setup_extracted_scripts() {
-  tmp_home=$(new_home)
-  ( cd "$SCRIPT_DIR" && HOME="$tmp_home" "$INSTALL_SH" --all >/dev/null 2>&1 )
-  CLAUDE_SCRIPT=$(mktemp)
-  OPENCODE_SCRIPT=$(mktemp)
-  extract_script "$tmp_home/.claude/commands/antz-set-model.md" > "$CLAUDE_SCRIPT"
-  extract_script "$tmp_home/.config/opencode/commands/antz-set-model.md" > "$OPENCODE_SCRIPT"
-  chmod +x "$CLAUDE_SCRIPT" "$OPENCODE_SCRIPT"
-  rm -rf "$tmp_home"
+setup_installed_script() {
+  # Rendered once (install.sh's render is deterministic), reused by every
+  # invocation test below so those tests don't each pay the cost of a full
+  # install.sh run just to get the script.
+  SET_MODEL_HOME=$(new_home)
+  ( cd "$SCRIPT_DIR" && env -u XDG_CONFIG_HOME HOME="$SET_MODEL_HOME" "$INSTALL_SH" --all >/dev/null 2>&1 )
+  SET_MODEL="$SET_MODEL_HOME/.config/antz/scripts/antz-set-model.sh"
+  [ -f "$SET_MODEL" ] || { echo "FATAL: the installed set-model script is missing: $SET_MODEL"; exit 1; }
 }
 
 # =============================================================================
@@ -181,7 +188,8 @@ setup_extracted_scripts() {
 # argument-hint now shows the --model/--clear group as optional (the no-flag
 # form is the interactive picker), the description says so, and the body
 # carries the pre-flight + interactive-picker instructions alongside the
-# embedded script and the relay rule.
+# by-path invocation of the installed script (embedded-script clause
+# re-scoped by setmodeldeembed-02) and the relay rule.
 # =============================================================================
 test_command_install_01() {
   home=$(new_home)
@@ -198,7 +206,9 @@ test_command_install_01() {
     || { echo "  missing expected argument-hint line (--model/--clear group shown as optional)"; ok=1; }
   grep -q 'Pre-flight' "$dest" || { echo "  body missing the pre-flight instructions"; ok=1; }
   grep -q 'AskUserQuestion' "$dest" || { echo "  body missing the interactive-picker instructions (AskUserQuestion)"; ok=1; }
-  grep -q '^```sh$' "$dest" || { echo "  body missing the embedded script fence"; ok=1; }
+  grep -q '^```sh$' "$dest" && { echo "  body still embeds a \`\`\`sh script fence (retired by setmodeldeembed-02)"; ok=1; }
+  grep -qF 'antz-set-model.sh" claude' "$dest" \
+    || { echo "  body missing the path invocation of the installed script with the claude client first (setmodeldeembed-02 re-scope of the old embedded-script clause)"; ok=1; }
   grep -qF 'exactly what the script printed' "$dest" || { echo "  body missing the relay rule"; ok=1; }
   grep -qi 'opencode' "$dest" && { echo "  body/frontmatter references OpenCode"; ok=1; }
 
@@ -398,7 +408,7 @@ test_picker_render_03() {
 }
 
 # =============================================================================
-# picker-render-04: the embedded script's exactly-one contract survives
+# picker-render-04: the installed script's exactly-one contract survives
 # untouched (backstop for direct invocation), and the body instructs the
 # session to invoke the script only with one of --model/--clear.
 # =============================================================================
@@ -411,12 +421,12 @@ test_picker_render_04() {
 
   # The embedded script from the installed claude copy still refuses the
   # script-level "neither" and "both" invocations with a usage message.
-  out=$(HOME="$home" "$CLAUDE_SCRIPT" --agent coder 2>&1)
+  out=$(HOME="$home" sh "$SET_MODEL" claude --agent coder 2>&1)
   status=$?
   [ "$status" -ne 0 ] || { echo "  script accepted neither --model nor --clear"; ok=1; }
   case "$out" in *Usage*) ;; *) echo "  'neither' refusal is not a usage message: $out"; ok=1 ;; esac
 
-  out=$(HOME="$home" "$CLAUDE_SCRIPT" --agent coder --model opus --clear 2>&1)
+  out=$(HOME="$home" sh "$SET_MODEL" claude --agent coder --model opus --clear 2>&1)
   status=$?
   [ "$status" -ne 0 ] || { echo "  script accepted both --model and --clear"; ok=1; }
   case "$out" in *Usage*) ;; *) echo "  'both' refusal is not a usage message: $out"; ok=1 ;; esac
@@ -473,7 +483,7 @@ test_set_model_cmd_01() {
   cp "$dest" "$dest.orig"
   ok=0
 
-  out=$(HOME="$home" "$CLAUDE_SCRIPT" --agent coder --model opus 2>&1)
+  out=$(HOME="$home" sh "$SET_MODEL" claude --agent coder --model opus 2>&1)
   status=$?
 
   [ "$status" -eq 0 ] || { echo "  expected exit 0, got $status ($out)"; ok=1; }
@@ -504,7 +514,7 @@ test_set_model_cmd_02() {
   cp "$dest" "$dest.orig"
   ok=0
 
-  out=$(HOME="$home" "$OPENCODE_SCRIPT" --agent verifier --model anthropic/claude-opus-4-5 2>&1)
+  out=$(HOME="$home" sh "$SET_MODEL" opencode --agent verifier --model anthropic/claude-opus-4-5 2>&1)
   status=$?
 
   [ "$status" -eq 0 ] || { echo "  expected exit 0, got $status ($out)"; ok=1; }
@@ -535,7 +545,7 @@ test_set_model_cmd_03() {
   cp "$dest" "$dest.orig"
   ok=0
 
-  out=$(HOME="$home" "$CLAUDE_SCRIPT" --agent coder --model sonnet 2>&1)
+  out=$(HOME="$home" sh "$SET_MODEL" claude --agent coder --model sonnet 2>&1)
   status=$?
 
   [ "$status" -eq 0 ] || { echo "  expected exit 0, got $status ($out)"; ok=1; }
@@ -562,7 +572,7 @@ test_set_model_cmd_04() {
   cp "$dest" "$dest.orig"
   ok=0
 
-  out=$(HOME="$home" "$CLAUDE_SCRIPT" --agent coder --clear 2>&1)
+  out=$(HOME="$home" sh "$SET_MODEL" claude --agent coder --clear 2>&1)
   status=$?
 
   [ "$status" -eq 0 ] || { echo "  expected exit 0, got $status ($out)"; ok=1; }
@@ -590,7 +600,7 @@ test_set_model_cmd_05() {
   cp "$dest" "$dest.orig"
   ok=0
 
-  out=$(HOME="$home" "$CLAUDE_SCRIPT" --agent coder --clear 2>&1)
+  out=$(HOME="$home" sh "$SET_MODEL" claude --agent coder --clear 2>&1)
   status=$?
 
   [ "$status" -eq 0 ] || { echo "  expected exit 0, got $status ($out)"; ok=1; }
@@ -610,7 +620,7 @@ test_set_model_cmd_06() {
   dest="$home/.claude/agents/antz-coder.md"
   ok=0
 
-  out=$(HOME="$home" "$CLAUDE_SCRIPT" --agent coder --model opus 2>&1)
+  out=$(HOME="$home" sh "$SET_MODEL" claude --agent coder --model opus 2>&1)
   status=$?
 
   [ "$status" -ne 0 ] || { echo "  expected non-zero exit, got 0"; ok=1; }
@@ -634,7 +644,7 @@ test_set_model_cmd_07() {
   cp "$dest" "$dest.orig"
   ok=0
 
-  out=$(HOME="$home" "$CLAUDE_SCRIPT" --agent coder --model opus 2>&1)
+  out=$(HOME="$home" sh "$SET_MODEL" claude --agent coder --model opus 2>&1)
   status=$?
 
   [ "$status" -ne 0 ] || { echo "  expected non-zero exit, got 0"; ok=1; }
@@ -653,7 +663,7 @@ test_set_model_cmd_08() {
   home=$(new_home)
   ok=0
 
-  out=$(HOME="$home" "$CLAUDE_SCRIPT" --agent bogus --model opus 2>&1)
+  out=$(HOME="$home" sh "$SET_MODEL" claude --agent bogus --model opus 2>&1)
   status=$?
 
   [ "$status" -ne 0 ] || { echo "  expected non-zero exit, got 0"; ok=1; }
@@ -678,7 +688,7 @@ test_set_model_cmd_09_neither() {
   cp "$dest" "$dest.orig"
   ok=0
 
-  out=$(HOME="$home" "$CLAUDE_SCRIPT" --agent coder 2>&1)
+  out=$(HOME="$home" sh "$SET_MODEL" claude --agent coder 2>&1)
   status=$?
 
   [ "$status" -ne 0 ] || { echo "  expected non-zero exit, got 0"; ok=1; }
@@ -701,7 +711,7 @@ test_set_model_cmd_09_both() {
   cp "$dest" "$dest.orig"
   ok=0
 
-  out=$(HOME="$home" "$CLAUDE_SCRIPT" --agent coder --model opus --clear 2>&1)
+  out=$(HOME="$home" sh "$SET_MODEL" claude --agent coder --model opus --clear 2>&1)
   status=$?
 
   [ "$status" -ne 0 ] || { echo "  expected non-zero exit, got 0"; ok=1; }
@@ -726,7 +736,7 @@ test_set_model_cmd_10() {
   cp "$opencode_dest" "$opencode_dest.orig"
   ok=0
 
-  out=$(HOME="$home" "$CLAUDE_SCRIPT" --agent coder --model opus 2>&1)
+  out=$(HOME="$home" sh "$SET_MODEL" claude --agent coder --model opus 2>&1)
   status=$?
 
   [ "$status" -eq 0 ] || { echo "  expected exit 0, got $status ($out)"; ok=1; }
@@ -750,7 +760,7 @@ test_set_model_cmd_11() {
   cp "$specifier_dest" "$specifier_dest.orig"
   ok=0
 
-  out=$(HOME="$home" "$CLAUDE_SCRIPT" --agent coder --model opus 2>&1)
+  out=$(HOME="$home" sh "$SET_MODEL" claude --agent coder --model opus 2>&1)
   status=$?
 
   [ "$status" -eq 0 ] || { echo "  expected exit 0, got $status ($out)"; ok=1; }
@@ -771,7 +781,7 @@ test_set_model_cmd_12() {
   write_opencode_fixture "$dest" coder
   ok=0
 
-  out=$(HOME="$home" "$OPENCODE_SCRIPT" --agent coder --model not-a-real-model 2>&1)
+  out=$(HOME="$home" sh "$SET_MODEL" opencode --agent coder --model not-a-real-model 2>&1)
   status=$?
 
   [ "$status" -eq 0 ] || { echo "  expected exit 0, got $status ($out)"; ok=1; }
@@ -782,8 +792,9 @@ test_set_model_cmd_12() {
 }
 
 # =============================================================================
-# setmodel-01 (hardening-installsh/04-setmodel.feature, MODIFY): the embedded
-# script's managed-file check is anchored to the line-start header marker. A
+# setmodel-01 (hardening-installsh/04-setmodel.feature, MODIFY; run against
+# the installed libdir file since setmodeldeembed-05): the script's
+# managed-file check is anchored to the line-start header marker. A
 # header-marked fixture behaves exactly as before (model line at the fixed
 # position, success reply); a fixture that only mentions "antz:generated"
 # mid-body is refused with the existing not-antz-managed error, exits
@@ -798,7 +809,7 @@ test_setmodel_01() {
   write_claude_fixture "$dest" coder
   cp "$dest" "$dest.orig"
 
-  out=$(HOME="$home" "$CLAUDE_SCRIPT" --agent coder --model opus 2>&1)
+  out=$(HOME="$home" sh "$SET_MODEL" claude --agent coder --model opus 2>&1)
   status=$?
   [ "$status" -eq 0 ] || { echo "  header-marked run exited $status ($out)"; ok=1; }
   grep -qxF 'model: opus' "$dest" || { echo "  header-marked file did not gain 'model: opus'"; ok=1; }
@@ -815,7 +826,7 @@ model: opus" "$dest.orig" > "$expected"
   write_midbody_marker_fixture "$mid" specifier
   cp "$mid" "$mid.orig"
 
-  out=$(HOME="$home" "$CLAUDE_SCRIPT" --agent specifier --model opus 2>&1)
+  out=$(HOME="$home" sh "$SET_MODEL" claude --agent specifier --model opus 2>&1)
   status=$?
   [ "$status" -ne 0 ] || { echo "  mid-body-mention file was accepted (exit 0)"; ok=1; }
   case "$out" in *"not antz-managed"*) ;; *) echo "  refusal is not the existing not-antz-managed error: $out"; ok=1 ;; esac
@@ -847,7 +858,7 @@ test_setmodel_02() {
   # (1) Successful set.
   dest="$home/.claude/agents/antz-coder.md"
   write_claude_fixture "$dest" coder
-  out=$(HOME="$home" TMPDIR="$tmpdir" "$CLAUDE_SCRIPT" --agent coder --model opus 2>&1)
+  out=$(HOME="$home" TMPDIR="$tmpdir" sh "$SET_MODEL" claude --agent coder --model opus 2>&1)
   status=$?
   [ "$status" -eq 0 ] || { echo "  set run exited $status ($out)"; ok=1; }
   case "$out" in *"now has model: opus"*) ;; *) echo "  set reply not as documented: $out"; ok=1 ;; esac
@@ -855,7 +866,7 @@ test_setmodel_02() {
   leftover "after the set run" && ok=1
 
   # (2) Successful clear on a configured file.
-  out=$(HOME="$home" TMPDIR="$tmpdir" "$CLAUDE_SCRIPT" --agent coder --clear 2>&1)
+  out=$(HOME="$home" TMPDIR="$tmpdir" sh "$SET_MODEL" claude --agent coder --clear 2>&1)
   status=$?
   [ "$status" -eq 0 ] || { echo "  clear run exited $status ($out)"; ok=1; }
   case "$out" in *[Cc]leared*) ;; *) echo "  clear reply not as documented: $out"; ok=1 ;; esac
@@ -866,7 +877,7 @@ test_setmodel_02() {
   dest2="$home/.claude/agents/antz-verifier.md"
   write_claude_fixture "$dest2" verifier
   cp "$dest2" "$dest2.orig"
-  out=$(HOME="$home" TMPDIR="$tmpdir" "$CLAUDE_SCRIPT" --agent verifier --clear 2>&1)
+  out=$(HOME="$home" TMPDIR="$tmpdir" sh "$SET_MODEL" claude --agent verifier --clear 2>&1)
   status=$?
   [ "$status" -eq 0 ] || { echo "  nothing-to-clear run exited $status ($out)"; ok=1; }
   case "$out" in *"nothing to clear"*) ;; *) echo "  no-op reply not as documented: $out"; ok=1 ;; esac
@@ -899,7 +910,7 @@ test_setmodel_03() {
   chmod 555 "$dest"
   ok=0
 
-  out=$(HOME="$home" TMPDIR="$tmpdir" "$CLAUDE_SCRIPT" --agent coder --model opus 2>&1)
+  out=$(HOME="$home" TMPDIR="$tmpdir" sh "$SET_MODEL" claude --agent coder --model opus 2>&1)
   status=$?
   chmod 644 "$dest"
 
@@ -915,31 +926,25 @@ test_setmodel_03() {
 }
 
 # =============================================================================
-# setmodel-04 (ADD): the emitted script's token constraint survives the
-# anchored check + trap changes -- the embedded script in each client's
-# rendered command body carries no dollar-digit token and no $ARGUMENTS
-# sequence (the corruption class command-install-06 guards against), the
-# script still parses as POSIX sh, and each command body keeps exactly the
-# one intended "Arguments: $ARGUMENTS" injection line.
+# setmodel-04 (ADD; re-scoped by setmodeldeembed-04): the token scope moved
+# with the script -- the rendered command bodies still carry no dollar-digit
+# token and exactly the one intended "Arguments: $ARGUMENTS" injection line
+# (the corruption class command-install-06 guards against), and the
+# old embedded-script prohibitions apply to the installed file's
+# standalone-file contract: it is never templated by any client (no
+# $ARGUMENTS anywhere in it), it still parses as POSIX sh, and it runs the
+# same observable contract -- here via the exact-corruption-class probe:
+# a value containing a dollar-digit sequence is written verbatim.
 # =============================================================================
 test_setmodel_04() {
   home=$(new_home)
   ok=0
 
-  ( cd "$SCRIPT_DIR" && HOME="$home" "$INSTALL_SH" --all >/dev/null 2>&1 )
+  ( cd "$SCRIPT_DIR" && env -u XDG_CONFIG_HOME HOME="$home" "$INSTALL_SH" --all >/dev/null 2>&1 )
 
   for cmd_file in "$home/.claude/commands/antz-set-model.md" "$home/.config/opencode/commands/antz-set-model.md"; do
     [ -f "$cmd_file" ] || { echo "  $cmd_file missing"; ok=1; continue; }
-    embedded=$(mktemp)
-    extract_script "$cmd_file" > "$embedded"
-    if grep -qE '\$[0-9]' "$embedded"; then
-      echo "  embedded script of $cmd_file contains a dollar-digit token:"
-      grep -nE '\$[0-9]' "$embedded" | head -n5
-      ok=1
-    fi
-    grep -qF '$ARGUMENTS' "$embedded" && { echo "  embedded script of $cmd_file contains a \$ARGUMENTS sequence"; ok=1; }
-    sh -n "$embedded" || { echo "  embedded script of $cmd_file fails sh -n (not POSIX-parseable)"; ok=1; }
-    rm -f "$embedded"
+    grep -q '^```sh$' "$cmd_file" && { echo "  $cmd_file still embeds a script fence"; ok=1; }
     arg_lines=$(grep -cF '$ARGUMENTS' "$cmd_file")
     [ "$arg_lines" -eq 1 ] \
       || { echo "  $cmd_file carries $arg_lines \$ARGUMENTS occurrences, expected exactly the one injection line"; ok=1; }
@@ -947,13 +952,29 @@ test_setmodel_04() {
       || { echo "  $cmd_file missing the intended 'Arguments: \$ARGUMENTS' injection line"; ok=1; }
   done
 
+  # The installed file: standalone (never templated -- carries no
+  # $ARGUMENTS sequence), POSIX-parseable, and its dollar-digit freedom is
+  # only possible because it is run as a file: it reads its client from $1
+  # and writes dollar-digit values verbatim as model values.
+  lib_script="$home/.config/antz/scripts/antz-set-model.sh"
+  [ -f "$lib_script" ] || { echo "  installed set-model script missing"; rm -rf "$home"; return 1; }
+  grep -qF '$ARGUMENTS' "$lib_script" && { echo "  the installed file references \$ARGUMENTS though it is never templated"; ok=1; }
+  grep -qF '${1:-}' "$lib_script" || { echo "  the installed file no longer reads its client from a positional parameter"; ok=1; }
+  sh -n "$lib_script" || { echo "  installed set-model script fails sh -n (not POSIX-parseable)"; ok=1; }
+  dest="$home/.claude/agents/antz-coder.md"
+  write_claude_fixture "$dest" coder
+  out=$(HOME="$home" sh "$SET_MODEL" claude --agent coder --model '$1-$2-sonnet' 2>&1)
+  status=$?
+  [ "$status" -eq 0 ] || { echo "  dollar-digit model value refused ($status: $out)"; ok=1; }
+  grep -qxF 'model: $1-$2-sonnet' "$dest" || { echo "  dollar-digit model value not written verbatim"; ok=1; }
+
   rm -rf "$home"
   return $ok
 }
 
 # ---- run everything ---------------------------------------------------------
 
-setup_extracted_scripts
+setup_installed_script
 
 run_test "command-install-01: installs the Claude Code copy with expected frontmatter (optional --model/--clear group, picker body), scoped to claude only" test_command_install_01
 run_test "command-install-02: installs the OpenCode copy with no agent: field, scoped to opencode only" test_command_install_02
@@ -965,7 +986,7 @@ run_test "command-install-06: emitted bodies carry no client-substitutable dolla
 run_test "picker-render-01: claude body embeds the full documented alias vocabulary, refreshed only by re-running install.sh" test_picker_render_01
 run_test "picker-render-02: opencode body enumerates via 'opencode models' through the Bash tool, with no embedded catalog" test_picker_render_02
 run_test "picker-render-03: each body instructs its own native question mechanism; never-delegate rule preserved in both" test_picker_render_03
-run_test "picker-render-04: embedded script's exactly-one contract unchanged; body invokes the script only with --model or --clear" test_picker_render_04
+run_test "picker-render-04: installed script's exactly-one contract unchanged; body invokes the script only with --model or --clear" test_picker_render_04
 run_test "picker-render-05: both bodies state the fail-fast ordering (validate, marker pre-flight, read current model) before any question" test_picker_render_05
 
 run_test "set-model-cmd-01: adds model: line after description, before tools (Claude Code, no existing model)" test_set_model_cmd_01
@@ -984,7 +1005,7 @@ run_test "set-model-cmd-12: the supplied model value is written verbatim, unvali
 
 # ---- hardening-installsh sub-spec 04: embedded-script scenarios ------------
 
-run_test "setmodel-01: embedded script's managed check is anchored to the line-start header marker (header fixture accepted at the fixed position; mid-body-mention-only fixture refused as not antz-managed, exit non-zero, byte-for-byte unchanged)" test_setmodel_01
+run_test "setmodel-01: installed script's managed check is anchored to the line-start header marker (header fixture accepted at the fixed position; mid-body-mention-only fixture refused as not antz-managed, exit non-zero, byte-for-byte unchanged)" test_setmodel_01
 run_test "setmodel-02: no mktemp scratch left in TMPDIR after a successful set, a successful clear, or the nothing-to-clear no-op (each exits 0 with its documented reply)" test_setmodel_02
 run_test "setmodel-03: mid-run rewrite failure (read-only target) exits non-zero, leaves the target byte-for-byte unchanged, and the cleanup trap removes the scratch file" test_setmodel_03
 if [ -n "${SETMODEL_03_SKIP:-}" ]; then
@@ -1027,7 +1048,7 @@ skip_test "picker-opencode-02: large catalog may be filtered/grouped, free-form 
 skip_test "picker-opencode-03: explicit 'type another value' free-form option alongside the clear option" "$E2E_REASON"
 skip_test "picker-opencode-04: enumeration failure degrades to free-form + clear, question states no models could be enumerated" "$E2E_REASON"
 
-rm -f "$CLAUDE_SCRIPT" "$OPENCODE_SCRIPT"
+rm -rf "$SET_MODEL_HOME"
 
 echo ""
 echo "$pass_count passed, $fail_count failed, $skip_count skipped (e2e-only, see e2e-qa.feature)"

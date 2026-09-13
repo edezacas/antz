@@ -9,6 +9,19 @@ and the current code). This file won't be kept in sync with future changes
 to that behavior — treat it as an explanation of the reasoning behind the
 `1.0.0` design, not a spec.
 
+> **2026-09-13 — runtime-convention update (change
+> `deembed-orchestration-scripts`).** The runtime convention this
+> record describes changed: `install.sh` now installs the three
+> orchestration scripts and the set-model script as files under the
+> resolved antz scripts libdir
+> (`${XDG_CONFIG_HOME:-$HOME/.config}/antz/scripts/`), and the
+> orchestrator invokes them there by path
+> (`sh "<libdir>/antz-flow.sh" ...`) — no re-materialization into the
+> rendered body and no temp file. Any wording below describing the old
+> save-to-a-temp-file runtime convention is historical; the sections
+> below are not rewritten. This file stays a historical design record,
+> not living documentation.
+
 ## The core problem
 
 `specifier`, `coder`, and `verifier` each start every invocation with an

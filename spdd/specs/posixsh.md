@@ -68,16 +68,21 @@ while changing no rendered output or documented behavior anywhere else.
       OpenCode detected." refusal to stderr and writing no file
 
   # ADD - posixsh-04
+  # Re-scoped by change `deembed-orchestration-scripts` (setmodeldeembed-05):
+  # the "for arg do" assertion moves from command bodies to the installed
+  # libdir file; the inventory gains the four libdir files.
   Scenario: posixsh-04
     Given a pre-fix render and a post-fix render of install.sh --all into
       isolated HOME trees
     When the two HOME trees are compared recursively byte-for-byte
     Then every installed file is identical — the four agent files per
       client, both `antz.md` and both `antz-set-model.md` copies, the
-      embedded set-model script text including its `for arg do` line, and
-      every `antz:generated` marker with its embedded VERSION
+      installed `antz-set-model.sh` file including its `for arg do` line,
+      and every `antz:generated` marker with its embedded VERSION
     And the console report lines are identical except for the HOME path
       prefixes inside the "Installed <dest>" lines
+    And the inventory of installed files is sixteen (12 client files + 4
+      libdir scripts), not twelve
 
 ### Invariants
 - The fix is syntax-only: no rendered file, marker, path, flag behavior or
@@ -94,16 +99,21 @@ while changing no rendered output or documented behavior anywhere else.
       "~/.config/opencode"
 
   # ADD - e2e-qa-01
+  # Re-scoped by change `deembed-orchestration-scripts` (setmodeldeembed-05):
+  # twelve-installs becomes sixteen-installs (four libdir scripts added);
+  # embedded set-model script clause becomes installed-file clause.
   Scenario: e2e-qa-01
     When a user runs `sh install.sh --all` from the checkout with HOME set
       to an isolated empty directory
     Then the exit status is 0
-    And the report lists all twelve installs (4 agents x 2 clients, plus
-      2 antz.md and 2 antz-set-model.md commands) under the isolated HOME
+    And the report lists all sixteen installs (4 agents x 2 clients, plus
+      2 antz.md and 2 antz-set-model.md commands, plus 4 libdir scripts)
+      under the isolated HOME
     And every installed file carries an `antz:generated` marker whose
       embedded VERSION matches the repo's VERSION file
-    And the rendered antz-set-model.md command bodies carry the embedded
-      set-model script verbatim (including its `for arg do` line)
+    And the installed `antz-set-model.sh` under the resolved libdir carries
+      the `for arg do` line (the set-model script is a standalone installed
+      file, not embedded in the command bodies)
 
   # ADD - e2e-qa-02
   Scenario: e2e-qa-02

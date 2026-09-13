@@ -266,11 +266,15 @@ posixsh_03_execute() {
 # ---- posixsh-04 ------------------------------------------------------------
 
 # Renders with install.sh at $2 (--all, isolated $1 as HOME), stdout+stderr
-# to $3, returning the exit status.
+# to $3, returning the exit status. XDG_CONFIG_HOME is unset so the libdir
+# scripts installed by change deembed-orchestration-scripts (sub-spec 01)
+# resolve inside the staged HOME -- an exported session value would point
+# the shared libdir at the developer's real config directory (hermeticity,
+# same as the isolated HOME everywhere else in this suite).
 render_tree() {
   home="$1"; install_sh="$2"; log="$3"
   mkdir -p "$home"
-  HOME="$home" sh "$install_sh" --all > "$log" 2>&1
+  env -u XDG_CONFIG_HOME HOME="$home" sh "$install_sh" --all > "$log" 2>&1
 }
 
 # The base install.sh materialized to a temp file (the pre-fix tree),
@@ -303,24 +307,27 @@ posixsh_04() {
     fi
   fi
   # The full documented inventory must actually be present in both trees
-  # (diff -r alone would vacuously pass two equally empty trees).
+  # (diff -r alone would vacuously pass two equally empty trees). Since
+  # change deembed-orchestration-scripts the twelve client files are joined
+  # by the four shared libdir scripts (posixsh-04 re-key, setmodeldeembed-05
+  # -- loud note: the documented inventory is sixteen files now).
   for f in \
     .claude/agents/antz-specifier.md .config/opencode/agents/antz-specifier.md \
     .claude/agents/antz-coder.md .config/opencode/agents/antz-coder.md \
     .claude/agents/antz-verifier.md .config/opencode/agents/antz-verifier.md \
     .claude/agents/antz-orchestrator.md .config/opencode/agents/antz-orchestrator.md \
     .claude/commands/antz.md .config/opencode/commands/antz.md \
-    .claude/commands/antz-set-model.md .config/opencode/commands/antz-set-model.md; do
+    .claude/commands/antz-set-model.md .config/opencode/commands/antz-set-model.md \
+    .config/antz/scripts/antz-flow.sh .config/antz/scripts/antz-probe.sh \
+    .config/antz/scripts/antz-skills.sh .config/antz/scripts/antz-set-model.sh; do
     [ -f "$new_home/$f" ] || { echo "missing installed file: $f"; return 1; }
   done
-  # The heredoc-emitted set-model script text must be intact in the rendered
-  # command bodies -- its `for arg do` line included (feature clause).
-  grep -q '^for arg do$' "$new_home/.claude/commands/antz-set-model.md" || {
-    echo "emitted set-model script's 'for arg do' line missing from the claude command body"
-    return 1
-  }
-  grep -q '^for arg do$' "$new_home/.config/opencode/commands/antz-set-model.md" || {
-    echo "emitted set-model script's 'for arg do' line missing from the opencode command body"
+  # The heredoc-emitted set-model script text must be intact in the
+  # installed libdir file -- its `for arg do` line included (feature clause;
+  # re-keyed by setmodeldeembed-05 from the command bodies, which embed no
+  # script anymore, to the installed antz-set-model.sh).
+  grep -q '^for arg do$' "$new_home/.config/antz/scripts/antz-set-model.sh" || {
+    echo "emitted set-model script's 'for arg do' line missing from the installed antz-set-model.sh"
     return 1
   }
   return 0
@@ -329,6 +336,18 @@ posixsh_04() {
 # The console-report half of posixsh-04, as its own test so a console drift
 # is distinguishable from a tree drift: stdout identical except for the HOME
 # path prefixes inside the "Installed <dest>" lines.
+#
+# Re-scoped by change deembed-orchestration-scripts (sub-spec 01,
+# libdirinstall-04, loud note per the repo's re-scope convention): an
+# installing run legitimately GROWS -- the four script-artifact report lines
+# after the per-client lines, and the four "Installed <libdir>/<script>"
+# lines (the report's three outcomes and the CHANGELOG-printed-once rule
+# themselves pin in tests/libdirinstall_test.sh, as does the libdir
+# inventory). The pre-change console output is therefore no longer byte-
+# identical to the current one; what survives as the structural pin asserted
+# here: every base-report line still appears, in the same relative order
+# (nothing removed or reordered), and every added line is one of the two
+# documented new shapes -- nothing else may appear.
 posixsh_04_console() {
   old_home=$(new_tmp_dir)/old-home
   new_home=$(new_tmp_dir)/new-home
@@ -339,7 +358,24 @@ posixsh_04_console() {
   # Strip the HOME prefixes inside the "Installed <dest>" lines, then compare.
   sed "s|$old_home||g" "$olog" > "$olog.n"
   sed "s|$new_home||g" "$nlog" > "$nlog.n"
-  diff "$olog.n" "$nlog.n" || return 1
+  # (1) Every base line still appears in the new report, in the same
+  # relative order: the old report is a line-wise subsequence of the new.
+  if ! awk '
+      NR == FNR { m++; want[m] = $0; next }
+      { if (j < m && $0 == want[j + 1]) j++ }
+      END { exit (m > 0 && j == m) ? 0 : 1 }
+    ' "$olog.n" "$nlog.n"; then
+    echo "base console report is no longer an ordered subsequence of the current one (a line was removed or reordered)"
+    return 1
+  fi
+  # (2) Every ADDED line is one of the two documented new shapes: a
+  # script-artifact report line (one of the three outcomes) or an
+  # "Installed <...>/antz/scripts/<script>" line. Nothing else may appear.
+  added=$(grep -vxF -f "$olog.n" "$nlog.n" || true)
+  bad=$(printf '%s\n' "$added" | grep -vE '^antz-(flow|probe|skills|set-model)\.sh: (fresh install of antz [^ ]*|already up to date \(antz [^]*\)|antz [^ ]* -> [^ ]*)$|^Installed .*/antz/scripts/antz-(flow|probe|skills|set-model)\.sh$' || true)
+  [ -z "$bad" ] || { echo "unexpected added console lines:"; printf '%s\n' "$bad" | sed 's/^/    /'; return 1; }
+  n_added=$(printf '%s\n' "$added" | grep -c '' )
+  [ "$n_added" -eq 8 ] || { echo "expected exactly 8 added lines (4 script reports + 4 libdir Installed), got: $n_added"; return 1; }
   return 0
 }
 
@@ -361,7 +397,7 @@ unset posixsh_02_rc
 run_test "posixsh-03 parse and execute clean under plain POSIX sh: sh -n" posixsh_03_parse
 run_test "posixsh-03 parse and execute clean under plain POSIX sh: no-flag refusal" posixsh_03_execute
 run_test "posixsh-04 rendered output byte-identical to the pre-fix render (HOME trees)" posixsh_04
-run_test "posixsh-04 rendered output byte-identical to the pre-fix render (console report)" posixsh_04_console
+run_test "posixsh-04 console report keeps the pre-fix lines in order with only the two documented script-artifact line shapes added (libdirinstall-04 re-scope of the old byte-identity)" posixsh_04_console
 
 echo
 echo "pass=$pass_count fail=$fail_count skip=$skip_count"

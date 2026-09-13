@@ -54,10 +54,20 @@
 # expects.
 #
 # Since change orchestrator-fast-path (sub-spec 01) the scripts live as real
-# files under scripts/orchestration/ and the prompt's fences carry only
-# include markers, so this suite loads antz-flow.sh (and the probe, for the
-# state tests) as files directly — no extraction from the prompt anymore
-# (testharness-01); a prompt fence can no longer drift from the tested code.
+# files under scripts/orchestration/, so this suite loads antz-flow.sh (and
+# the probe, for the state tests) as files directly — no extraction from the
+# prompt anymore (testharness-01); a prompt body can no longer drift from the
+# tested code.
+#
+# Re-keyed by change deembed-orchestration-scripts (sub-spec 05, testsuite-01):
+# since sub-specs 01/02 the prompt carries no script fences and no
+# '# antz-include:' markers at all — it references the scripts by their
+# '__ANTZ_SCRIPTS_DIR__/<name>.sh' path form — so the flow-fence body pin
+# (testharness-01), the PROSE_STEP1 extractor, the step-5 release prose pin
+# (flow-04), and the structural fence pins (orchestrator-05/06, flow-09,
+# ensure-19's self-scan) re-key to the invocation shape: 8 fence lines /
+# 4 blocks, no ```sh fence. Every ensure/discover/state/release behavior
+# assertion runs unmodified against the byte-identical script file.
 #
 # Extended again by change precision-gaps (sub-spec 03-probealign): the probe's
 # declared-id extraction is aligned with the specifier's id convention, so
@@ -105,9 +115,10 @@ skip_test() {
 # ---- prompt-prose extracts (sub-spec "orchestrator") -------------------------
 #
 # The prose scenarios assert on section-scoped extracts of the prompt, not
-# the whole file, so a stray mention elsewhere can't satisfy them. The flow
-# fence (script) is excluded from prose extracts — its comments are the
-# script's own law wording, asserted via the FLOW_SCRIPT file.
+# the whole file, so a stray mention elsewhere can't satisfy them. Since
+# change deembed-orchestration-scripts (testsuite-01) the prompt has no
+# script fences at all, so no fence body can leak into any extract; the
+# extracts are plain section-scoped (step heading to next heading).
 
 # ---- content-assertion helpers (precedent: tests/versioning-rule_test.sh) ----
 
@@ -129,11 +140,13 @@ refuse() {
 
 FLOW_SCRIPT="$FLOW_SH"
 
-# Step 1's prose after the flow fence: from the flow fence's closing ```
-# (the second 3-space fence line) to the step-2 heading. Covers the
-# discover table, the bullet list, and the ensure-state-meaning bullet.
+# Step 1's prose: from its numbered heading to the step-2 heading. Re-keyed
+# by change deembed-orchestration-scripts (testsuite-01) off the removed
+# flow fence: there is no fence to skip past anymore, and the whole step-1
+# section is the extract. Covers the discover invocation line, the discover
+# table, the bullet list, and the ensure-state-meaning bullet.
 PROSE_STEP1=$(mktemp)
-awk '/^   ```$/{n++; next} /^2\. \*\*Probe/{exit} n>=2' "$ORCHESTRATOR_PROMPT" > "$PROSE_STEP1"
+awk '/^1\. \*\*Derive/{s=1} /^2\. \*\*Probe/{s=0} s' "$ORCHESTRATOR_PROMPT" > "$PROSE_STEP1"
 
 # Step 5's release section: from the step-5 heading to the step-6 heading.
 PROSE_STEP5=$(mktemp)
@@ -261,19 +274,24 @@ test_ensure_extracted() {
 # =============================================================================
 # testharness-01: the suite loads scripts/orchestration/antz-flow.sh as a
 # file, with no extraction step reading agents/prompts/orchestrator.prompt —
-# since sub-spec 01 the prompt's flow fence carries exactly its include
-# marker line, so there is no embedded script left to extract and the tested
-# code cannot drift from the file.
+# since change deembed-orchestration-scripts (testsuite-01 re-key) the
+# prompt carries no script fence at all: step 1 references the flow script
+# by its __ANTZ_SCRIPTS_DIR__/<name>.sh path form, so there is nothing to
+# extract and the tested code cannot drift from the file.
 # =============================================================================
 test_testharness_01_file_source() {
   ok=0
   [ "$FLOW_SH" = "$SCRIPT_DIR/scripts/orchestration/antz-flow.sh" ] \
     || { echo "  the suite is not running scripts/orchestration/antz-flow.sh"; ok=1; }
-  # The prompt's flow fence (first 3-space fence) holds exactly the one
-  # include marker line — nothing to extract.
-  body=$(awk '/^   ```$/{c++; next} c==1' "$ORCHESTRATOR_PROMPT" | sed 's/^   //')
-  [ "$body" = '# antz-include: scripts/orchestration/antz-flow.sh' ] \
-    || { echo "  prompt flow fence is not a bare include marker: $body"; ok=1; }
+  # Step 1 references the flow script by its path form (the de-embedded
+  # invocation), not a fence.
+  grep -qF -- '1. **Derive' "$ORCHESTRATOR_PROMPT" \
+    || { echo "  prompt step 1 heading not found"; ok=1; }
+  sed -n '/^1\. \*\*Derive/,/^2\. \*\*Probe/p' "$ORCHESTRATOR_PROMPT" \
+    | grep -qF 'sh "__ANTZ_SCRIPTS_DIR__/antz-flow.sh" discover' \
+    || { echo "  prompt step 1 does not reference the flow script by its __ANTZ_SCRIPTS_DIR__ path form"; ok=1; }
+  # No include marker survives anywhere in the de-embedded prompt.
+  refuse "$ORCHESTRATOR_PROMPT" 'antz-include' || ok=1
   return $ok
 }
 
@@ -807,8 +825,9 @@ test_ensure_18_change_dir_no_branch() { ensure_18_row change-dir-nobranch; }
 # untouched scripts, the probe is out of its file list, the whole-directory
 # form is gone, and the probe's
 # change_dir=missing assertion plus the scenario's structural constraints
-# (14 fence lines / one sh fence / steps end at 6 / the four tables) stay
-# enforced.
+# (8 fence lines / no sh fence / steps end at 6 / the four tables — the
+# fence counts re-keyed by change deembed-orchestration-scripts,
+# testsuite-01) stay enforced.
 # =============================================================================
 test_ensure_19_scripts_guard_rescoped() {
   ok=0
@@ -832,12 +851,15 @@ test_ensure_19_scripts_guard_rescoped() {
   needle='require "$PROBE_SH" '"'"'change_dir=missing'"'"''
   printf '%s\n' "$body" | grep -qF "$needle" \
     || { echo "  flow-09 lost its probe change_dir=missing assertion"; ok=1; }
-  # The scenario's structural constraints stay enforced (fence count, single
-  # sh fence, steps ending at 6, the four table headers).
-  printf '%s\n' "$body" | grep -qF 'expected 14 fence lines' \
-    || { echo "  flow-09 lost the 14-fence-line constraint"; ok=1; }
-  printf '%s\n' "$body" | grep -qF 'expected exactly 1 probe fence' \
-    || { echo "  flow-09 lost the one-sh-fence constraint"; ok=1; }
+  # The scenario's structural constraints stay enforced (fence count, the
+  # absence of any sh fence, steps ending at 6, the four table headers) —
+  # re-keyed by change deembed-orchestration-scripts (testsuite-01) from
+  # the embedded era's 14-lines/one-sh-fence literals to the de-embedded
+  # 8-lines/no-sh-fence ones.
+  printf '%s\n' "$body" | grep -qF 'expected 8 fence lines' \
+    || { echo "  flow-09 lost the 8-fence-line constraint"; ok=1; }
+  printf '%s\n' "$body" | grep -qF 'expected no sh-fence openers' \
+    || { echo "  flow-09 lost the no-sh-fence constraint"; ok=1; }
   printf '%s\n' "$body" | grep -qF 'a new process step appeared' \
     || { echo "  flow-09 lost the steps-end-at-6 constraint"; ok=1; }
   for t in '| discover output | Meaning / action |' '| Output | Meaning |' \
@@ -964,17 +986,18 @@ test_orchestrator_06_latch_and_report_stops() {
     echo "  a new machine-line stop was routed to waiting-user instead of stopped"; ok=1
   fi
   # The scenario's structural clauses: the numbered steps still end at 6,
-  # no new fenced block was added (14 fence lines / one ```sh fence), the
-  # four tables survive, and the dedup guard's exactly-two exceptions are
-  # untouched.
+  # no new fenced block was added (8 fence lines / 4 blocks, no ```sh
+  # fence — re-keyed by change deembed-orchestration-scripts, testsuite-01,
+  # from the retired 14/one-sh-fence embedded shape), the four tables
+  # survive, and the dedup guard's exactly-two exceptions are untouched.
   require "$ORCHESTRATOR_PROMPT" '6. On a fresh rejection' || ok=1
   if grep -qE '^7\. ' "$ORCHESTRATOR_PROMPT"; then
     echo "  a new process step appeared"; ok=1
   fi
-  fences=$(grep -cE '^   ```(sh)?$' "$ORCHESTRATOR_PROMPT")
-  [ "$fences" = "14" ] || { echo "  expected 14 fence lines (7 blocks), got: $fences"; ok=1; }
+  fences=$(grep -cE '^   ```$' "$ORCHESTRATOR_PROMPT")
+  [ "$fences" = "8" ] || { echo "  expected 8 fence lines (4 blocks), got: $fences"; ok=1; }
   shfences=$(grep -c '^   ```sh$' "$ORCHESTRATOR_PROMPT")
-  [ "$shfences" = "1" ] || { echo "  expected exactly 1 probe fence, got: $shfences"; ok=1; }
+  [ "$shfences" = "0" ] || { echo "  expected no sh-fence openers, got: $shfences"; ok=1; }
   for t in '| discover output | Meaning / action |' '| Output | Meaning |' \
            '| `rejected_count` | Action |' '| release output | Meaning / action |'; do
     require "$ORCHESTRATOR_PROMPT" "$t" || ok=1
@@ -1046,7 +1069,10 @@ test_orchestrator_04_law_wording() {
   ok=0
   # The owns section: created AND checked out, re-positioned, marker of the
   # base commit, work uncommitted.
-  require "$PROSE_OWNS" 'created and checked out by the embedded script'"'"'s `ensure`' || ok=1
+  # The owns section: created AND checked out by the installed flow script
+  # (de-embedded invocation shape, testsuite-01), re-positioned, marker of
+  # the base commit, work uncommitted.
+  require "$PROSE_OWNS" 'created and checked out by the installed flow script'"'"'s `ensure`' || ok=1
   require "$PROSE_OWNS" 're-positioned onto on resume' || ok=1
   require "$PROSE_OWNS" 'marker of the commit the flow started from' || ok=1
   require "$PROSE_OWNS" 'always stays uncommitted in the main checkout'"'"'s working tree' || ok=1
@@ -1081,18 +1107,16 @@ test_orchestrator_05_unchanged_surface() {
   require "$PROSE_STEP1" 'candidate=branch slug=' || ok=1
   require "$PROSE_STEP1" 'candidate=on-disk slug=' || ok=1
   require "$ORCHESTRATOR_PROMPT" 'branch=missing' || ok=1
-  # Exactly four subcommands, and the four original fenced blocks (the
-  # flow fence, the working-root lines block, the step-5 follow-up print
-  # block, and the probe fence) survive untouched the three blocks the
-  # skills-activation delegation block adds (templates for none-matched and
-  # with-matches, plus the antz-skills.sh derivation snippet — see
-  # spdd/changes/skills-activation/02-orchestrator.feature): seven blocks,
-  # fourteen fence lines, still exactly one of them a ```sh opener.
+  # Exactly four subcommands. The fenced-block pins re-keyed by change
+  # deembed-orchestration-scripts (testsuite-01): the three script fences
+  # are gone, leaving 8 fence lines / 4 blocks (the delegation-header
+  # template, the skills none-matched and with-matches templates, and the
+  # step-5 follow-up print), none of them a ```sh fence.
   require "$ORCHESTRATOR_PROMPT" 'discover`/`ensure`/`state`/`release`' || ok=1
-  fences=$(grep -cE '^   ```(sh)?$' "$ORCHESTRATOR_PROMPT")
-  [ "$fences" = "14" ] || { echo "  expected 14 fence lines (7 blocks), got: $fences"; ok=1; }
+  fences=$(grep -cE '^   ```$' "$ORCHESTRATOR_PROMPT")
+  [ "$fences" = "8" ] || { echo "  expected 8 fence lines (4 blocks), got: $fences"; ok=1; }
   shfences=$(grep -c '^   ```sh$' "$ORCHESTRATOR_PROMPT")
-  [ "$shfences" = "1" ] || { echo "  expected exactly 1 probe fence, got: $shfences"; ok=1; }
+  [ "$shfences" = "0" ] || { echo "  expected no sh-fence openers, got: $shfences"; ok=1; }
   # No new process step: the numbered steps still end at 6.
   require "$ORCHESTRATOR_PROMPT" '6. On a fresh rejection' || ok=1
   if grep -qE '^7\. ' "$ORCHESTRATOR_PROMPT"; then
@@ -1191,7 +1215,7 @@ test_flow_04_step5_disk_detection_approval() {
   # change_dir=missing after the verifier: run release, route on its line.
   require "$PROSE_STEP5" 'The probe reports `change_dir=missing`' || ok=1
   require "$PROSE_STEP5" "the verifier's archive step moved the change dir" || ok=1
-  require "$PROSE_STEP5" 'sh <tempfile> release <slug>' || ok=1
+  require "$PROSE_STEP5" 'sh "__ANTZ_SCRIPTS_DIR__/antz-flow.sh" release <slug>' || ok=1
   require "$PROSE_STEP5" 'released branch=antz/<slug>' || ok=1
   require "$PROSE_STEP5" 'approved-with-warnings included, since its archive move is identical on disk' || ok=1
   require "$PROSE_STEP5" 'printing the existing human follow-up print unchanged' || ok=1
@@ -1314,8 +1338,10 @@ test_flow_08_stopped_enumeration() {
 # unchanged; re-scoped off antz-flow.sh by change flow-script-guards and onto
 # flow+skills again by change precision-gaps, which edits antz-probe.sh — see
 # ensure-19), the latch still
-# names it, the four tables survive, the steps still end at 6, and no new
-# fenced block was added (14 fence lines, one ```sh fence).
+# names it, the four tables survive, the steps still end at 6, and the
+# structural pins now hold the DE-EMBEDDED shape (testsuite-01 re-key): 8
+# fence lines / 4 blocks and no ```sh fence — the former 14/7/1 counts
+# retired with the three script fences removed by sub-spec 02.
 # =============================================================================
 test_flow_09_unchanged_surface() {
   ok=0
@@ -1341,16 +1367,16 @@ test_flow_09_unchanged_surface() {
   require "$ORCHESTRATOR_PROMPT" '| Output | Meaning |' || ok=1
   require "$ORCHESTRATOR_PROMPT" '| `rejected_count` | Action |' || ok=1
   require "$ORCHESTRATOR_PROMPT" '| release output | Meaning / action |' || ok=1
-  # Steps still end at 6; no new fenced block (14 fence lines / 7 blocks,
-  # exactly one ```sh).
+  # Steps still end at 6; the de-embedded structure: 8 fence lines / 4
+  # blocks, no ```sh fence (testsuite-01 re-key of the 14/7/1 pins).
   require "$ORCHESTRATOR_PROMPT" '6. On a fresh rejection' || ok=1
   if grep -qE '^7\. ' "$ORCHESTRATOR_PROMPT"; then
     echo "  a new process step appeared"; ok=1
   fi
-  fences=$(grep -cE '^   ```(sh)?$' "$ORCHESTRATOR_PROMPT")
-  [ "$fences" = "14" ] || { echo "  expected 14 fence lines (7 blocks), got: $fences"; ok=1; }
+  fences=$(grep -cE '^   ```$' "$ORCHESTRATOR_PROMPT")
+  [ "$fences" = "8" ] || { echo "  expected 8 fence lines (4 blocks), got: $fences"; ok=1; }
   shfences=$(grep -c '^   ```sh$' "$ORCHESTRATOR_PROMPT")
-  [ "$shfences" = "1" ] || { echo "  expected exactly 1 probe fence, got: $shfences"; ok=1; }
+  [ "$shfences" = "0" ] || { echo "  expected no sh-fence openers, got: $shfences"; ok=1; }
   # Step 1's ensure-state meanings keep their pinned wording.
   require "$PROSE_STEP1" 'both position the session on branch `antz/<slug>`' || ok=1
   require "$PROSE_STEP1" 'state=checkout_refused' || ok=1
@@ -1385,9 +1411,51 @@ test_flow_10_docs_derivation_row() {
   return $ok
 }
 
+# =============================================================================
+# testsuite-01 (change deembed-orchestration-scripts, sub-spec 05): the
+# flow-fence and structure pins of this suite are re-keyed to the
+# de-embedded prompt — step 1 references the flow script by its
+# __ANTZ_SCRIPTS_DIR__ path form, step 5's release prose pin carries the
+# path-based release invocation, the structural pins read 8 fence lines /
+# 4 blocks / no ```sh fence — while every ensure/discover/state/release
+# behavior assertion runs unmodified against the byte-identical script
+# file. The re-keyed pins live in this suite (id-named): this test asserts
+# the re-key targets are really present in the suite's own body.
+# =============================================================================
+test_testsuite_01_flow_pins_rekeyed_to_invocation_shape() {
+  ok=0
+  body=$(awk '/^test_testharness_01_file_source\(\)/,/^}$/' "$0")
+  printf '%s\n' "$body" | grep -qF 'sh "__ANTZ_SCRIPTS_DIR__/antz-flow.sh" discover' \
+    || { echo "  testharness-01 does not pin step 1's path-form flow reference"; ok=1; }
+  # The retired era's marker/fence-extract shapes are gone from the guard
+  # bodies: testharness-01 no longer reconstructs a fence body, flow-04 pins
+  # the path-form release invocation, the three structural pins count the
+  # de-embedded 8 lines / 4 blocks with no ```sh fence.
+  printf '%s\n' "$body" | grep -qF '# antz-include' \
+    && { echo "  testharness-01 still reconstructs the include-marker fence"; ok=1; }
+  b5=$(awk '/^test_flow_04_step5_disk_detection_approval\(\)/,/^}$/' "$0")
+  printf '%s\n' "$b5" | grep -qF 'sh "__ANTZ_SCRIPTS_DIR__/antz-flow.sh" release <slug>' \
+    || { echo "  flow-04's release prose pin is not the path form"; ok=1; }
+  printf '%s\n' "$b5" | grep -qF 'sh <tempfile>' \
+    && { echo "  flow-04 still pins the temp-file release form"; ok=1; }
+  for fn in test_orchestrator_05_unchanged_surface test_orchestrator_06_latch_and_report_stops test_flow_09_unchanged_surface; do
+    b=$(awk "/^$fn\(\)/,/^}\$/" "$0")
+    printf '%s\n' "$b" | grep -qF 'expected 8 fence lines' \
+      || { echo "  $fn lacks the 8-fence-line pin"; ok=1; }
+    printf '%s\n' "$b" | grep -qF 'expected no sh-fence openers' \
+      || { echo "  $fn lacks the no-sh-fence pin"; ok=1; }
+    printf '%s\n' "$b" | grep -qF 'expected 14 fence lines' \
+      && { echo "  $fn still carries the retired 14-fence-line literal"; ok=1; }
+  done
+  # The de-embedded prompt really carries the shapes the suite now pins.
+  require "$ORCHESTRATOR_PROMPT" 'sh "__ANTZ_SCRIPTS_DIR__/antz-flow.sh" release <slug>' || ok=1
+  return $ok
+}
+
 # ---- run ----------------------------------------------------------------------
 
 run_test "ensure-extracted: the flow script is loaded from scripts/orchestration/antz-flow.sh and parses as POSIX sh" test_ensure_extracted
+run_test "testsuite-01: the flow-fence and structure pins are re-keyed to the de-embedded invocation shape (path-form step-1 reference, path-form release prose, 8 fence lines / no sh fence) with every script-behavior assertion unmodified" test_testsuite_01_flow_pins_rekeyed_to_invocation_shape
 run_test "testharness-01: the flow suite loads scripts/orchestration/antz-flow.sh as a file (no extraction from the prompt)" test_testharness_01_file_source
 run_test "ensure-01: ensure creates the branch at HEAD and positions the session" test_ensure_01_fresh_creates_and_positions
 run_test "ensure-02: a dirty tree at a new flow's start is refused state=tree_dirty, nothing created or moved" test_ensure_02_new_flow_dirty_tree_refused
@@ -1429,7 +1497,7 @@ run_test "orchestrator-02: step 5's human follow-up print is user-controlled wit
 run_test "orchestrator-03: no concrete integration branch name appears as a merge target anywhere" test_orchestrator_03_no_hardcoded_integration_branch
 run_test "orchestrator-04: the law wording reflects the checkout contract" test_orchestrator_04_law_wording
 run_test "orchestrator-05: the unchanged surface stays unchanged" test_orchestrator_05_unchanged_surface
-run_test "orchestrator-06: the latch's stop list and the stopped enumeration name state=tree_dirty and state=bad_slug (hard status=stopped stops, resume actions named); dirty=yes is advisory only; the structure stays (steps end at 6, 14 fences / one sh fence, four tables, dedup's two exceptions)" test_orchestrator_06_latch_and_report_stops
+run_test "orchestrator-06: the latch's stop list and the stopped enumeration name state=tree_dirty and state=bad_slug (hard status=stopped stops, resume actions named); dirty=yes is advisory only; the structure stays (steps end at 6, 8 fence lines with no sh fence, four tables, dedup's two exceptions)" test_orchestrator_06_latch_and_report_stops
 
 run_test "flow-01: a never-specified change_dir=missing outcome delegates the whole change to the specifier (once per invocation), then re-probes and continues through the unchanged state machine" test_flow_01_never_specified_delegation
 run_test "flow-02: change_dir=missing with an on-disk discover candidate is a mid-session deletion -- hard stop, status=stopped, latch applies, never the specifier" test_flow_02_mid_session_deletion_stop
@@ -1439,7 +1507,7 @@ run_test "flow-05: a greater rejected_count than the pre-delegation disk read is
 run_test "flow-06: the dedup guard enumerates exactly two exceptions, both step 4's, and no third exception; the specifier is never re-delegated" test_flow_06_dedup_two_exceptions
 run_test "flow-07: waiting-user is the decision-handing stop variant (open questions, slug ambiguity, receipt doubt), stopped the hard state stop; the latch applies identically; the six values stay pinned" test_flow_07_waiting_user_defined
 run_test "flow-08: the stopped enumeration is closed -- every machine-line and flow stop is named, each still naming the resume action" test_flow_08_stopped_enumeration
-run_test "flow-09: the unchanged surface stays unchanged -- probe row and script keep change_dir=missing, four tables survive, steps end at 6, 14 fence lines with one sh fence, scripts byte-unchanged" test_flow_09_unchanged_surface
+run_test "flow-09: the unchanged surface stays unchanged -- probe row and script keep change_dir=missing, four tables survive, steps end at 6, 8 fence lines with no sh fence, scripts byte-unchanged" test_flow_09_unchanged_surface
 run_test "flow-10: docs/orchestrator.md's 'What change/slug is this?' row describes the disk-routed specifier delegation; other rows untouched" test_flow_10_docs_derivation_row
 
 # e2e-orchestrator-01 (spdd/changes/flow-branch-checkout/e2e-qa.feature) is

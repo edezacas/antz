@@ -1,32 +1,35 @@
 #!/usr/bin/env bash
 # Unit test for the render-consistency guard of change orchestrator-fast-path
 # (spdd/changes/orchestrator-fast-path/03-testharness.feature, scenario
-# testharness-04): the rendered antz-orchestrator body must embed the current
-# scripts/orchestration/ files byte-for-byte at their three fences, so file
-# and render cannot drift apart silently.
+# testharness-04), re-scoped by change deembed-orchestration-scripts
+# (sub-spec 05, testsuite-07) from fences to files.
+#
+# The guard's duty is unchanged: installed artifact and source file can never
+# drift apart silently. Its surface moved: the orchestrator body embeds no
+# script anymore, so the comparison now runs on the libdir install -- each
+# installed ~/.config/antz/scripts/<name>.sh must equal its
+# scripts/orchestration/<name>.sh source byte-for-byte after stripping the
+# single inserted marker line (install_libdir_script's one
+# "# antz:generated ..." header comment, immediately after the shebang).
+# The old fence-extraction machinery and its antz-skills.sh under-fence-indent
+# carve-out are gone with the embed -- nothing is left to re-apply.
+#
+# Drift is still mechanized: tampering one byte of one installed libdir
+# script (after a fresh render) makes the guard report exactly that script
+# out of sync.
 #
 # install.sh's CLI is the test affordance: a full render (--all, both
-# clients) runs against an isolated temp HOME, and each installed
-# antz-orchestrator body -- ~/.claude/agents/antz-orchestrator.md and
-# ~/.config/opencode/agents/antz-orchestrator.md -- is compared, fence by
-# fence, against the expected block built from the current script file
-# (every non-empty line prefixed with the three-space fence indent, blank
-# lines empty, plus the one pinned antz-skills.sh under-indent carve-out
-# install.sh itself carries -- see inject_includes there).
-#
-# Drift is mechanized: tampering one byte of one script fence in the
-# installed temp copy must make the guard report that script out of sync --
-# if a file changed without a matching re-render, this suite fails instead
-# of a stale installed agent going unnoticed.
-#
-# Self-contained bash test harness (no external framework/dependency -- this
+# clients) runs against an isolated temp HOME with the session's
+# XDG_CONFIG_HOME masked, so the libdir resolves inside the temp home and no
+# filesystem work ever touches the real ~/.claude, ~/.config, or ~/.config/
+# antz. Self-contained bash harness (no external framework/dependency -- this
 # repo has no package manager or build system), same pattern as
 # tests/renderinject_test.sh. Run directly:
 #   ./tests/orchestrator-render-sync_test.sh
 #
-# Every reported test name embeds its scenario id (testharness-04) so a
-# failure maps straight back to the scenario it covers. All filesystem work
-# happens in temp dirs, never the real ~/.claude or ~/.config/opencode.
+# Every reported test name embeds its scenario id (testharness-04, plus the
+# testsuite-07 re-key pin) so a failure maps straight back to the scenario it
+# covers.
 
 set -u
 
@@ -68,65 +71,44 @@ trap cleanup EXIT
 # ---- render affordance ------------------------------------------------------
 
 render_all() {
-  # Renders the full install (both clients) from the working tree into the
-  # isolated HOME $1, logging stdout+stderr to $2.
+  # Renders the full install (both clients, plus the libdir scripts) from the
+  # working tree into the isolated HOME $1, logging stdout+stderr to $2.
+  # Hermetic: XDG_CONFIG_HOME is masked so the resolved libdir lives inside
+  # the temp home (testsuite-05's convention, applied here too).
   home="$1"; log="$2"
-  (cd "$SCRIPT_DIR" && HOME="$home" sh ./install.sh --all > "$log" 2>&1)
+  (cd "$SCRIPT_DIR" && env -u XDG_CONFIG_HOME HOME="$home" sh ./install.sh --all > "$log" 2>&1)
 }
 
-# The expected fence body for a script file: the file's own content with the
-# three-space fence indent re-applied to every non-empty line (blank lines
-# render empty), sharing install.sh's one pinned antz-skills.sh carve-out --
-# the pre-existing under-fence-indent "  done" loop-closer line renders
-# verbatim. Byte-identical means indentation included.
-expected_block() {
-  case "$1" in
-    antz-skills) sed -e "/./s/^/   /" -e 's/^     done$/  done/' \
-      "$SCRIPT_DIR/scripts/orchestration/antz-skills.sh" ;;
-    *) sed "/./s/^/   /" "$SCRIPT_DIR/scripts/orchestration/$1.sh" ;;
-  esac
+# The libdir install of the scripts, under a rendered temp home.
+installed_dir() {
+  printf '%s' "$1/.config/antz/scripts"
 }
 
-FENCE_BODIES=()
-extract_fences() {
-  # $1 = file; fills FENCE_BODIES with one temp file per fenced block's body
-  # (``` or ```sh openers; prose carries no triple backticks).
-  FENCE_BODIES=()
-  cur=""
-  while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in
-      *'```'*)
-        if [ -n "$cur" ]; then
-          FENCE_BODIES+=("$cur")
-          cur=""
-        else
-          cur=$(mktemp)
-          tmp_roots+=("$cur")
-          : > "$cur"
-        fi
-        continue
-        ;;
-    esac
-    if [ -n "$cur" ]; then printf '%s\n' "$line" >> "$cur"; fi
-  done < "$1"
+# Prints the installed copy of script $1 with the single inserted marker line
+# (line 2, a "# antz:generated ..." header comment immediately after the
+# shebang) stripped; if line 2 is not that marker, the content prints
+# unchanged and the comparison that follows will report the drift.
+strip_marker_line() {
+  awk 'NR == 2 && /^# antz:generated / { next } { print }' "$1"
 }
 
 out_of_sync_scripts() {
-  # $1 = installed agent file. Prints the space-separated scripts whose
-  # expected block matches no fence body of the installed file (empty output
-  # = every script is embedded byte-identically, indentation included).
-  installed="$1"
-  extract_fences "$installed"
+  # $1 = rendered temp home. Prints the space-separated scripts whose
+  # installed libdir copy differs from the source file after the marker-line
+  # strip (empty output = every installed script matches its source
+  # byte-for-byte; a missing installed file also counts as out of sync).
+  home="$1"
+  dir=$(installed_dir "$home")
   bad=""
   for s in $SCRIPTS; do
-    exp=$(mktemp)
-    tmp_roots+=("$exp")
-    expected_block "$s" > "$exp"
-    matched=""
-    for fb in "${FENCE_BODIES[@]}"; do
-      if cmp -s "$fb" "$exp"; then matched=1; break; fi
-    done
-    [ -n "$matched" ] || bad="$bad $s"
+    installed="$dir/$s.sh"
+    if [ ! -f "$installed" ]; then
+      bad="$bad $s"
+      continue
+    fi
+    d=$(new_tmp_dir)
+    strip_marker_line "$installed" > "$d/stripped"
+    cmp -s "$d/stripped" "$SCRIPT_DIR/scripts/orchestration/$s.sh" || bad="$bad $s"
   done
   # Trim the leading space so the caller can match exact single-script
   # drift reports.
@@ -134,59 +116,91 @@ out_of_sync_scripts() {
 }
 
 # =============================================================================
-# testharness-04: for both clients, each of the three script fences in the
-# installed antz-orchestrator body is byte-identical to the current
-# scripts/orchestration/ file (indentation included).
+# testharness-04 (re-keyed by testsuite-07): each installed libdir script
+# equals its scripts/orchestration/ source byte-for-byte after stripping the
+# single inserted marker line.
 # =============================================================================
-test_testharness_04_render_matches_files() {
-  ok=0
+test_testharness_04_installed_matches_source() {
   home=$(new_tmp_dir)/home
   log="$home-render.log"
   tmp_roots+=("$(dirname "$log")")
   render_all "$home" "$log" \
     || { echo "  install.sh --all failed: $(cat "$log")"; return 1; }
-  for dest in .claude/agents/antz-orchestrator.md \
-              .config/opencode/agents/antz-orchestrator.md; do
-    installed="$home/$dest"
-    [ -f "$installed" ] || { echo "  missing installed file: $dest"; ok=1; continue; }
-    bad=$(out_of_sync_scripts "$installed")
-    [ -z "$bad" ] \
-      || { echo "  $dest fences do not match the current scripts: $bad"; ok=1; }
+  bad=$(out_of_sync_scripts "$home")
+  [ -z "$bad" ] \
+    || { echo "  installed libdir scripts differ from their sources after the marker-line strip: $bad"; return 1; }
+  # The inserted line is exactly one line, and it is the marker: the
+  # installed copy is the source plus one (shebang preserved).
+  dir=$(installed_dir "$home")
+  for s in $SCRIPTS; do
+    src_n=$(wc -l < "$SCRIPT_DIR/scripts/orchestration/$s.sh")
+    inst_n=$(wc -l < "$dir/$s.sh")
+    [ "$inst_n" -eq $((src_n + 1)) ] \
+      || { echo "  $s.sh installed with $inst_n lines, expected $((src_n + 1)) (source + marker)"; return 1; }
+    head -n 1 "$dir/$s.sh" | grep -qx '#!/bin/sh' \
+      || { echo "  $s.sh installed copy lost the source shebang at line 1"; return 1; }
+    sed -n '2p' "$dir/$s.sh" | grep -q '^# antz:generated ' \
+      || { echo "  $s.sh installed line 2 is not the antz:generated marker"; return 1; }
   done
-  return $ok
+  return 0
 }
 
 # =============================================================================
-# testharness-04 (drift clause): the guard fails when a rendered fence no
-# longer matches its file -- one tampered byte inside one script fence of the
-# installed copy reports exactly that script out of sync (the other fences
-# still matching), so file/render drift is caught by the suite, not by a
-# stale installed agent.
+# testharness-04 (drift half, re-keyed): tampering one byte of one installed
+# libdir script makes the guard report exactly that script out of sync (the
+# others still matching).
 # =============================================================================
 test_testharness_04_drift_is_caught() {
-  ok=0
   home=$(new_tmp_dir)/home
   log="$home-render.log"
   render_all "$home" "$log" \
     || { echo "  install.sh --all failed: $(cat "$log")"; return 1; }
-  installed="$home/.claude/agents/antz-orchestrator.md"
-  [ -f "$installed" ] || { echo "  missing installed Claude Code file"; return 1; }
-  # Tamper one byte inside the flow fence: the first fence's `set -eu` line.
-  opener=$(grep -nE '^   ```$' "$installed" | head -n 1 | cut -d: -f1)
-  [ -n "$opener" ] || { echo "  no fence found in the installed body"; return 1; }
-  target=$(awk -v o="$opener" 'NR > o && /^   set -eu$/ { print NR; exit }' "$installed")
-  [ -n "$target" ] || { echo "  flow fence's set -eu line not found"; return 1; }
-  sed -i "${target}s/^   set -eu$/   set -euX/" "$installed"
-  bad=$(out_of_sync_scripts "$installed")
-  [ "$bad" = "antz-flow" ] \
-    || { echo "  expected exactly antz-flow out of sync after the tamper, got: '$bad'"; ok=1; }
+  dir=$(installed_dir "$home")
+  [ -f "$dir/antz-probe.sh" ] || { echo "  missing installed antz-probe.sh"; return 1; }
+  # Tamper one byte below the marker line: flip the first executable-looking
+  # line after line 2 of the installed probe copy.
+  target=$(awk 'NR > 2 && /^[a-z_]+=/ { print NR; exit }' "$dir/antz-probe.sh")
+  [ -n "$target" ] || { echo "  no assignable line found to tamper"; return 1; }
+  sed -i "${target}s/$/_TAMPERED/" "$dir/antz-probe.sh"
+  bad=$(out_of_sync_scripts "$home")
+  [ "$bad" = "antz-probe" ] \
+    || { echo "  expected exactly antz-probe out of sync after the tamper, got: '$bad'"; return 1; }
+  return 0
+}
+
+# =============================================================================
+# testsuite-07 (change deembed-orchestration-scripts): the re-key itself. The
+# fence-extraction machinery is gone from this suite (no definitions, no
+# call sites), the antz-skills.sh under-fence-indent carve-out is gone, and
+# the file-vs-source comparison above is what now carries the duty. The
+# needles are split below so this scan can never match its own lines.
+# =============================================================================
+test_testsuite_07_guard_compares_files() {
+  ok=0
+  self="$SCRIPT_DIR/tests/orchestrator-render-sync_test.sh"
+  for needle in 'extract_''fences' 'expected_''block' "s/^     done\$/  done/"; do
+    n=$(grep -v '^[[:space:]]*#' "$self" | grep -cF -- "$needle" || true)
+    [ "$n" -eq 0 ] \
+      || { echo "  the retired fence-era helper still has $n non-comment mention(s): $needle"; ok=1; }
+  done
+  # The new comparison surface is live: the marker-strip helper and the
+  # byte-for-byte cmp against scripts/orchestration/ sources.
+  grep -qF 'strip_marker_line' "$self" \
+    || { echo "  the marker-line strip helper is missing"; ok=1; }
+  grep -qF 'cmp -s "$d/stripped" "$SCRIPT_DIR/scripts/orchestration/$s.sh"' "$self" \
+    || { echo "  the file-vs-source byte-for-byte comparison is missing"; ok=1; }
+  # Nothing left to embed: the prompt carries no script-content fence for a
+  # render-side guard to walk.
+  [ "$(grep -c '```sh' "$SCRIPT_DIR/agents/prompts/orchestrator.prompt")" -eq 0 ] \
+    || { echo "  orchestrator.prompt unexpectedly carries a script fence"; ok=1; }
   return $ok
 }
 
 # ---- run everything ---------------------------------------------------------
 
-run_test "testharness-04: both clients' rendered antz-orchestrator bodies embed the current scripts/orchestration/ files byte-for-byte at their three fences" test_testharness_04_render_matches_files
-run_test "testharness-04: a file change without a matching re-render is caught -- one tampered byte in an installed fence reports that script out of sync" test_testharness_04_drift_is_caught
+run_test "testharness-04: each installed libdir script equals its scripts/orchestration/ source byte-for-byte after stripping the single inserted marker line" test_testharness_04_installed_matches_source
+run_test "testharness-04: a file change without a matching re-render is caught -- one tampered byte in an installed libdir script reports that script out of sync" test_testharness_04_drift_is_caught
+run_test "testsuite-07: the drift guard compares installed files against sources -- fence-extraction and the skills carve-out are gone" test_testsuite_07_guard_compares_files
 
 echo ""
 echo "$pass_count passed, $fail_count failed"

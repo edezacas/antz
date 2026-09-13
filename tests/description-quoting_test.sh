@@ -332,9 +332,16 @@ quoting_05() {
   grep -q 'dequote_description' "$ri" \
     || { echo "  renderinject_test.sh's byte-identity is not re-scoped quoting-aware (dequote_description missing)"; ok=1; }
   # ... and their structural assertions stay enforced:
-  grep -qF 'reconstruct_expected_body "$d/expected.body"' "$ri" \
-    || { echo "  renderinject's marker-substitution reconstruction assertion is gone"; ok=1; }
-  grep -qF "frontmatter lost 'mode: primary'" "$ri" \
+  # re-keyed by change deembed-orchestration-scripts (testsuite-08's
+  # coherence half): the marker-substitution reconstruction retired with the
+  # injection (loud note in renderinject's header); the de-embedded-era
+  # structural pins -- the era-neutral norm_render normalization and the
+  # concrete-path substitution identity -- take its place.
+  grep -qF 'deembed-orchestration-scripts (sub-spec 05' "$ri" \
+    || { echo "  renderinject_test.sh carries no loud testsuite-05 re-key note"; ok=1; }
+  grep -qF 'norm_render' "$ri" \
+    || { echo "  renderinject's byte-identity is not normalized era-neutrally (norm_render missing)"; ok=1; }
+  grep -qF 'frontmatter lost '"'"'mode: primary'"'"'' "$ri" \
     || { echo "  renderinject-02's frontmatter-shape assertion is gone"; ok=1; }
   # skills-activation-render render-03/render-04-scoping: re-scoped to the
   # current renderer (their pre-change baseline is a controlled mutation of

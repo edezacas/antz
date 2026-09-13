@@ -69,7 +69,13 @@ refuse() {
 # bullet inside it. Scoping to the window means a phrase elsewhere in the
 # prompt never satisfies a bullet assertion.
 step1_window() {
-  awk '/^   ```$/{n++; next} /^2\. \*\*Probe/{exit} n>=2' "$1"
+  # Re-keyed by change deembed-orchestration-scripts (sub-spec 05): the
+  # window used to be the fenced region after the step 1 script embed's
+  # second fence line -- the embed is gone (scripts are installed files,
+  # never prompt content), so the window is the whole step 1 section: the
+  # lines between the "1. **Derive" heading and the "2. **Probe" heading
+  # (same heading-form extraction the de-embedded prose pins use).
+  awk '/^1\. \*\*Derive/{s=1} /^2\. \*\*Probe/{s=0} s' "$1"
 }
 
 # =============================================================================

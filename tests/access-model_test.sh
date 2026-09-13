@@ -238,11 +238,14 @@ head_meta_at() {
 }
 
 # render_tree <home> <staged-checkout-dir> <log>: renders all four agents for
-# both clients into <home> via install.sh's real render path.
+# both clients into <home> via install.sh's real render path. Hermetic since
+# change deembed-orchestration-scripts (testsuite-08's coherence half): the
+# session's XDG_CONFIG_HOME is masked so install.sh's libdir step resolves
+# INSIDE the temp home instead of writing to the real ~/.config/antz.
 render_tree() {
   home="$1"; tree="$2"; log="$3"
   mkdir -p "$home"
-  HOME="$home" sh "$tree/install.sh" --all > "$log" 2>&1
+  env -u XDG_CONFIG_HOME HOME="$home" sh "$tree/install.sh" --all > "$log" 2>&1
 }
 
 # The monthly fixture, rendered lazily on first use:
@@ -335,13 +338,27 @@ test_render_02() {
 test_render_03() {
   ensure_render_fixtures || return 1
   ok=0
+  # Change deembed-orchestration-scripts legitimately makes the orchestrator
+  # BODY path-dependent: the rendered invocation lines embed the resolved
+  # libdir (under each render's own temp home), so a raw cross-home byte cmp
+  # would attribute the path difference to the meta. Mask each side's home
+  # path to a common token first; the meta-attribution meaning of the
+  # identity is unchanged (and the masking is a no-op on every body that
+  # carries no path, e.g. the coder renders).
+  mask_home_path() {
+    # $1 = file, $2 = the home whose path to replace.
+    sed "s|$2|/MASKED_HOME|g" "$1"
+  }
   for client in claude opencode; do
     for role in coder orchestrator; do
       a=$(agent_md "$RENDER_HOME" "$client" "$role")
       b=$(agent_md "$HEADMETA_HOME" "$client" "$role")
-      if ! cmp -s "$a" "$b"; then
+      d=$(new_tmp_dir)
+      mask_home_path "$a" "$RENDER_HOME" > "$d/mine"
+      mask_home_path "$b" "$HEADMETA_HOME" > "$d/head"
+      if ! cmp -s "$d/mine" "$d/head"; then
         echo "  render differs from HEAD-meta render: $client/$role"
-        diff "$b" "$a" | head -5
+        diff "$d/head" "$d/mine" | head -5
         ok=1
       fi
     done

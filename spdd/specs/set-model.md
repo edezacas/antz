@@ -140,9 +140,11 @@ not spec'd byte-for-byte, but must state specific, checkable content:
   # MODIFY - command-install-01: same scenario as the governing spec, with two
   # changes: the argument-hint now shows the --model/--clear group as optional
   # (the no-flag form is the interactive picker, not a missing-argument error),
-  # and the body carries the picker instructions. Scoping and marker
-  # assertions are unchanged. The corresponding unit test
-  # (test_command_install_01) is updated to the new hint string.
+  # and the body carries the picker instructions. Re-scoped by change
+  # `deembed-orchestration-scripts` (setmodeldeembed-02): the body no longer
+  # embeds the script; the run instruction invokes the installed libdir file
+  # by path with the copy's own client first argument. The corresponding unit
+  # test (test_command_install_01) is updated to the new hint string.
   Scenario: command-install-01
     Given a clean "~/.claude/commands" directory
     When the user runs "./install.sh --claude"
@@ -151,7 +153,8 @@ not spec'd byte-for-byte, but must state specific, checkable content:
     And its frontmatter contains a "description:" field describing the command's purpose, including that omitting --model/--clear opens an interactive picker
     And its frontmatter contains "argument-hint: --agent <specifier|coder|verifier|orchestrator> [--model <value>|--clear]"
     And its body contains the pre-flight and interactive-picker instructions for the "claude" client
-    And its body still contains the embedded script and the relay rule (reply using exactly what the script printed)
+    And its body invokes the installed antz-set-model.sh by its concrete libdir path with "claude" as the first argument
+    And its body still contains the relay rule (reply using exactly what the script printed)
     And its body is scoped to the "claude" client only -- it never references OpenCode's agent directory or frontmatter position
 
   # command-install-02: same for OpenCode, at OpenCode's own paths -- and,
@@ -604,10 +607,15 @@ not spec'd byte-for-byte, but must state specific, checkable content:
 
   ## Embedded script: anchored marker check and temp-file cleanup trap (from `hardening-installsh`, sub-spec 04)
 
-  # MODIFY - setmodel-01: the embedded script's managed check is anchored to
+  # MODIFY - setmodel-01: the installed script's managed check is anchored to
   # the line-start header marker (refining the detection basis of
-  # set-model-cmd-07). Conforming files behave exactly as before; a file that
-  # only mentions the marker mid-body is now refused as not antz-managed.
+  # set-model-cmd-07). Re-scoped by change `deembed-orchestration-scripts`
+  # (setmodeldeembed-04): the installed standalone file may use dollar-digit
+  # positional parameters (it is never templated by a client), so the
+  # embedded-script dollar-digit prohibition re-scopes from "the embedded
+  # copy inside the command body" to "the installed file runs the same
+  # observable contract". Conforming files behave exactly as before; a file
+  # that only mentions the marker mid-body is now refused as not antz-managed.
   Scenario: setmodel-01
     Given a fixture antz-coder.md that carries the header marker line and
       a fixture antz-coder.md that mentions "antz:generated" only inside
@@ -636,11 +644,18 @@ not spec'd byte-for-byte, but must state specific, checkable content:
     And the fixture is byte-for-byte unchanged
     And TMPDIR contains no leftover scratch file
 
-  # ADD - setmodel-04: token constraint survives the changes
+  # ADD - setmodel-04: token constraint survives the changes.
+  # Re-scoped by change `deembed-orchestration-scripts` (setmodeldeembed-04):
+  # the embedded-script dollar-digit prohibition re-scopes from the command
+  # body to the installed file; the command bodies stay dollar-digit-free
+  # with one $ARGUMENTS injection.
   Scenario: setmodel-04
     When both clients' rendered command bodies are inspected
-    Then the embedded script in each contains no `$<digit>` token and no
-      "$ARGUMENTS" sequence
+    Then each body still carries no client-substitutable dollar-digit token
+      and the "$ARGUMENTS" placeholder appears exactly once as the injection
+      point
+    And the installed script file may use dollar-digit positional parameters
+      — it is a standalone file, never templated by any client
     And both clients' command bodies still carry exactly the one intended
       "Arguments: $ARGUMENTS" injection line
 

@@ -129,11 +129,24 @@ VERSION=$(cat "$VERSION_FILE")
 HOMES_ROOT=$(new_tmp_dir)
 
 # render_to <home> <tree-dir> <log>: full render of all four agents + both
-# commands into <home> via install.sh's real --all path.
+# commands into <home> via install.sh's real --all path. Hermetic since
+# change deembed-orchestration-scripts (testsuite-08's coherence half): the
+# session's XDG_CONFIG_HOME is masked so install.sh's libdir step resolves
+# INSIDE the temp home instead of writing to the real ~/.config/antz.
 render_to() {
   home="$1"; tree="$2"; log="$3"
   mkdir -p "$home"
-  HOME="$home" sh "$tree/install.sh" --all > "$log" 2>&1
+  env -u XDG_CONFIG_HOME HOME="$home" sh "$tree/install.sh" --all > "$log" 2>&1
+}
+
+# mask_home_path <file> <home> <dest>: rewrite the render home's path to a
+# common token. Change deembed-orchestration-scripts legitimately embeds the
+# resolved libdir (under each render's own temp home) into the orchestrator
+# body, so a raw cross-home byte cmp would attribute that path to whatever
+# layer the test isolates; masking keeps the byte-identity proofs meaningful
+# (and is a no-op on every file that carries no path).
+mask_home_path() {
+  sed "s|$2|/MASKED_HOME|g" "$1" > "$3"
 }
 
 # agent_md <home> <client> <role>: the rendered agent file path.
@@ -220,8 +233,11 @@ test_render_03() {
   for role in specifier coder verifier orchestrator; do
     a=$(agent_md "$WORK_HOME" opencode "$role")
     b=$(agent_md "$head_home" opencode "$role")
-    cmp -s "$a" "$b" \
-      || { echo "  OpenCode render differs from pre-change renderer: $role (HEAD vs work)"; diff "$a" "$b" | head -5; ok=1; }
+    d=$(new_tmp_dir)
+    mask_home_path "$a" "$WORK_HOME" "$d/mine"
+    mask_home_path "$b" "$head_home" "$d/head"
+    cmp -s "$d/mine" "$d/head" \
+      || { echo "  OpenCode render differs from pre-change renderer: $role (HEAD vs work)"; diff "$d/mine" "$d/head" | head -5; ok=1; }
   done
   for role in specifier coder verifier orchestrator; do
     f=$(agent_md "$WORK_HOME" opencode "$role")
@@ -265,7 +281,10 @@ test_render_04() {
     || { echo "  second render failed"; cat "$again_root/render.log"; return 1; }
   for client in claude opencode; do
     for role in specifier coder verifier orchestrator; do
-      cmp -s "$(agent_md "$WORK_HOME" $client "$role")" "$(agent_md "$again_home" $client "$role")" \
+      d=$(new_tmp_dir)
+      mask_home_path "$(agent_md "$WORK_HOME" $client "$role")" "$WORK_HOME" "$d/first"
+      mask_home_path "$(agent_md "$again_home" $client "$role")" "$again_home" "$d/second"
+      cmp -s "$d/first" "$d/second" \
         || { echo "  render not deterministic: $client/$role"; ok=1; }
     done
   done
@@ -307,8 +326,11 @@ test_render_04_scoping() {
         [ "$(tools_line "$b")" = "Read, Grep, Glob, Bash, Edit, Write, Skill" ] || { echo "  post-change tools wrong: $role"; ok=1; }
         [ "$(tools_line "$a")" = "Read, Grep, Glob, Bash, Edit, Write" ] || { echo "  pre-change tools wrong: $role"; ok=1; }
       else
-        cmp -s "$a" "$b" \
-          || { echo "  renderer changed output unexpectedly: $client/$role"; diff "$a" "$b" | head -8; ok=1; }
+        d=$(new_tmp_dir)
+        mask_home_path "$a" "$head_home" "$d/head"
+        mask_home_path "$b" "$WORK_HOME" "$d/work"
+        cmp -s "$d/head" "$d/work" \
+          || { echo "  renderer changed output unexpectedly: $client/$role"; diff "$d/head" "$d/work" | head -8; ok=1; }
       fi
     done
   done

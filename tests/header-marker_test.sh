@@ -13,6 +13,11 @@
 # is the user's) is additionally stated in install.sh's header comment, which
 # is also completed to name all four agents and both commands.
 #
+# Hermetic since change deembed-orchestration-scripts sub-spec 01: every
+# install run in this suite also unsets XDG_CONFIG_HOME, so the four libdir
+# scripts that install.sh writes there resolve inside the staged HOME and a
+# session's exported config home is never touched.
+#
 # Self-contained bash test harness (no external framework/dependency -- this
 # repo has no package manager or build system), same pattern as
 # tests/set-model-command_test.sh. Run directly:
@@ -116,7 +121,7 @@ marker_01() {
   dest="$home/.claude/agents/antz-specifier.md"
   write_managed_agent_fixture "$dest" 1.2.3
 
-  ( cd "$SCRIPT_DIR" && HOME="$home" sh ./install.sh --claude > "$home/install.log" 2>&1 ) \
+  ( cd "$SCRIPT_DIR" && env -u XDG_CONFIG_HOME HOME="$home" sh ./install.sh --claude > "$home/install.log" 2>&1 ) \
     || { echo "  install.sh --claude failed"; ok=1; }
 
   # overwritten in place with the new render (current VERSION in the header)
@@ -143,7 +148,7 @@ marker_02() {
   write_pseudo_managed_fixture "$dest"
   cp "$dest" "$home/original.copy"
 
-  ( cd "$SCRIPT_DIR" && HOME="$home" sh ./install.sh --claude > "$home/install.log" 2>&1 ) \
+  ( cd "$SCRIPT_DIR" && env -u XDG_CONFIG_HOME HOME="$home" sh ./install.sh --claude > "$home/install.log" 2>&1 ) \
     || { echo "  install.sh --claude failed"; ok=1; }
 
   baks="$home/.claude/agents/antz-specifier.md.bak."*
@@ -181,7 +186,7 @@ marker_03() {
   dest="$home/.claude/agents/antz-specifier.md"
   write_pseudo_managed_fixture "$dest"
 
-  ( cd "$SCRIPT_DIR" && HOME="$home" sh ./install.sh --claude --check > "$home/check.log" 2>&1 ) \
+  ( cd "$SCRIPT_DIR" && env -u XDG_CONFIG_HOME HOME="$home" sh ./install.sh --claude --check > "$home/check.log" 2>&1 ) \
     || { echo "  install.sh --check failed"; ok=1; }
   # fresh install of the current VERSION, not "already up to date (antz 9.9.9)"
   grep -qF "fresh install of antz $CURRENT_VERSION" "$home/check.log" \
@@ -195,7 +200,7 @@ marker_03() {
   # still reports the version embedded in that header comment
   home2=$(new_home)
   write_managed_agent_fixture "$home2/.claude/agents/antz-specifier.md" 1.2.3
-  ( cd "$SCRIPT_DIR" && HOME="$home2" sh ./install.sh --claude --check > "$home2/check.log" 2>&1 ) \
+  ( cd "$SCRIPT_DIR" && env -u XDG_CONFIG_HOME HOME="$home2" sh ./install.sh --claude --check > "$home2/check.log" 2>&1 ) \
     || { echo "  install.sh --check (managed fixture) failed"; ok=1; }
   grep -qF '1.2.3' "$home2/check.log" \
     || { echo "  --check lost the version embedded in a real header marker"; ok=1; }
@@ -205,7 +210,18 @@ marker_03() {
   # "fresh install" (06-bump470's [4.7.0] entry does, describing this very
   # behavior). The report line's colon-anchored shape is what --check emits
   # for an unmanaged file.
-  grep -qE ': fresh install of antz ' "$home2/check.log" \
+  #
+  # Re-scoped by change deembed-orchestration-scripts (sub-spec 01,
+  # libdirinstall-04, loud note per the repo's re-scope convention): the
+  # unanchored shape also matched the NEW script-artifact report lines
+  # ("antz-flow.sh: fresh install of antz X.Y.Z"), which libdirinstall-04
+  # requires --check to emit and which this scenario's fixture never
+  # installs (its HOME has no libdir copies). marker-03's spec sentence is
+  # about THAT CLIENT'S report ("that client's report says ... not 'already
+  # up to date'"), so the refusal is tightened to its actual subject: the
+  # per-client report line. The libdir lines' own shape is pinned by
+  # tests/libdirinstall_test.sh.
+  grep -qE '^Claude Code: fresh install of antz ' "$home2/check.log" \
     && { echo "  --check called a header-marked file a fresh install"; ok=1; }
 
   rm -rf "$home" "$home2"
@@ -226,8 +242,8 @@ marker_04() {
   printf 'first accumulated backup\n' > "$dir/antz-specifier.md.bak.20260101010101"
   printf 'second accumulated backup\n' > "$dir/antz-specifier.md.bak.20260202020202"
 
-  ( cd "$SCRIPT_DIR" && HOME="$home" sh ./install.sh --claude >/dev/null 2>&1 ) || ok=1
-  ( cd "$SCRIPT_DIR" && HOME="$home" sh ./install.sh --claude >/dev/null 2>&1 ) || ok=1
+  ( cd "$SCRIPT_DIR" && env -u XDG_CONFIG_HOME HOME="$home" sh ./install.sh --claude >/dev/null 2>&1 ) || ok=1
+  ( cd "$SCRIPT_DIR" && env -u XDG_CONFIG_HOME HOME="$home" sh ./install.sh --claude >/dev/null 2>&1 ) || ok=1
 
   # no new backup created by either run; both pre-existing ones survive
   # byte-for-byte under their original names
@@ -246,7 +262,7 @@ marker_04() {
   # named <destination>.bak.<YYYYMMDDHHMMSS>, of the content it overwrites
   printf 'a user file the second run overwrites\n' > "$dest"
   cp "$dest" "$home/original.copy"
-  ( cd "$SCRIPT_DIR" && HOME="$home" sh ./install.sh --claude >/dev/null 2>&1 ) || ok=1
+  ( cd "$SCRIPT_DIR" && env -u XDG_CONFIG_HOME HOME="$home" sh ./install.sh --claude >/dev/null 2>&1 ) || ok=1
   [ "$(count_backups "$dir" 'antz-specifier.md')" -eq 3 ] \
     || { echo "  expected exactly one new backup of the unmanaged destination (3 total)"; ok=1; }
   newbak=$(ls "$dir" | grep -E '^antz-specifier\.md\.bak\.[0-9]{14}$' | grep -v -e 20260101010101 -e 20260202020202)

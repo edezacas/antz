@@ -13,9 +13,14 @@
 # directly:
 #   ./tests/orchestrator-status-probe_test.sh
 #
-# Since change orchestrator-fast-path (sub-spec 01) the probe is a real file
-# and the prompt's fence carries only its include marker, so this suite runs
-# the file directly -- no extraction from the prompt anymore (testharness-02).
+# Since change orchestrator-fast-path (sub-spec 01) the probe is a real file,
+# so this suite runs the file directly -- no extraction from the prompt
+# (testharness-02). Re-keyed by change deembed-orchestration-scripts
+# (sub-spec 05, testsuite-02): the prompt's probe fence and its include
+# marker are gone entirely, so the file-source guard's fence clause now
+# pins the step-2 state invocation referencing the probe by its
+# __ANTZ_SCRIPTS_DIR__ path form; every probe-behavior assertion passes
+# unmodified against the byte-identical probe file.
 #
 # Evolved by change orchestrator-fast-path (sub-spec 05, receipts): the probe
 # also reads the coder's result receipts (spdd/changes/<slug>/NN-<feature>
@@ -120,8 +125,12 @@ test_probe_extracted() {
 # =============================================================================
 # testharness-02: the suite runs scripts/orchestration/antz-probe.sh directly
 # (no extraction from the prompt) -- the file exists, parses as POSIX sh,
-# keeps its shebang, and the prompt's probe fence carries exactly its include
-# marker line, so there is no embedded probe left to extract.
+# keeps its shebang. Re-keyed by change deembed-orchestration-scripts
+# (testsuite-02): the former '```sh probe fence holding exactly the include
+# marker' assertion is retired with the embed — the prompt now references the
+# probe by its __ANTZ_SCRIPTS_DIR__ path form (step 2's state invocation
+# passes the probe's installed path as its second argument), and no script
+# fence exists anywhere to extract from.
 # =============================================================================
 test_testharness_02_file_source() {
   ok=0
@@ -130,9 +139,36 @@ test_testharness_02_file_source() {
   sh -n "$PROBE_SH" || { echo "  probe file fails sh -n"; ok=1; }
   [ "$(head -n 1 "$PROBE_SH")" = '#!/bin/sh' ] \
     || { echo "  probe file lost its shebang first line"; ok=1; }
-  body=$(awk '/^   ```sh$/{p=1; next} /^   ```$/{p=0} p' "$ORCHESTRATOR_PROMPT" | sed 's/^   //')
-  [ "$body" = '# antz-include: scripts/orchestration/antz-probe.sh' ] \
-    || { echo "  prompt probe fence is not a bare include marker: $body"; ok=1; }
+  grep -qF 'sh "__ANTZ_SCRIPTS_DIR__/antz-flow.sh" state <slug> "__ANTZ_SCRIPTS_DIR__/antz-probe.sh"' \
+    "$ORCHESTRATOR_PROMPT" \
+    || { echo "  prompt does not reference the probe by its __ANTZ_SCRIPTS_DIR__ path form"; ok=1; }
+  grep -qF 'antz-include' "$ORCHESTRATOR_PROMPT" \
+    && { echo "  an include marker survives in the de-embedded prompt"; ok=1; }
+  [ "$(grep -c '^   ```sh$' "$ORCHESTRATOR_PROMPT")" = "0" ] \
+    || { echo "  a sh-fence opener survives in the de-embedded prompt"; ok=1; }
+  return $ok
+}
+
+# =============================================================================
+# testsuite-02 (change deembed-orchestration-scripts, sub-spec 05): the
+# probe-fence pin re-keys to the path form; the probe matrix passes
+# unmodified. The re-keyed shape pin lives in this suite, id-named: the
+# file-source guard body carries the __ANTZ_SCRIPTS_DIR__ reference (and no
+# fence reconstruction), and probealign-03's byte-identity list loudly drops
+# exactly that one function while keeping every probe-behavior group pinned.
+# =============================================================================
+test_testsuite_02_probe_fence_pin_rekeyed() {
+  ok=0
+  body=$(awk '/^test_testharness_02_file_source\(\)/,/^}$/' "$0")
+  printf '%s\n' "$body" | grep -qF 'state <slug> "__ANTZ_SCRIPTS_DIR__/antz-probe.sh"' \
+    || { echo "  the file-source guard does not pin the path-form probe reference"; ok=1; }
+  printf '%s\n' "$body" | grep -qF '# antz-include: scripts/orchestration/antz-probe.sh' \
+    && { echo "  the file-source guard still reconstructs the include-marker fence"; ok=1; }
+  pa=$(awk '/^test_probealign_03_suite_pins_the_aligned_extraction\(\)/,/^}$/' "$0")
+  printf '%s\n' "$pa" | grep -qF 'LOUD NOTE (change deembed-orchestration-scripts, testsuite-02)' \
+    || { echo "  probealign-03's byte-identity list lacks the loud re-scope note"; ok=1; }
+  printf '%s\n' "$pa" | grep -qF 'pinned="test_probe_extracted' \
+    || { echo "  probealign-03's pinned list was not re-scoped"; ok=1; }
   return $ok
 }
 
@@ -772,7 +808,15 @@ test_probealign_03_suite_pins_the_aligned_extraction() {
      && git -C "$SCRIPT_DIR" cat-file -e HEAD:tests/orchestrator-status-probe_test.sh 2>/dev/null; then
     HEADSUITE=$(mktemp)
     git -C "$SCRIPT_DIR" show HEAD:tests/orchestrator-status-probe_test.sh > "$HEADSUITE"
-    pinned="test_probe_extracted test_testharness_02_file_source
+    # LOUD NOTE (change deembed-orchestration-scripts, testsuite-02):
+    # test_testharness_02_file_source is out of this list — its probe-fence
+    # pin (the '```sh fence holding exactly the include marker) was retired
+    # by this change with the embed itself, re-keyed to the prompt's
+    # __ANTZ_SCRIPTS_DIR__ path reference. Every other function stays
+    # byte-pinned: all probe-behavior groups (open questions, rejections,
+    # ids extraction, receipts classification, change_dir=missing, empty
+    # ids) pass unmodified against the byte-identical probe file.
+    pinned="test_probe_extracted
       test_probe_open_questions test_probe_no_open_questions
       test_probe_rejected_count_one test_probe_rejected_count_two
       test_probe_rejected_count_malformed_not_counted
@@ -1068,6 +1112,7 @@ id=ui-2 result=skip reason=visual-only scenario, not unit-testable'
 
 run_test "probe-extracted: scripts/orchestration/antz-probe.sh is found and looks correct" test_probe_extracted
 run_test "testharness-02: the probe suite runs scripts/orchestration/antz-probe.sh directly (no extraction from the prompt)" test_testharness_02_file_source
+run_test "testsuite-02: the probe-fence pin re-keys to the step-2 path-form probe reference (loud note, no fence reconstruction) with every probe-behavior assertion unmodified" test_testsuite_02_probe_fence_pin_rekeyed
 run_test "probe-open-questions: OPEN_QUESTIONS.md present short-circuits to exactly one line" test_probe_open_questions
 run_test "probe-no-open-questions: prints open_questions=no and rejected_count=0 with no REJECTED.md" test_probe_no_open_questions
 run_test "probe-rejected-count-one: counts a single exact '## Rejection 1' heading" test_probe_rejected_count_one

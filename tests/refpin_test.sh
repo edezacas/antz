@@ -141,7 +141,13 @@ remote_run() {
     empty) refenv=(ANTZ_REF=) ;;
     *)     refenv=("ANTZ_REF=$refsig") ;;
   esac
-  ( cd "$work" && env "${refenv[@]}" HOME="$home" PATH="$bin:$PATH" \
+  # -u XDG_CONFIG_HOME: hermetic since change deembed-orchestration-scripts
+  # (sub-spec 01) -- install.sh now also writes the four libdir scripts, to
+  # "${XDG_CONFIG_HOME:-$HOME/.config}/antz/scripts"; unsetting it resolves
+  # the libdir INSIDE the staged HOME, where the diff -r and report
+  # comparisons below already look, and keeps a session's real config home
+  # (where an exported XDG_CONFIG_HOME would point) untouched.
+  ( cd "$work" && env -u XDG_CONFIG_HOME "${refenv[@]}" HOME="$home" PATH="$bin:$PATH" \
       CURL_LOG="$log" FIXTURE_ROOT="$root" sh ./install.sh --claude \
       > "$capture" 2>&1 )
   echo "$?"
@@ -150,6 +156,29 @@ remote_run() {
 rels_fetched() {
   # $1 = curl log -> the sorted unique relative paths behind the raw URLs.
   sed -n 's|^https://raw.githubusercontent.com/edezacas/antz/[^/]*/||p' "$1" | sort -u
+}
+
+masked_tree_diff() {
+  # $1 = tree-a (HOME-a), $2 = tree-b (HOME-b), $3 = diff output path,
+  # $4 = scratch base (under the caller's cleanup-tracked temp dir). Compares
+  # two installed trees for byte equality MODULO the per-run HOME: since
+  # change deembed-orchestration-scripts (sub-spec 02) the rendered
+  # orchestrator body embeds the concrete resolved libdir path under the run's
+  # HOME, so a raw diff -r of two distinct HOME paths is vacuously dirty. Both
+  # trees are copied to scratch with every occurrence of either HOME path
+  # masked to one shared token -- the same normalization this suite already
+  # applies to the console report's "Installed <path>" lines -- so the
+  # byte-identity pins keep asserting what they mean: identical install shape
+  # and content for a given HOME value.
+  a="$1"; b="$2"; out="$3"; scratch="$4"
+  ta="$scratch/ta"; tb="$scratch/tb"
+  cp -R "$a" "$ta" && cp -R "$b" "$tb" || return 1
+  for t in "$ta" "$tb"; do
+    find "$t" -type f | while IFS= read -r f; do
+      sed -e "s|$a|/MASKED-HOME|g" -e "s|$b|/MASKED-HOME|g" "$f" > "$f.m" && mv "$f.m" "$f"
+    done
+  done
+  diff -r "$ta" "$tb" > "$out" 2>&1
 }
 
 # ---- refpin-01 ---------------------------------------------------------------
@@ -190,7 +219,7 @@ refpin_01() {
   [ "$st" -eq 0 ] || { echo "  remote install (ANTZ_REF empty) exited $st"; ok=1; }
   grep -v "^$RAW_ROOT/master/" "$log" > "$d/bad-urls-b" || true
   [ -s "$d/bad-urls-b" ] && { echo "  empty ANTZ_REF changed the fetched URLs:"; sed 's/^/    /' "$d/bad-urls-b"; ok=1; }
-  diff -r "$d/home-a" "$d/home-b" > "$d/home.diff" 2>&1 \
+  masked_tree_diff "$d/home-a" "$d/home-b" "$d/home.diff" "$d" \
     || { echo "  empty vs unset ANTZ_REF installed differently:"; sed 's/^/    /' "$d/home.diff"; ok=1; }
   # same console report modulo the per-run HOME embedded in "Installed <path>"
   sed "s|$d/home-a||" "$d/run-a.log" > "$d/report-a"
@@ -252,7 +281,7 @@ refpin_03() {
   # a staged-tree marker proving prompt content is read from the checkout
   printf '\nStaged-checkout-only prose line 5R8KQ.\n' >> "$co/agents/prompts/specifier.prompt"
 
-  st=$(cd "$co" && env ANTZ_REF=bogus-ref HOME="$d/home-a" PATH="$bin:$PATH" CURL_LOG="$log" \
+  st=$(cd "$co" && env -u XDG_CONFIG_HOME ANTZ_REF=bogus-ref HOME="$d/home-a" PATH="$bin:$PATH" CURL_LOG="$log" \
         sh ./install.sh --claude > "$d/run-a.log" 2>&1; echo "$?")
   [ "$st" -eq 0 ] || { echo "  local install with ANTZ_REF=bogus-ref exited $st (read $d/run-a.log)"; ok=1; }
   [ -s "$log" ] && { echo "  the curl stub WAS invoked despite the checkout:"; sed 's/^/    /' "$log"; ok=1; }
@@ -264,11 +293,11 @@ refpin_03() {
 
   # the invariant: the local install is byte-identical with and without the
   # variable (it governs only the remote fetch path)
-  st=$(cd "$co" && env -u ANTZ_REF HOME="$d/home-b" PATH="$bin:$PATH" CURL_LOG="$log" \
+  st=$(cd "$co" && env -u ANTZ_REF -u XDG_CONFIG_HOME HOME="$d/home-b" PATH="$bin:$PATH" CURL_LOG="$log" \
         sh ./install.sh --claude > "$d/run-b.log" 2>&1; echo "$?")
   [ "$st" -eq 0 ] || { echo "  local install without ANTZ_REF exited $st"; ok=1; }
   [ -s "$log" ] && { echo "  the curl stub WAS invoked on the second (unset) run"; ok=1; }
-  diff -r "$d/home-a" "$d/home-b" > "$d/home.diff" 2>&1 \
+  masked_tree_diff "$d/home-a" "$d/home-b" "$d/home.diff" "$d" \
     || { echo "  local install differs with vs without ANTZ_REF:"; sed 's/^/    /' "$d/home.diff"; ok=1; }
   return $ok
 }
@@ -332,16 +361,32 @@ refpin_04() {
 }
 
 # ---- refpin-05 ---------------------------------------------------------------
-# The fetch architecture is preserved: the include injection still fetches
-# through fetch_file "$rel", there is exactly one executable `curl -fsSL`
-# invocation and it lives inside fetch_file, and the ref substitution happens
-# where RAW_BASE is built -- not per call site (renderinject-04's pin stays
-# valid; the full-suite run proves it stays green, unmodified).
+# The fetch architecture is preserved with its subject re-scoped by change
+# deembed-orchestration-scripts (sub-spec 01, libdirinstall-07): the include
+# INJECTION sentence ("the include injection still fetches through
+# fetch_file") predates that change's script installation and is retired
+# here (loud note; the injection itself survives until sub-spec 02 retires
+# it -- its render stays pinned by tests/renderinject_test.sh either way);
+# the pinned sentence now names the LIBDIR SCRIPT INSTALLATION fetching each
+# of the three on-disk sources through the one fetch_file helper, with the
+# set-model source read from install.sh's own emitter -- since change
+# deembed-orchestration-scripts sub-spec 03 that emitter text is redirected
+# straight into the libdir file (plain redirection, no capture; this test's
+# pin re-scoped accordingly, loud note). The one-executable-
+# curl and RAW_BASE-construction clauses are unchanged, and the ref
+# substitution still happens where RAW_BASE is built -- not per call site.
 
 refpin_05() {
   d=$(new_tmp_dir); ok=0
-  grep -qF 'fetch_file "$rel"' "$INSTALL_SH" \
-    || { echo "  the include injection no longer fetches through fetch_file \"\$rel\""; ok=1; }
+  for rel in scripts/orchestration/antz-flow.sh scripts/orchestration/antz-probe.sh \
+      scripts/orchestration/antz-skills.sh; do
+    grep -qF "fetch_file \"$rel\"" "$INSTALL_SH" || {
+      echo "  the script installation no longer fetches $rel through fetch_file"; ok=1; }
+  done
+  grep -qF 'emit_set_model_script > "$dest"' "$INSTALL_SH" || {
+    echo "  the set-model script source is no longer written straight from install.sh's own emitter"; ok=1; }
+  grep -qF 'src_set_model=$(emit_set_model_script' "$INSTALL_SH" && {
+    echo "  the set-model emitter text is captured through a command substitution again (retired by setmodeldeembed-03)"; ok=1; }
   # exactly one executable curl invocation (comments excluded) -- and it is
   # fetch_file's own, still going through "$RAW_BASE/$rel" (no per-site ref)
   n=$(grep -v '^[[:space:]]*#' "$INSTALL_SH" | grep -c 'curl -fsSL')
@@ -363,7 +408,7 @@ run_test "refpin-01: with no ref signal every fetch URL carries /master/, the in
 run_test "refpin-02: with ANTZ_REF=v4.7.0 every fetched URL carries /v4.7.0/ (VERSION, CHANGELOG.md, agents/meta/specifier.yaml, agents/prompts/orchestrator.prompt, scripts/orchestration/antz-flow.sh among them), none carries /master/, and the markers embed the fetched tree's VERSION" refpin_02
 run_test "refpin-03: a checkout install reads every file from disk and never touches the network regardless of ANTZ_REF (failing curl stub never invoked; byte-identical with and without it)" refpin_03
 run_test "refpin-04: README's install section, install.sh's header usage, and the AGENTS.md/CLAUDE.md RAW_BASE bullets document the tag-pinned ANTZ_REF invocation (shared tagged-URL example, master default, ANTZ_REF override)" refpin_04
-run_test "refpin-05: the fetch architecture is preserved -- injection fetches through fetch_file \"\$rel\", exactly one executable curl -fsSL inside fetch_file, and the ref is substituted at the RAW_BASE construction, not per call site" refpin_05
+run_test "refpin-05: the fetch architecture is preserved with its subject re-scoped (libdirinstall-07) -- the libdir script installation fetches each on-disk source through the one fetch_file helper (set-model read from the emitter), exactly one executable curl -fsSL inside fetch_file, and the ref is substituted at the RAW_BASE construction, not per call site" refpin_05
 
 echo
 echo "pass=$pass_count fail=$fail_count skip=$skip_count"
