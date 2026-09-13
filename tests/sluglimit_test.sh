@@ -9,6 +9,16 @@
 # spdd/changes/, spdd/archive/, and `git branch --list 'antz/*'`, and the
 # ask-the-user stop on a semantically unclear continuation (sluglimit-02).
 #
+# sluglimit-02's working-vs-HEAD window assertions follow the change_pending()
+# gating pattern of tests/bump440_test.sh, tests/bump450_test.sh and
+# tests/bump460_test.sh (loud retirement by gating, stacking-robust): the
+# window is enforced only while the derivation-bullet reword of
+# agents/prompts/orchestrator.prompt is uncommitted (the flow's state), and
+# retires vacuously with a loud note once the reword is committed -- a later
+# legitimate edit can never resurrect the guard. The pinned-meaning
+# assertions read no git HEAD and stay enforced in every repo state (the
+# durable coverage once the window retires).
+#
 # Self-contained bash test harness (no external framework/dependency -- this
 # repo has no package manager or build system), mirroring the harness style
 # of tests/rolechecks_test.sh. Run directly:
@@ -71,9 +81,12 @@ step1_window "$ORCHESTRATOR_PROMPT" > "$CUR_STEP1"
 CUR_BULLET=$(mktemp)
 grep -m1 -F 'For new work: derive' "$CUR_STEP1" > "$CUR_BULLET"
 
-# HEAD baseline: the repo is a git checkout and this change's work is
-# uncommitted (no role ever commits), so HEAD is the pre-change state of the
-# prompt and of the flow script.
+# HEAD baseline: the repo is a git checkout. While the derivation-bullet
+# reword is pending (uncommitted -- the flow's state, no role ever commits),
+# HEAD is the pre-change state of the prompt and the window guards built on
+# this baseline are enforced; once the reword is committed, the
+# change_pending() gate retires those guards with a loud note, so the suite
+# passes in both states.
 HEAD_PROMPT=$(mktemp)
 git -C "$SCRIPT_DIR" show HEAD:agents/prompts/orchestrator.prompt > "$HEAD_PROMPT" 2>/dev/null \
   || { echo "FATAL: cannot read HEAD:agents/prompts/orchestrator.prompt"; exit 1; }
@@ -95,6 +108,28 @@ tail_of() {
 flow_limit() {
   grep -F "state=bad_slug" "$FLOW_SH" \
     | grep -oE -- '-le [0-9]+' | head -n 1 | sed 's/^-le //'
+}
+
+head_bullet_states_length_limit() {
+  # The reword's marker content: HEAD's slug-derivation bullet states the
+  # length limit -- the "at most <n> characters" wording whose <n> is the
+  # flow script's mechanical -le value (the wording sluglimit-01 pins in the
+  # working bullet, read off HEAD's copy instead).
+  limit=$(flow_limit)
+  [ -n "$limit" ] && grep -qF "at most $limit characters" "$HEAD_BULLET"
+}
+
+change_pending() {
+  # True while the derivation-bullet reword of agents/prompts/orchestrator.prompt
+  # is uncommitted in the working tree (the flow's state -- no role ever
+  # commits): the prompt differs from HEAD AND HEAD's bullet does not yet
+  # state the length limit. The conjunction is the stacking lesson recorded
+  # by tests/bump440_test.sh, tests/bump450_test.sh and tests/bump460_test.sh:
+  # once HEAD carries the reword, any current working diff is a later
+  # change's legitimate edit and must not resurrect the window guards
+  # against it -- so they retire instead.
+  ! git -C "$SCRIPT_DIR" diff --quiet HEAD -- agents/prompts/orchestrator.prompt 2>/dev/null \
+    && ! head_bullet_states_length_limit
 }
 
 # =============================================================================
@@ -147,26 +182,22 @@ test_sluglimit_01() {
 # change) with the checks against spdd/changes/, spdd/archive/, and
 # `git branch --list 'antz/*'`, and the ask-the-user stop on a semantically
 # unclear continuation (flow-07's waiting-user slug-ambiguity stop) -- never a
-# bare "-2" suffix without semantic continuation. Mechanically: the bullet's
-# collision tail is byte-identical to HEAD's, and the only line of the whole
-# prompt that differs from HEAD is the derivation bullet itself -- the
-# ensure-state meanings, the four tables, the numbered steps ending at 6, the
-# fence count, and the dedup guard's exactly-two exceptions keep their pinned
-# content (flow-09, orchestrator-06).
+# bare "-2" suffix without semantic continuation. The pinned-meaning
+# assertions never read git HEAD: they hold in every repo state and are the
+# durable coverage once the window retires. The working-vs-HEAD window
+# assertions (the collision tail byte-identical to HEAD's, the diff vs HEAD
+# removing exactly one line and adding exactly one with verbatim bullet
+# identity, and the fence-count and table-row-count equality vs HEAD's) are
+# gated by change_pending(): enforced while the derivation-bullet reword is
+# pending (uncommitted), retired with a loud note once committed -- the test
+# stays registered and passes in both states (flow-09, orchestrator-06).
 # =============================================================================
 test_sluglimit_02() {
   ok=0
 
-  # The collision rule survives byte-identical: everything from "from the raw
-  # request," onward equals HEAD's (the rule was not reworded by the edit).
-  CUR_TAIL=$(tail_of "$CUR_BULLET")
-  HEAD_TAIL=$(tail_of "$HEAD_BULLET")
-  [ -n "$HEAD_TAIL" ] || { echo "  HEAD's derivation bullet has no 'from the raw request,' tail"; return 1; }
-  [ "$CUR_TAIL" = "$HEAD_TAIL" ] \
-    || { echo "  the collision-rule tail is not byte-identical to HEAD's"; ok=1; }
-
-  # The pinned collision meanings, read off the bullet itself:
-  # suffix only on continuation, with all three collision checks named.
+  # The pinned collision meanings, read off the working bullet itself --
+  # absolute, no git HEAD read, enforced in every repo state: suffix only
+  # on continuation, with all three collision checks named.
   require "$CUR_BULLET" "checked against \`spdd/changes/\`, \`spdd/archive/\`, and \`git branch --list 'antz/*'\` for collisions" || ok=1
   require "$CUR_BULLET" 'suffix (`-2`, ... ) only if the request continues an existing change and thus the slug is claimed' || ok=1
   # ask on an unclear continuation -- the waiting-user slug-ambiguity stop
@@ -174,9 +205,37 @@ test_sluglimit_02() {
   require "$CUR_BULLET" 'when the request'"'"'s continuation of an already-claimed slug is semantically unclear, stop and ask the user' || ok=1
   require "$ORCHESTRATOR_PROMPT" 'slug-ambiguity stop (no unambiguous on-disk candidate, or a semantically unclear continuation of an already-claimed slug)' || ok=1
 
-  # Invariant: only the derivation bullet changes in the prompt -- the diff
-  # vs HEAD is exactly one removed line and one added line, and they are the
-  # HEAD and working bullets verbatim.
+  # The pinned surrounding structure keeps its content (flow-09,
+  # orchestrator-06) -- absolute: numbered steps still end at 6, the
+  # discover table's header survives, the dedup guard keeps its exactly-two
+  # exceptions.
+  require "$ORCHESTRATOR_PROMPT" '6. On a fresh rejection' || ok=1
+  if grep -qE '^7\. ' "$ORCHESTRATOR_PROMPT"; then
+    echo "  a step 7 exists (numbered steps must end at 6)"; ok=1
+  fi
+  require "$ORCHESTRATOR_PROMPT" '| discover output | Meaning / action |' || ok=1
+  require "$ORCHESTRATOR_PROMPT" 'exactly two exceptions, both step 4' || ok=1
+
+  # The working-vs-HEAD window guards -- gated by change_pending(): enforced
+  # only while the derivation-bullet reword is pending, retired with one
+  # loud note otherwise (never deleted; the guard keeps its registration).
+  if ! change_pending; then
+    echo "  note: the working-vs-HEAD window guards on agents/prompts/orchestrator.prompt are vacuously retired -- the derivation-bullet reword is committed vs HEAD (HEAD's bullet already states the length limit, so any current diff is a later change's legitimate edit and must not resurrect these guards); the pinned-meaning assertions above stay enforced"
+    return $ok
+  fi
+
+  # (pending) The collision rule survives byte-identical: everything from
+  # "from the raw request," onward equals HEAD's (the rule was not reworded
+  # by the edit).
+  CUR_TAIL=$(tail_of "$CUR_BULLET")
+  HEAD_TAIL=$(tail_of "$HEAD_BULLET")
+  [ -n "$HEAD_TAIL" ] || { echo "  HEAD's derivation bullet has no 'from the raw request,' tail"; return 1; }
+  [ "$CUR_TAIL" = "$HEAD_TAIL" ] \
+    || { echo "  the collision-rule tail is not byte-identical to HEAD's"; ok=1; }
+
+  # (pending) Invariant: only the derivation bullet changes in the prompt --
+  # the diff vs HEAD is exactly one removed line and one added line, and they
+  # are the HEAD and working bullets verbatim.
   DIFF=$(git -C "$SCRIPT_DIR" diff HEAD -- agents/prompts/orchestrator.prompt)
   minus=$(printf '%s\n' "$DIFF" | grep -cE '^-[^-]')
   plus=$(printf '%s\n' "$DIFF" | grep -cE '^\+[^+]')
@@ -190,29 +249,21 @@ test_sluglimit_02() {
     || { echo "  the added line is not the working slug-derivation bullet"; ok=1; }
   rm -f /tmp/sluglimit.removed.$$ /tmp/sluglimit.added.$$
 
-  # The pinned surrounding structure keeps its content (flow-09,
-  # orchestrator-06): numbered steps still end at 6, the fence count and the
-  # tables are unchanged vs HEAD, the dedup guard keeps its exactly-two
-  # exceptions.
-  require "$ORCHESTRATOR_PROMPT" '6. On a fresh rejection' || ok=1
-  if grep -qE '^7\. ' "$ORCHESTRATOR_PROMPT"; then
-    echo "  a step 7 exists (numbered steps must end at 6)"; ok=1
-  fi
+  # (pending) The surrounding structure is untouched by the edit: the fence
+  # count and the table-row count equal HEAD's.
   wf=$(grep -cE '^   ```(sh)?$' "$ORCHESTRATOR_PROMPT")
   hf=$(grep -cE '^   ```(sh)?$' "$HEAD_PROMPT")
   [ "$wf" -eq "$hf" ] || { echo "  fence count $wf differs from HEAD's $hf"; ok=1; }
   wt=$(grep -c '^|' "$ORCHESTRATOR_PROMPT")
   ht=$(grep -c '^|' "$HEAD_PROMPT")
   [ "$wt" -eq "$ht" ] || { echo "  table-row count $wt differs from HEAD's $ht"; ok=1; }
-  require "$ORCHESTRATOR_PROMPT" '| discover output | Meaning / action |' || ok=1
-  require "$ORCHESTRATOR_PROMPT" 'exactly two exceptions, both step 4' || ok=1
   return $ok
 }
 
 # ---- run everything ----------------------------------------------------------
 
 run_test "sluglimit-01: the step 1 slug-derivation bullet states the derived slug is at most 40 characters -- the flow script's mechanical state=bad_slug length limit, matched to its -le value -- in place of the undefined short, so a derived slug passes the gate rather than relying on it as a catch" test_sluglimit_01
-run_test "sluglimit-02: the bullet keeps the collision rules' pinned meaning -- suffix only on continuation with the spdd/changes/, spdd/archive/ and antz/* collision checks, and the ask-the-user stop on a semantically unclear continuation -- while the only prompt line changed vs HEAD is the derivation bullet itself" test_sluglimit_02
+run_test "sluglimit-02: the bullet keeps the collision rules' pinned meaning -- suffix only on continuation with the spdd/changes/, spdd/archive/ and antz/* collision checks, and the ask-the-user stop on a semantically unclear continuation -- enforced absolutely, while the working-vs-HEAD window guards on orchestrator.prompt (tail identity, the one-removed/one-added diff with verbatim bullet identity, fence/table-count equality) are enforced by the change_pending() gate while the reword is pending and retired with a loud note once committed" test_sluglimit_02
 
 echo ""
 echo "$pass_count passed, $fail_count failed"

@@ -12,6 +12,20 @@
 # exact-string pin of the merge bullet is re-scoped to the extended bullet
 # (rolechecks-05).
 #
+# The two working-vs-HEAD window assertions this suite uses -- the
+# appended-sentence-yields-HEAD's-bullet check (rolechecks-01) and the
+# roles-03 re-scope inversion with its Given and the roles-01/02/04/05
+# byte-identity loop (rolechecks-05) -- gate on the change_pending() pattern
+# of tests/bump440_test.sh, tests/bump450_test.sh and tests/bump460_test.sh
+# (retiro ruidoso por gating, stacking-robust, adopted by change
+# fix-test-regression-precision-gaps sub-spec 02): enforced only while the
+# guarded artifact differs from HEAD and HEAD does not yet carry this
+# change's marker content, retired with a loud "note:" line otherwise. The
+# predicates are per-artifact (agents/prompts/coder.prompt gates
+# independently of tests/roles_test.sh). The absolute content pins and the
+# observable criterion never read git HEAD and stay enforced in every repo
+# state.
+#
 # Self-contained bash test harness (no external framework/dependency -- this
 # repo has no package manager or build system), mirroring the harness style
 # of tests/roles_test.sh. Run directly:
@@ -108,9 +122,13 @@ extract_section "$VERIFIER_PROMPT" "Input Rule" "$VERIFIER_INPUT"
 extract_line "$VERIFIER_INPUT" 'code present' "$CODEPRESENT_BULLET"
 extract_section "$VERIFIER_PROMPT" "Merge & Archive, only on approved or approved-with-warnings" "$VERIFIER_MERGE"
 
-# HEAD baselines for the verbatim-survival assertions (the repo is a git
-# checkout; these sub-specs' work is uncommitted, so HEAD is the pre-change
-# state of the two prompts and of tests/roles_test.sh).
+# HEAD baselines for the working-vs-HEAD window assertions (the repo is a
+# git checkout). HEAD is NOT assumed to be the pre-change state: precision-
+# gaps (Change C) is committed at HEAD today, so the window assertions that
+# read HEAD gate on the per-artifact predicates below, while the absolute
+# content pins never read HEAD. rolechecks-02/03/04's surrounding-bullet
+# byte-identity comparisons pass in both repo states (out of the gating
+# fix's scope).
 HEAD_CODER=$(mktemp)
 HEAD_VERIFIER=$(mktemp)
 HEAD_ROLES=$(mktemp)
@@ -126,6 +144,38 @@ git -C "$SCRIPT_DIR" show HEAD:tests/roles_test.sh > "$HEAD_ROLES" 2>/dev/null \
 line_of() {
   # $1 = file, $2 = fixed substring, $3 = output file
   grep -m1 -F -- "$2" "$1" > "$3"
+}
+
+# HEAD's marker carriers: HEAD's pre-planning bullet (marker: the appended
+# id-search sentence) and HEAD's test_roles_03 function (marker: the re-
+# scoped pin of the extended merge bullet), read by the gates below.
+HEAD_IDCHECK_BULLET=$(mktemp)
+line_of "$HEAD_CODER" 'check the working tree for scenario ids' "$HEAD_IDCHECK_BULLET"
+HEAD_ROLES_03=$(mktemp)
+extract_fn "$HEAD_ROLES" test_roles_03 "$HEAD_ROLES_03"
+
+# ---- per-artifact change_pending() gates (the bump440/450/460 pattern) -------
+# A working-vs-HEAD window assertion is enforced only while the guarded
+# artifact differs from HEAD AND HEAD does not yet carry this change's marker
+# content for that artifact; otherwise it retires vacuously with a loud
+# "note:" and the test still passes. The conjunction is the stacking lesson:
+# once HEAD carries the marker, any current diff of the artifact is a LATER
+# change's legitimate edit and must not resurrect the window. The predicates
+# are per-artifact, so the coder.prompt window and the roles_test.sh window
+# gate independently.
+
+coder_change_pending() {
+  # The coder.prompt reword is pending: the file differs from HEAD and HEAD's
+  # pre-planning bullet does not yet carry the appended id-search sentence.
+  ! git -C "$SCRIPT_DIR" diff --quiet HEAD -- agents/prompts/coder.prompt 2>/dev/null \
+    && ! grep -qF "$ID_SEARCH" "$HEAD_IDCHECK_BULLET"
+}
+
+roles_change_pending() {
+  # The roles_test.sh re-scope is pending: the file differs from HEAD and
+  # HEAD's roles-03 does not yet pin the extended bullet's new content.
+  ! git -C "$SCRIPT_DIR" diff --quiet HEAD -- tests/roles_test.sh 2>/dev/null \
+    && ! grep -qF 'one spec file per domain, at `spdd/specs/<domain>.md`, with kebab-case domain names' "$HEAD_ROLES_03"
 }
 
 # =============================================================================
@@ -150,11 +200,17 @@ test_rolechecks_01() {
   require "$IDCHECK_BULLET" 'that already have a passing or skipped test' || ok=1
   require "$IDCHECK_BULLET" 'treat those as done rather than redoing them' || ok=1
 
-  # HEAD's original bullet survives byte-unchanged, with the mechanism stated
-  # as an appended sentence: removing that sentence yields HEAD's line
-  # exactly, so the bullet's meaning is otherwise unchanged.
-  if [ "$(sed -e 's/ The search is .* unit-test suite)\.$//' "$IDCHECK_BULLET")" \
-       != "$(grep -m1 -F 'check the working tree for scenario ids' "$HEAD_CODER")" ]; then
+  # Window assertion (the only HEAD read in this test): the original bullet
+  # survives byte-unchanged with the mechanism stated as an appended
+  # sentence -- stripping that sentence from the working bullet yields HEAD's
+  # line exactly. Gated on the coder.prompt reword being pending; once HEAD's
+  # bullet carries the id-search sentence (the committed state) it retires
+  # vacuously with a loud note -- the content pins above are the durable,
+  # HEAD-independent coverage.
+  if ! coder_change_pending; then
+    echo "  note: the coder.prompt id-search reword is committed vs HEAD (HEAD's pre-planning bullet already carries the appended id-search sentence); the stripping-yields-HEAD's-bullet window check is vacuously retired, the content pins stay enforced"
+  elif [ "$(sed -e 's/ The search is .* unit-test suite)\.$//' "$IDCHECK_BULLET")" \
+       != "$(cat "$HEAD_IDCHECK_BULLET")" ]; then
     echo "  removing the appended mechanism sentence does not yield HEAD's pre-planning bullet"
     ok=1
   fi
@@ -321,37 +377,53 @@ test_rolechecks_04() {
 test_rolechecks_05() {
   ok=0
 
-  # Given: the pre-change roles-03 pinned the merge-bullet sentence verbatim.
-  grep -qF 'Merge each scenario (ADD/MODIFY/REMOVE) into the matching `spdd/specs/` domain file, reading the existing spec first and merging rather than overwriting it.' "$HEAD_ROLES" \
-    || { echo "  HEAD's roles-03 does not pin the pre-change merge-bullet sentence verbatim"; ok=1; }
-
-  # The re-scoped pin: roles-03's function now asserts the extended bullet's
-  # new content alongside the surviving pin.
+  # The re-scope content pins, absolute (no git HEAD read, enforced in every
+  # repo state): the working test_roles_03 asserts the surviving pre-change
+  # merge-bullet sentence verbatim alongside the extended bullet's new
+  # content -- the per-domain file rule, the kebab-case naming, the
+  # create-when-new rule.
   CUR_R3=$(mktemp)
-  HEAD_R3=$(mktemp)
   extract_fn "$ROLES_SUITE" test_roles_03 "$CUR_R3"
-  extract_fn "$HEAD_ROLES" test_roles_03 "$HEAD_R3"
-  [ -s "$CUR_R3" ] || { echo "  test_roles_03 not found in the working roles_test.sh"; rm -f "$CUR_R3" "$HEAD_R3"; return 1; }
-  cmp -s "$CUR_R3" "$HEAD_R3" \
-    && { echo "  test_roles_03 is unmodified -- the pin was not re-scoped"; ok=1; }
+  [ -s "$CUR_R3" ] || { echo "  test_roles_03 not found in the working roles_test.sh"; rm -f "$CUR_R3"; return 1; }
   require "$CUR_R3" 'Merge each scenario (ADD/MODIFY/REMOVE) into the matching `spdd/specs/` domain file, reading the existing spec first and merging rather than overwriting it.' || ok=1
   require "$CUR_R3" 'one spec file per domain, at `spdd/specs/<domain>.md`, with kebab-case domain names' || ok=1
   require "$CUR_R3" 'When the domain is new (no `spdd/specs/<domain>.md` exists), the verifier creates the file' || ok=1
   require "$CUR_R3" 'a `# Domain: <domain>` header plus the merged scenarios, under the same merge rules' || ok=1
-  rm -f "$CUR_R3" "$HEAD_R3"
 
-  # roles-01, roles-02, roles-04, and roles-05's assertions keep passing
-  # unmodified: their functions are byte-identical to HEAD's.
-  for fn in test_roles_01 test_roles_02 test_roles_04 test_roles_05; do
-    a=$(mktemp); b=$(mktemp)
-    extract_fn "$ROLES_SUITE" "$fn" "$a"
-    extract_fn "$HEAD_ROLES" "$fn" "$b"
-    [ -s "$a" ] || { echo "  $fn not found in the working roles_test.sh"; ok=1; }
-    cmp -s "$a" "$b" || { echo "  $fn differs from HEAD (must stay unmodified)"; ok=1; }
-    rm -f "$a" "$b"
-  done
+  # The HEAD-relative window assertions -- HEAD's roles-03 pinning the
+  # pre-change merge-bullet sentence (the Given), test_roles_03 differing
+  # from HEAD's (equality reading "the pin was not re-scoped"), and
+  # roles-01/02/04/05 byte-identical to HEAD -- gated on the roles_test.sh
+  # re-scope being pending; once HEAD's roles-03 pins the extended bullet
+  # (the committed state) they retire vacuously with one loud note. The
+  # content pins above and the suite-green run below are the durable
+  # HEAD-independent coverage.
+  if ! roles_change_pending; then
+    echo "  note: the roles_test.sh roles-03 re-scope is committed vs HEAD (HEAD's roles-03 already pins the extended bullet); the re-scope window assertions are vacuously retired, the content pins and the suite-green run stay enforced"
+  else
+    # Given: the pre-change roles-03 pinned the merge-bullet sentence
+    # verbatim.
+    grep -qF 'Merge each scenario (ADD/MODIFY/REMOVE) into the matching `spdd/specs/` domain file, reading the existing spec first and merging rather than overwriting it.' "$HEAD_ROLES_03" \
+      || { echo "  HEAD's roles-03 does not pin the pre-change merge-bullet sentence verbatim"; ok=1; }
 
-  # The rest of the suite stays green: all five roles tests pass.
+    # The re-scope inversion: the working test_roles_03 differs from HEAD's.
+    cmp -s "$CUR_R3" "$HEAD_ROLES_03" \
+      && { echo "  test_roles_03 is unmodified -- the pin was not re-scoped"; ok=1; }
+
+    # roles-01, roles-02, roles-04, and roles-05's assertions keep passing
+    # unmodified: their functions are byte-identical to HEAD's.
+    for fn in test_roles_01 test_roles_02 test_roles_04 test_roles_05; do
+      a=$(mktemp); b=$(mktemp)
+      extract_fn "$ROLES_SUITE" "$fn" "$a"
+      extract_fn "$HEAD_ROLES" "$fn" "$b"
+      [ -s "$a" ] || { echo "  $fn not found in the working roles_test.sh"; ok=1; }
+      cmp -s "$a" "$b" || { echo "  $fn differs from HEAD (must stay unmodified)"; ok=1; }
+      rm -f "$a" "$b"
+    done
+  fi
+  rm -f "$CUR_R3"
+
+  # The rest of the suite stays green: all five roles tests pass. Absolute.
   ROLES_OUT=$(mktemp)
   sh "$ROLES_SUITE" > "$ROLES_OUT" 2>&1 \
     || { echo "  roles_test.sh does not pass after the rewordings:"; tail -5 "$ROLES_OUT"; ok=1; }

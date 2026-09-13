@@ -243,14 +243,37 @@ fixture_commit() {
   git -C "$1" -c user.email=t@example.invalid -c user.name=t commit -q -m "conventions-04 fixture"
 }
 
-# The session state: HEAD carries the pre-change specifier.prompt while the
-# working copy carries the conventions-01..03 rewording (which removes and
-# re-adds lines) -- the pins must retire loudly.
+# The session state, synthesized inside the fixture (fix-test-regression-
+# precision-gaps 03-conventions): copy the working tree (minus .git and
+# spdd/), commit the copy as-is as the fixture's one local commit, then
+# mutate the fixture's working specifier.prompt so it differs from the
+# FIXTURE's own HEAD -- reading no content from the real repository's git
+# HEAD, so the retirement path is covered whether the conventions-01..03
+# rewordings are pending or committed. The mutation is this fixed,
+# deterministic reword of one line in the specifier prompt's Verification
+# section -- outside the report/Output section, the only text of that file
+# the ungated assertions of the two exercised suites read -- so every
+# ungated assertion keeps passing and only the gated retirements fire. The
+# build fails loudly if the anchor line is ever gone, rather than silently
+# yielding a fixture that does not differ.
+MUTATE_ANCHOR='- Do not run mutation testing or other verification tools.'
+MUTATE_REWORD='- Do not run mutation testing or other verification tooling.'
+
 make_fixture_differs() {
   fixture_tree "$1"
-  git -C "$SCRIPT_DIR" show HEAD:agents/prompts/specifier.prompt > "$1/agents/prompts/specifier.prompt"
   fixture_commit "$1"
-  cp "$SPECIFIER_PROMPT" "$1/agents/prompts/specifier.prompt"
+  prompt="$1/agents/prompts/specifier.prompt"
+  tmp="$1/.specifier.mutate.tmp"
+  if ! awk -v old="$MUTATE_ANCHOR" -v new="$MUTATE_REWORD" '
+      $0 == old && !done { print new; done = 1; next }
+      { print }
+      END { exit done ? 0 : 1 }
+    ' "$prompt" > "$tmp"; then
+    echo "  fixture mutation anchor line not found in specifier.prompt -- the diff window cannot be synthesized (fixture problem?)"
+    rm -f "$tmp"
+    return 1
+  fi
+  mv "$tmp" "$prompt"
 }
 
 # The post-commit state: the working copy is byte-identical to HEAD (the
@@ -310,7 +333,8 @@ test_conventions_04_working_suites_green_guards_registered() {
 test_conventions_04_prompts05_retires_loudly_when_copy_differs() {
   ok=0
   fx=$(mktemp -d)
-  make_fixture_differs "$fx"
+  make_fixture_differs "$fx" \
+    || { echo "  cannot build the differs fixture"; rm -rf "$fx"; return 1; }
   run_suite "$fx" "$PROMPTS_SUITE"
   printf '%s\n' "$fx_out" | grep -q '^PASS: prompts-05' \
     || { echo "  prompts-05 must stay registered and pass once the copy differs from HEAD:"; fails_of "$fx_out"; ok=1; }
@@ -348,7 +372,8 @@ test_conventions_04_prompts05_pin_enforced_quietly_when_copy_identical() {
 test_conventions_04_closingblock05_retires_loudly_when_copy_differs() {
   ok=0
   fx=$(mktemp -d)
-  make_fixture_differs "$fx"
+  make_fixture_differs "$fx" \
+    || { echo "  cannot build the differs fixture"; rm -rf "$fx"; return 1; }
   run_suite "$fx" "$CLOSINGBLOCK_SUITE"
   if [ "$fx_rc" -ne 0 ]; then
     echo "  the gated closingblock suite must exit 0 with the legitimate rewording:"
@@ -384,6 +409,48 @@ test_conventions_04_closingblock05_enforced_quietly_when_copy_identical() {
   return $ok
 }
 
+# The fixture-builder contract itself (fix-test-regression-precision-gaps
+# 03-conventions): the diff window is synthesized inside the fixture -- the
+# copy committed as-is, only the fixture's working specifier.prompt mutated
+# by a fixed deterministic reword -- so the builder never reads the real
+# repository's git HEAD and covers the retirement path in every repo state.
+test_conventions_04_differs_fixture_is_synthesized_inside_the_fixture() {
+  ok=0
+  fx=$(mktemp -d)
+  make_fixture_differs "$fx" \
+    || { echo "  cannot build the differs fixture"; rm -rf "$fx"; return 1; }
+  # The window lives inside the fixture: the working specifier.prompt
+  # differs from the fixture's OWN HEAD (what trips the gated retirements,
+  # in every repo state).
+  if git -C "$fx" diff HEAD --quiet -- agents/prompts/specifier.prompt; then
+    echo "  the fixture's working specifier.prompt does not differ from the fixture's own HEAD (window not synthesized)"; ok=1
+  fi
+  # The fixture commits the copy as-is -- never a blob taken from the real
+  # repo's git HEAD: its HEAD copy is byte-identical to the working tree's
+  # specifier.prompt.
+  if ! git -C "$fx" show HEAD:agents/prompts/specifier.prompt 2>/dev/null | cmp -s - "$SPECIFIER_PROMPT"; then
+    echo "  the fixture's committed specifier.prompt is not the working copy as-is (a real-HEAD read?)"; ok=1
+  fi
+  # The post-commit mutation touched only that fixture file...
+  changed=$(git -C "$fx" diff HEAD --name-only)
+  if [ "$changed" != "agents/prompts/specifier.prompt" ]; then
+    echo "  the mutation touched more than the fixture's specifier.prompt: $changed"; ok=1
+  fi
+  if cmp -s "$fx/agents/prompts/specifier.prompt" "$SPECIFIER_PROMPT"; then
+    echo "  the fixture's working specifier.prompt is unmutated (identical to the working tree's)"; ok=1
+  fi
+  # ...and it is fixed and deterministic: a second build yields a
+  # byte-identical fixture working copy.
+  fx2=$(mktemp -d)
+  make_fixture_differs "$fx2" \
+    || { echo "  cannot build the differs fixture (second run)"; rm -rf "$fx" "$fx2"; return 1; }
+  if ! cmp -s "$fx/agents/prompts/specifier.prompt" "$fx2/agents/prompts/specifier.prompt"; then
+    echo "  the fixture mutation is not deterministic"; ok=1
+  fi
+  rm -rf "$fx" "$fx2"
+  return $ok
+}
+
 test_conventions_04_closingblock05_degenerate_no_diff_check_kept() {
   ok=0
   fx=$(mktemp -d)
@@ -413,6 +480,7 @@ run_test "conventions-02: the End-To-End QA Suite first bullet states exactly on
 run_test "conventions-03: the Output relevant-files bullet states one section per sub-spec with relevant files and the declared kebab-case destination domain, names no README.md, and leaves the overview bullet byte-for-byte unchanged" test_conventions_03
 run_test "conventions-04: both suites carrying the specifier diff-window pins pass with the guards still registered, and print the loud notes while the rewording is uncommitted" test_conventions_04_working_suites_green_guards_registered
 run_test "conventions-04: prompts-05's specifier guard retires by gating -- loud retirement note, additive-shape checks skipped -- when the fixture copy differs from HEAD" test_conventions_04_prompts05_retires_loudly_when_copy_differs
+run_test "conventions-04: the differs-fixture synthesizes its window inside the fixture -- the copy committed as-is, only the fixture's working specifier.prompt mutated by a fixed deterministic reword, no read of the real git HEAD" test_conventions_04_differs_fixture_is_synthesized_inside_the_fixture
 run_test "conventions-04: prompts-05's byte-for-byte pin is still enforced quietly when the fixture copy is byte-identical to HEAD" test_conventions_04_prompts05_pin_enforced_quietly_when_copy_identical
 run_test "conventions-04: closingblock-05's two specifier diff-window assertions retire by gating with two loud notes when the fixture copy differs from HEAD" test_conventions_04_closingblock05_retires_loudly_when_copy_differs
 run_test "conventions-04: closingblock-05's specifier assertions stay enforced quietly when the fixture copy is byte-identical to HEAD" test_conventions_04_closingblock05_enforced_quietly_when_copy_identical
