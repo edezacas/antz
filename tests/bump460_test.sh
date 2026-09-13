@@ -29,6 +29,16 @@
 # suite's own-section assertions stable (the earlier bump suites'
 # agreement-based checks survive the newer entry).
 #
+# Evolved by change hardening-installsh (sub-spec 06, bump470): the
+# unconditional "no '## [' heading sits above [4.6.0]" topmost half is
+# retired with this loud note -- stacking a newer dated entry above [4.6.0]
+# is the CHANGELOG's whole point, so that pin could not survive the arrival
+# of the legitimate [4.7.0] entry it specced (this suite's own header above
+# already states its checks are the agreement-based kind that survive newer
+# entries; bump440/450 never carried the topmost half). The relative
+# ordering ([4.6.0] above [4.5.0] above [4.4.0]), the exactly-one dated
+# heading, and every other assertion here stay enforced either way.
+#
 # The install.sh-untouched and no-v4.6.0-tag checks are gated on the bump
 # being uncommitted (the flow's state): once the human makes the bump commit
 # (and may tag v4.6.0 against it -- tagging is the human's commit-time
@@ -158,7 +168,7 @@ test_bump460_01_version_newline_terminated_only_content() {
   return 0
 }
 
-test_bump460_01_460_section_topmost_above_450() {
+test_bump460_01_460_section_above_450() {
   ok=0
   l60="$(line_460)"
   l50="$(line_450)"
@@ -168,12 +178,11 @@ test_bump460_01_460_section_topmost_above_450() {
   # Exactly one [4.6.0] heading.
   n=$(grep -cF '## [4.6.0]' "$CHANGELOG_MD")
   [ "$n" -eq 1 ] || { echo "  '## [4.6.0]' appears $n times, expected exactly 1"; ok=1; }
-  # Topmost: no '## [' heading sits above it (this, with the agreement test,
-  # pins "VERSION reads exactly 4.6.0" without pinning the VERSION literal).
-  first=$(grep -nE '^## \[' "$CHANGELOG_MD" | head -n 1 | cut -d: -f1)
-  if [ -n "$l60" ] && [ -n "$first" ] && [ "$first" -ne "$l60" ]; then
-    echo "  '## [4.6.0]' is not the topmost entry (another '## [' heading sits above it)"; ok=1
-  fi
+  # Topmost half retired by change hardening-installsh (sub-spec 06,
+  # bump470) per the header's loud note: a newer dated entry stacking above
+  # [4.6.0] is legitimate CHANGELOG growth, and the agreement test above
+  # keeps pinning "VERSION reads exactly 4.6.0" for as long as [4.6.0] is
+  # the newest entry. The relative ordering stays enforced forever.
   if [ -n "$l60" ] && [ -n "$l50" ] && [ "$l60" -ge "$l50" ]; then
     echo "  '## [4.6.0]' does not sit above '## [4.5.0]'"; ok=1
   fi
@@ -400,7 +409,7 @@ test_bump460_02_no_v460_tag_created_while_uncommitted() {
 
 run_test "bump460-01: VERSION is a semver agreeing with the newest (topmost) CHANGELOG entry -- never a pinned literal" test_bump460_01_version_agrees_with_newest_entry
 run_test "bump460-01: VERSION's only content is the version value with one trailing newline" test_bump460_01_version_newline_terminated_only_content
-run_test "bump460-01: CHANGELOG.md carries exactly one dated '## [4.6.0] - YYYY-MM-DD' section, topmost and above the [4.5.0] section which stays above [4.4.0], Keep-a-Changelog statement intact" test_bump460_01_460_section_topmost_above_450
+run_test "bump460-01: CHANGELOG.md carries exactly one dated '## [4.6.0] - YYYY-MM-DD' section sitting above the [4.5.0] section which stays above [4.4.0] (topmost half retired per header loud note), Keep-a-Changelog statement intact" test_bump460_01_460_section_above_450
 run_test "bump460-01: the [4.6.0] section uses the file's existing entry style -- Added/Changed category headings with bold lead-in bullets" test_bump460_01_entry_uses_existing_style
 run_test "bump460-01: the [4.6.0] entry describes the specifier's conventions -- two-digit sequential index, one e2e-qa.feature per change dir, README per-sub-spec sections with relevant files and the declared kebab-case destination domain, and the verifier's per-domain file rule with create-when-new" test_bump460_01_entry_describes_specifier_conventions
 run_test "bump460-01: the [4.6.0] entry describes the coder's mechanical checks -- the literal-grep id search in the project's test files and the fixed plan threshold (more than 8 implementation steps or more than 1 shared contract)" test_bump460_01_entry_describes_coder_mechanical_checks

@@ -1,11 +1,22 @@
 #!/bin/sh
-# Installs the antz agents (antz-specifier, antz-coder, antz-verifier) as
-# native subagents for whichever of Claude Code / OpenCode are detected on
-# this machine.
+# Installs the antz agents (antz-specifier, antz-coder, antz-verifier, and
+# antz-orchestrator) as native subagents for whichever of Claude Code /
+# OpenCode are detected on this machine, along with the /antz and
+# /antz-set-model commands.
 #
 # Usage:
 #   ./install.sh [--claude] [--opencode] [--all] [--check]
 #   curl -fsSL https://raw.githubusercontent.com/edezacas/antz/master/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/edezacas/antz/v4.7.0/install.sh | ANTZ_REF=v4.7.0 sh
+#
+# ANTZ_REF pins the install source ref for remote (curl | sh) installs: to
+# install from a tag, fetch install.sh from the tag's raw URL and pass
+# ANTZ_REF=<tag> to sh (example above), so every file this script fetches is
+# read from that same ref instead of master. The value is used verbatim --
+# install.sh neither validates it nor assumes tag syntax, a branch name works
+# the same way. Unset or empty, the documented default ref ("master") applies.
+# ANTZ_REF governs only the remote fetch path: a local-checkout install reads
+# every file from disk and never touches the network, with or without it.
 #
 # With no flags, each client is installed only if it's detected (its CLI is
 # on PATH, or its global config directory already exists). Pass a flag to
@@ -21,14 +32,28 @@
 # VERSION + CHANGELOG.md track changes to agents/prompts/, agents/meta/, and install.sh.
 # Each installed file's marker comment embeds the VERSION it was generated
 # from, so re-running this script can detect an update and print the
-# CHANGELOG.md entries the installed copy is missing.
+# CHANGELOG.md entries the installed copy is missing. A file counts as
+# antz-managed only when it carries that marker as a line-start header
+# comment ("# antz:generated ..."); a mention elsewhere is not ours.
+#
+# Backup policy: a pre-existing destination that is not antz-managed is
+# backed up to "<file>.bak.<timestamp>" before being overwritten, so no user
+# content is ever lost. install.sh never reads, renames, or deletes those
+# backups, and never prunes them automatically -- accumulating them is
+# accepted and cleaning them up is the user's job.
 
 set -eu
 
 REPO_OWNER="edezacas"
 REPO_NAME="antz"
-REPO_BRANCH="master"
-RAW_BASE="https://raw.githubusercontent.com/$REPO_OWNER/$REPO_NAME/$REPO_BRANCH"
+# The install source ref, derived from provenance rather than hardcoded:
+# ANTZ_REF, when set non-empty, names the git ref (tag or branch) the fetched
+# install.sh itself came from, and is used verbatim here at the RAW_BASE
+# construction -- no validation, no tag-syntax assumption. Unset or empty, the
+# documented default ref ("master") applies. This governs only the remote
+# fetch path; a local-checkout install (LOCAL_ROOT) reads from disk and never
+# consults RAW_BASE. See the ANTZ_REF note in the usage header above.
+RAW_BASE="https://raw.githubusercontent.com/$REPO_OWNER/$REPO_NAME/${ANTZ_REF:-master}"
 
 AGENTS="specifier coder verifier orchestrator"
 MARKER="antz:generated"
@@ -151,6 +176,16 @@ meta_field() {
   printf '%s\n' "$1" | sed -n "s/^$2: *//p" | head -n1
 }
 
+yaml_quote_desc() {
+  # $1 = raw single-line description text; prints it as a double-quoted
+  # single-line YAML scalar: embedded backslashes are escaped first (so the
+  # quote-escape's own backslash below is never double-escaped), then double
+  # quotes. Undoing those two escapes left-to-right reproduces the value
+  # byte-for-byte, so quoting never alters what a client reads.
+  esc=$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+  printf '"%s"' "$esc"
+}
+
 claude_tools_for_access() {
   case "$1" in
     readonly) printf 'Read, Grep, Glob, Bash' ;;
@@ -197,8 +232,9 @@ opencode_task_perm_for_access() {
 render_claude() {
   # $1 name, $2 description, $3 access, $4 body, $5 version
   tools=$(claude_tools_for_access "$3")
+  desc=$(yaml_quote_desc "$2")
   printf -- '---\n# %s version=%s -- do not edit by hand; regenerate with install.sh\nname: %s\ndescription: %s\ntools: %s\n---\n\n%s\n' \
-    "$MARKER" "$5" "$1" "$2" "$tools" "$4"
+    "$MARKER" "$5" "$1" "$desc" "$tools" "$4"
 }
 
 render_opencode() {
@@ -206,8 +242,9 @@ render_opencode() {
   mode=$(opencode_mode_for_access "$3")
   editperm=$(opencode_edit_perm_for_access "$3")
   taskperm=$(opencode_task_perm_for_access "$3")
+  desc=$(yaml_quote_desc "$2")
   printf -- '---\n# %s version=%s -- do not edit by hand; regenerate with install.sh\ndescription: %s\nmode: %s\npermission:\n  edit: %s\n  task: %s\n---\n\n%s\n' \
-    "$MARKER" "$5" "$2" "$mode" "$editperm" "$taskperm" "$4"
+    "$MARKER" "$5" "$desc" "$mode" "$editperm" "$taskperm" "$4"
 }
 
 render_claude_command() {
@@ -357,7 +394,12 @@ if [ ! -f "$dest" ]; then
   exit 1
 fi
 
-if ! grep -q "$MARKER" "$dest" 2>/dev/null; then
+# Managed-file detection is anchored to the line-start header comment
+# "# antz:generated ..." -- the same header-marker contract install.sh's own
+# install_file/installed_version_of reads apply. A file that merely mentions
+# the marker string mid-body (or with leading indentation) is not
+# antz-managed: it is refused here, untouched.
+if ! grep -q "^# $MARKER " "$dest" 2>/dev/null; then
   echo "Error: $dest is not antz-managed (missing the '$MARKER' marker); refusing to modify it. No file was written." >&2
   exit 1
 fi
@@ -381,6 +423,12 @@ fi
 # frontmatter (between the first two "---" lines), and optionally insert
 # the new model line directly after the "description:" line.
 tmp=$(mktemp)
+# The scratch file is removed on EVERY exit path -- success, the
+# nothing-to-clear no-op (which never reaches the mktemp above), and a
+# mid-run failure (set -e exits, e.g. the target turned read-only so the
+# rewrite's write fails): the trap is set the moment the scratch exists and
+# removes exactly that file -- never the target, never a backup.
+trap 'rm -f "$tmp"' EXIT
 dashes=0
 while IFS= read -r line || [ -n "$line" ]; do
   if [ "$line" = "---" ]; then
@@ -405,7 +453,6 @@ while IFS= read -r line || [ -n "$line" ]; do
   printf '%s\n' "$line"
 done < "$dest" > "$tmp"
 cat "$tmp" > "$dest"
-rm -f "$tmp"
 
 if [ "$have_model" -eq 1 ]; then
   echo "antz-$agent ($CLIENT) now has model: $model_value ($dest)"
@@ -509,8 +556,9 @@ render_set_model_command() {
   body=$(printf '%s\n\n%s\n\n%s\n\n%s\n\n```sh\n%s\n```\n' \
     "$intro" "$flow_head" "$picker" "$flow_tail" "$script")
 
+  desc=$(yaml_quote_desc "$short_desc")
   printf -- '---\n# %s version=%s -- do not edit by hand; regenerate with install.sh\ndescription: %s\n%s---\n\n%s\n' \
-    "$MARKER" "$version" "$short_desc" "$extra_frontmatter" "$body"
+    "$MARKER" "$version" "$desc" "$extra_frontmatter" "$body"
 }
 
 # The two picker paragraphs below live in their own top-level, no-argument
@@ -546,7 +594,10 @@ install_file() {
   # $1 destination path, $2 content
   dest="$1"
   content="$2"
-  if [ -f "$dest" ] && ! grep -q "$MARKER" "$dest" 2>/dev/null; then
+  # Antz-managed detection is anchored to the line-start header comment: a
+  # mid-line or mid-body mention of the marker must not mark a user file as
+  # ours (it gets backed up before the overwrite like any other file).
+  if [ -f "$dest" ] && ! grep -q "^# $MARKER " "$dest" 2>/dev/null; then
     ts=$(date +%Y%m%d%H%M%S)
     cp "$dest" "$dest.bak.$ts"
     echo "Backed up existing $dest -> $dest.bak.$ts (not antz-managed)"
@@ -557,10 +608,12 @@ install_file() {
 
 installed_version_of() {
   # $1 = existing installed file path; prints the version embedded in its
-  # marker comment, or nothing if the file doesn't exist or isn't antz-managed.
+  # line-start header marker comment, or nothing if the file doesn't exist
+  # or isn't antz-managed. Anchored like install_file's detection, so a
+  # stale version mentioned in the file's body can't pass as installed.
   f="$1"
   [ -f "$f" ] || return 0
-  sed -n "s/.*$MARKER version=\([^ ]*\).*/\1/p" "$f" | head -n1
+  sed -n "s/^# $MARKER version=\([^ ]*\).*/\1/p" "$f" | head -n1
 }
 
 changelog_since() {

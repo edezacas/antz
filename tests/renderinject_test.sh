@@ -60,6 +60,33 @@
 # with a note per reason -- never a double failure. The marker-substitution
 # reconstruction and the structural render assertions stay enforced either
 # way.
+#
+# Evolved by change hardening-installsh (sub-spec 01, marker): renderinject-
+# 06's base-vs-working install.sh header byte-identity window is retired
+# (loud note) for that change's legitimate header edits; its tracked-set
+# sentence assertion stays enforced.
+#
+# Evolved again by change hardening-installsh (sub-spec 02, quoting): the
+# rendered description: values are double-quoted YAML scalars at all three
+# render sites, so the pre-change render legitimately differs from the base
+# render on exactly those lines. Loud re-scope note: the base-vs-working
+# byte-identity comparisons in renderinject-01/02/03/05 now normalize each
+# working render through dequote_description (the exact inverse of the
+# quoting) before comparing, so each assertion keeps pinning the full
+# pre-change render modulo the quoting change itself -- the injection's
+# no-drift proof survives rather than being dropped. All structural
+# assertions (reconstruction, frontmatter shape, fences, inventory, keyed
+# behavior, --check report) are unaffected and stay enforced.
+#
+# Evolved again by change hardening-installsh (sub-spec 04, setmodel): the
+# embedded /antz-set-model script legitimately gains its anchored line-start
+# header-marker check and mktemp cleanup trap, so the pre-change render of
+# the two antz-set-model.md command files differs from the working render
+# inside exactly that ```sh fence. renderinject-03/-05 keep the byte-identity
+# pin for everything else by masking the fence's script body on both sides
+# (mask_set_model_script) -- the no-drift proof is preserved everywhere it
+# still applies, and the masked script's behavior is pinned forever by
+# tests/set-model-command_test.sh (set-model-cmd-01..12, setmodel-01..04).
 
 set -u
 
@@ -155,6 +182,68 @@ strip_frontmatter() {
 # the file-header version-marker note).
 mask_version() {
   sed 's/version=[0-9][0-9.]*/version=VERSIONMASKED/' "$1"
+}
+
+# Inverse of install.sh's 02-quoting transformation for base-render
+# comparisons: prints $1 with its frontmatter `description: "<escaped>"`
+# line rewritten to the pre-quoting plain form (outer quotes stripped,
+# \" -> " and \\ -> \ undone left-to-right, first quoted description line
+# only, within the first frontmatter). Files whose description is already
+# plain pass through unchanged, so unquoted renders (the /antz commands)
+# and the git base tree are unaffected. Trailing-newline fidelity: every
+# rendered file ends WITHOUT a newline (install_file writes command-
+# substituted content with printf '%s'), so the awk-added ORS is stripped
+# again here to keep the byte-identity comparisons byte-exact. See the
+# file-header 02-quoting re-scope note.
+dequote_description() {
+  out=$(awk '
+    /^---[ \t]*$/ { fences++; print; next }
+    fences == 1 && !dqdone && /^description: "/ {
+      dqdone = 1
+      v = $0
+      sub(/^description: "/, "", v)
+      sub(/"$/, "", v)
+      out = ""
+      n = length(v)
+      i = 1
+      while (i <= n) {
+        c = substr(v, i, 1)
+        if (c == "\\") {
+          d = substr(v, i + 1, 1)
+          if (d == "\\" || d == "\"") { out = out d; i += 2; continue }
+        }
+        out = out c
+        i++
+      }
+      print "description: " out
+      next
+    }
+    { print }
+  ' "$1")
+  printf '%s' "$out"
+}
+
+# Re-scope normalization for the /antz-set-model command renders (change
+# hardening-installsh, sub-spec 04): the renders embed the set-model script,
+# and 04 legitimately edits that script (anchored line-start header-marker
+# check + mktemp cleanup trap), so the base-vs-working byte-identity pins for
+# the two antz-set-model.md files compare them with the single ```sh fence's
+# BODY replaced by a one-line placeholder (the fence lines stay). Loud note:
+# every other byte of the command render (frontmatter, flow-head/tail prose,
+# alias vocabulary, fences) stays identity-enforced; the masked region's
+# behavior is pinned forever by the current extraction in
+# tests/set-model-command_test.sh (set-model-cmd-01..12, setmodel-01..04).
+# Trailing-newline fidelity matches dequote_description above: rendered files
+# end WITHOUT a newline, so the awk-added ORS is stripped again.
+mask_set_model_script() {
+  # $1 = path to a rendered /antz-set-model command file.
+  out=$(awk '
+    /^```sh$/ && !masked { print; masked = 1; insh = 1; print "<<embedded set-model script (masked for the 04-setmodel edit)>>"; next }
+    insh && /^```$/ { insh = 0; print; next }
+    insh { next }
+    { print }
+  ' "$1")
+  printf '%s' "$out"
 }
 
 # Strips every fenced block (``` or ```sh openers/closers and their bodies)
@@ -403,13 +492,16 @@ renderinject_01() {
   [ -f "$f" ] || { echo "missing rendered file: $f"; return 1; }
   assert_no_marker_in_tree "$HOME_B" || return 1
   # Byte-identity against the pre-change render (same version marker, masked)
-  # -- gated per the header note on the prompt prose being unchanged vs base.
+  # -- gated per the header note on the prompt prose being unchanged vs base,
+  # and re-scoped quoting-aware (dequote_description) per the header's
+  # 02-quoting note.
   if if_base_identity_active; then
     d=$(new_tmp_dir)
-    mask_version "$f" > "$d/new.masked"
+    dequote_description "$f" > "$d/new.dq"
+    mask_version "$d/new.dq" > "$d/new.masked"
     mask_version "$HOME_A/.claude/agents/antz-orchestrator.md" > "$d/base.masked"
     if ! cmp -s "$d/new.masked" "$d/base.masked"; then
-      echo "rendered Claude Code orchestrator body drifted from the pre-change render"
+      echo "rendered Claude Code orchestrator body drifted from the pre-change render (modulo the 02-quoting description normalization)"
       diff "$d/base.masked" "$d/new.masked" | head -10
       return 1
     fi
@@ -450,13 +542,15 @@ renderinject_02() {
   f="$HOME_B/.config/opencode/agents/antz-orchestrator.md"
   [ -f "$f" ] || { echo "missing rendered file: $f"; return 1; }
   assert_no_marker_in_tree "$HOME_B" || return 1
-  # Byte-identity against the pre-change render -- same gate as -01.
+  # Byte-identity against the pre-change render -- same gate as -01, and the
+  # same quoting-aware re-scope (dequote_description; see the header note).
   if if_base_identity_active; then
     d=$(new_tmp_dir)
-    mask_version "$f" > "$d/new.masked"
+    dequote_description "$f" > "$d/new.dq"
+    mask_version "$d/new.dq" > "$d/new.masked"
     mask_version "$HOME_A/.config/opencode/agents/antz-orchestrator.md" > "$d/base.masked"
     if ! cmp -s "$d/new.masked" "$d/base.masked"; then
-      echo "rendered OpenCode orchestrator body drifted from the pre-change render"
+      echo "rendered OpenCode orchestrator body drifted from the pre-change render (modulo the 02-quoting description normalization)"
       diff "$d/base.masked" "$d/new.masked" | head -10
       return 1
     fi
@@ -523,11 +617,37 @@ renderinject_03() {
   }
   # And (while the base is still distinct AND the prompt prose is unchanged
   # vs base -- see the header note) nothing anywhere differs at all; the
-  # non-orchestrator renders' identity is asserted separately in -05.
+  # tree comparison is re-scoped quoting-aware (dequote_description applied
+  # to every working-tree file, a no-op on the unquoted /antz commands) per
+  # the header's 02-quoting note, and with the /antz-set-model embedded-
+  # script fence body masked on BOTH trees per the header's 04-setmodel note
+  # (sub-spec 04 legitimately edits that script; everything else stays
+  # identity-enforced). The non-orchestrator renders' identity is asserted
+  # separately in -05.
   if if_base_identity_active; then
     d=$(new_tmp_dir)
-    diff -r "$HOME_A" "$HOME_B" > "$d/treediff.txt" 2>&1 || {
-      echo "installed tree drifted from the pre-change tree"
+    cp -R "$HOME_A" "$d/oldnorm"
+    cp -R "$HOME_B" "$d/newnorm"
+    find "$d/newnorm" -type f | while IFS= read -r f; do
+      dequote_description "$f" > "$f.dq" && mv "$f.dq" "$f"
+    done
+    # Version-marker note applied: mask each rendered file's version=X.Y.Z
+    # marker value on BOTH trees before the tree diff, same convention as
+    # the mask_version comparisons in -01/-02/-05 -- a later legitimate
+    # bump (this suite's header records it: 06-bump470 bumps VERSION to
+    # 4.7.0) makes the base render embed 4.6.0 and the working render 4.7.0;
+    # the pin asserts body identity, not version equality.
+    for t in oldnorm newnorm; do
+      find "$d/$t" -type f | while IFS= read -r f; do
+        mask_version "$f" > "$f.vm" && mv "$f.vm" "$f"
+      done
+    done
+    for f in .claude/commands/antz-set-model.md .config/opencode/commands/antz-set-model.md; do
+      mask_set_model_script "$d/oldnorm/$f" > "$d/m.tmp" && mv "$d/m.tmp" "$d/oldnorm/$f"
+      mask_set_model_script "$d/newnorm/$f" > "$d/m.tmp" && mv "$d/m.tmp" "$d/newnorm/$f"
+    done
+    diff -r "$d/oldnorm" "$d/newnorm" > "$d/treediff.txt" 2>&1 || {
+      echo "installed tree drifted from the pre-change tree (modulo the 02-quoting description normalization and the 04-setmodel embedded-script masking)"
       head -10 "$d/treediff.txt"
       return 1
     }
@@ -591,7 +711,11 @@ renderinject_05() {
   # sourced prompt's prose being unchanged vs base (a later sub-spec's
   # legitimate prose edit to a role's prompt retires that role's byte-
   # identity assertion with a loud note; commands have no prompt source and
-  # stay enforced).
+  # stay enforced -- for the /antz-set-model copies with the embedded-script
+  # fence additionally masked on both sides, the 04-setmodel edit touching
+  # only that script) -- and re-scoped quoting-aware with the same
+  # dequote_description normalization as -01/-02/-03 (see the header's
+  # 02-quoting and 04-setmodel notes).
   for f in \
     .claude/agents/antz-specifier.md .config/opencode/agents/antz-specifier.md \
     .claude/agents/antz-coder.md .config/opencode/agents/antz-coder.md \
@@ -610,10 +734,24 @@ renderinject_05() {
         echo "  note: agents/prompts/$role.prompt prose changed vs the base (a later sub-spec's additive edit); the pre-change byte-identity assertion for its render is vacuously retired"
       else
         d=$(new_tmp_dir)
-        mask_version "$HOME_B/$f" > "$d/new.masked"
-        mask_version "$HOME_A/$f" > "$d/base.masked"
+        case "$f" in
+          */commands/antz-set-model.md)
+            # 04-setmodel re-scope: additionally mask the embedded-script
+            # fence body on both sides (see the helper's loud note).
+            dequote_description "$HOME_B/$f" > "$d/new.raw"
+            mask_set_model_script "$d/new.raw" > "$d/new.dq"
+            mask_set_model_script "$HOME_A/$f" > "$d/base.raw"
+            base_f="$d/base.raw"
+            ;;
+          *)
+            dequote_description "$HOME_B/$f" > "$d/new.dq"
+            base_f="$HOME_A/$f"
+            ;;
+        esac
+        mask_version "$d/new.dq" > "$d/new.masked"
+        mask_version "$base_f" > "$d/base.masked"
         cmp -s "$d/new.masked" "$d/base.masked" || {
-          echo "non-orchestrator render drifted from the pre-change render: $f"
+          echo "non-orchestrator render drifted from the pre-change render (modulo the 02-quoting description normalization and the 04-setmodel embedded-script masking): $f"
           return 1
         }
       fi
@@ -698,17 +836,24 @@ renderinject_06() {
     echo "the stale two-item tracked-set sentence is still present"
     return 1
   fi
-  # No other header line changes meaning: every header line except the
-  # tracked-set one is byte-identical to the base's.
+  # "No other header line changes" window: every header line except the
+  # tracked-set one used to be pinned byte-identical to the base's. That
+  # byte-identity window is retired by change hardening-installsh (sub-spec
+  # 01-marker), this change's first header-editing sub-spec: its header
+  # edits (the .bak policy statement and header completion in 01, the
+  # ANTZ_REF usage docs and tagged-URL example in 03) are legitimate by
+  # contract, so the window can no longer pin the header to the base.
+  # Retired per the repo's loud-note convention (a note when the header has
+  # in fact moved vs the base, like the other retirement gates -- never a
+  # failure, never silence): the tracked-set sentence assertion above stays
+  # enforced either way.
   if [ "$BASE_DISTINCT" -eq 1 ]; then
     print_header_of "$BASE_TREE_DIR/install.sh" > "$d/base-header.txt"
     grep -v 'VERSION + CHANGELOG.md track changes to' "$d/header.txt" > "$d/h.new"
     grep -v 'VERSION + CHANGELOG.md track changes to' "$d/base-header.txt" > "$d/h.base"
-    cmp -s "$d/h.new" "$d/h.base" || {
-      echo "a header line other than the tracked-set sentence changed"
-      diff "$d/h.base" "$d/h.new" | head -10
-      return 1
-    }
+    if ! cmp -s "$d/h.new" "$d/h.base"; then
+      echo "  note: install.sh's header comment changed vs the base; the header byte-identity window is vacuously retired by change hardening-installsh (01-marker/03-refpin's legitimate header edits), the tracked-set sentence assertion stays enforced"
+    fi
   fi
   return 0
 }
@@ -809,7 +954,7 @@ run_test "renderinject-04 missing scripts/orchestration/antz-probe.sh fails the 
 run_test "renderinject-04 missing scripts/orchestration/antz-skills.sh fails the render loudly, no marker fallback" renderinject_04_skills
 run_test "renderinject-04 both source paths (local read, curl fetch) route through the one fetch_file helper" renderinject_04_shared_fetch_path
 run_test "renderinject-05 injection keyed to the orchestrator only: other renders byte-identical, markers substituted nowhere else, --check unchanged" renderinject_05
-run_test "renderinject-06 install.sh header comment names install.sh in the tracked set; no other header line changes" renderinject_06
+run_test "renderinject-06 install.sh header comment names install.sh in the tracked set; header byte-identity window retired by hardening-installsh" renderinject_06
 run_test "renderinject-07 AGENTS.md/CLAUDE.md gotcha bullets follow the move to scripts/orchestration/, stated identically" renderinject_07
 run_test "ensure-20: the scripts_distinct helper detects edited/extra/missing injected scripts against fixture trees" ensure_20_helper_on_fixtures
 run_test "ensure-20: the base-render identity gate retires (with a note) when an injected script differs, never double-failing with prose drift" ensure_20_gate_decision

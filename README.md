@@ -70,6 +70,14 @@ Renders the agent definitions under `agents/prompts/` + `agents/meta/` into nati
 curl -fsSL https://raw.githubusercontent.com/edezacas/antz/master/install.sh | sh
 ```
 
+To install from a tag (ref-pinned provenance), fetch `install.sh` from the tag's raw URL and pass `ANTZ_REF=<tag>` to `sh`, so every file the installer reads (`VERSION`, `CHANGELOG.md`, `agents/`, `scripts/`) is fetched from that same tag instead of `master`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/edezacas/antz/v4.7.0/install.sh | ANTZ_REF=v4.7.0 sh
+```
+
+`ANTZ_REF` is used verbatim — a branch name works the same as a tag, and nothing validates it. Unset or empty, the default ref (`master`) applies. Local-checkout installs below read everything from disk and ignore `ANTZ_REF` entirely.
+
 Or, from a local checkout:
 
 ```sh

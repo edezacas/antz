@@ -97,10 +97,16 @@ determinism, not dictated by either client):
 | Claude Code | immediately after `description:`, immediately before `tools:` |
 | OpenCode | immediately after `description:`, immediately before `mode:` |
 
-**Target file / marker contract** — the target file (`~/.claude/agents/antz-<agent>.md`
+**Target file / marker contract** (refined by change `hardening-installsh`,
+sub-spec 04-setmodel) — the target file (`~/.claude/agents/antz-<agent>.md`
 or `~/.config/opencode/agents/antz-<agent>.md`) must already exist and carry
-the `antz:generated` marker; otherwise the command fails without writing
-anything, and explains why.
+the `antz:generated` marker as a line-start header comment (`# antz:generated
+...`); a file that merely mentions the marker mid-body or with leading
+indentation is NOT antz-managed and is refused. This is the same anchored
+detection the `install-render` domain's `install_file` and
+`installed_version_of` use — see `spdd/specs/install-render.md`'s shared
+contracts. Otherwise the command fails without writing anything, and
+explains why.
 
 **Observable outcome contract** — the command's reply is natural language,
 not spec'd byte-for-byte, but must state specific, checkable content:
@@ -595,6 +601,48 @@ not spec'd byte-for-byte, but must state specific, checkable content:
     And "opencode models" fails or returns no model ids
     Then the user is still asked via the "question" tool, with the question text stating that no models could be enumerated
     And the offered choices are the "type another value" free-form option and the "revert to default (clear)" option
+
+  ## Embedded script: anchored marker check and temp-file cleanup trap (from `hardening-installsh`, sub-spec 04)
+
+  # MODIFY - setmodel-01: the embedded script's managed check is anchored to
+  # the line-start header marker (refining the detection basis of
+  # set-model-cmd-07). Conforming files behave exactly as before; a file that
+  # only mentions the marker mid-body is now refused as not antz-managed.
+  Scenario: setmodel-01
+    Given a fixture antz-coder.md that carries the header marker line and
+      a fixture antz-coder.md that mentions "antz:generated" only inside
+      its body (no line-start header marker)
+    When the script runs with "--agent coder --model opus" against each
+    Then the header-marked fixture gains "model: opus" at the fixed
+      frontmatter position and the reply confirms success
+    And the mid-body-mention fixture is refused with the existing
+      not-antz-managed error, exits non-zero, and is left byte-for-byte
+      unchanged
+
+  # ADD - setmodel-02: the mktemp scratch file is cleaned up on every
+  # normal exit path.
+  Scenario: setmodel-02
+    When the script runs successfully with "--agent coder --model opus",
+      then with "--agent coder --clear" on a configured file, and then
+      with "--agent coder --clear" on an unconfigured file
+    Then each run exits 0 with the documented reply
+    And TMPDIR contains no leftover scratch file after any of the runs
+
+  # ADD - setmodel-03: cleanup holds on failure too (mid-run rewrite failure)
+  Scenario: setmodel-03
+    Given a header-marked fixture antz-coder.md made read-only
+    When the script runs with "--agent coder --model opus"
+    Then it exits non-zero
+    And the fixture is byte-for-byte unchanged
+    And TMPDIR contains no leftover scratch file
+
+  # ADD - setmodel-04: token constraint survives the changes
+  Scenario: setmodel-04
+    When both clients' rendered command bodies are inspected
+    Then the embedded script in each contains no `$<digit>` token and no
+      "$ARGUMENTS" sequence
+    And both clients' command bodies still carry exactly the one intended
+      "Arguments: $ARGUMENTS" injection line
 
 ### Invariants
 - The command never invokes, wraps, or reimplements `install.sh`'s *agent*-

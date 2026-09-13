@@ -2,16 +2,20 @@
 # Unit tests for install.sh's /antz-set-model command (rendering/install
 # side) and the self-contained script embedded in its body (invocation
 # side), covering every scenario in
-# spdd/changes/set-model-native-command/01-set-model-command.feature and the
+# spdd/changes/set-model-native-command/01-set-model-command.feature, the
 # unit-testable (rendering-level) scenarios in
-# spdd/changes/set-model-interactive-picker/01-interactive-picker.feature.
+# spdd/changes/set-model-interactive-picker/01-interactive-picker.feature,
+# and the embedded-script hardening scenarios setmodel-01..04 in
+# spdd/changes/hardening-installsh/04-setmodel.feature (anchored
+# line-start header-marker check + mktemp cleanup trap).
 #
 # Self-contained bash test harness (no external framework/dependency -- this
 # repo has no package manager or build system). Run directly:
 #   ./tests/set-model-command_test.sh
 #
 # Each reported test name embeds its scenario id (command-install-01..06,
-# set-model-cmd-01..12, picker-render-01..05) from the feature files above,
+# set-model-cmd-01..12, picker-render-01..05, setmodel-01..04) from the
+# feature files above,
 # so a failure maps straight back to the scenario it covers. Every test that
 # touches the filesystem runs against an isolated $HOME (a fresh temp dir
 # per test), so tests never touch the real ~/.claude or ~/.config/opencode
@@ -120,6 +124,29 @@ write_unmanaged_fixture() {
     echo '---'
     echo ''
     echo "Body text for $agent."
+  } > "$dest"
+}
+
+write_midbody_marker_fixture() {
+  # setmodel-01 (hardening-installsh sub-spec 04): a same-named file that
+  # mentions "antz:generated" ONLY mid-body -- never as a line-start
+  # "# antz:generated " header comment -- so it is NOT antz-managed under the
+  # change's shared header-marker contract. The unanchored marker check
+  # accepted exactly this file; the anchored line-start check must refuse it
+  # untouched. The indented variant probes that the anchor (not merely a
+  # "# " prefix) is what does the work.
+  dest="$1"; agent="$2"
+  mkdir -p "$(dirname "$dest")"
+  {
+    echo '---'
+    echo "name: antz-$agent"
+    echo "description: A user's own hand-written agent that mentions the marker."
+    echo 'tools: Read'
+    echo '---'
+    echo ''
+    echo "Body text for $agent."
+    echo 'Docs say generated files carry antz:generated markers; this mentions it mid-line.'
+    echo '  # antz:generated version=0.0.0 -- indented mention, never a line-start header'
   } > "$dest"
 }
 
@@ -754,6 +781,176 @@ test_set_model_cmd_12() {
   return $ok
 }
 
+# =============================================================================
+# setmodel-01 (hardening-installsh/04-setmodel.feature, MODIFY): the embedded
+# script's managed-file check is anchored to the line-start header marker. A
+# header-marked fixture behaves exactly as before (model line at the fixed
+# position, success reply); a fixture that only mentions "antz:generated"
+# mid-body is refused with the existing not-antz-managed error, exits
+# non-zero, and is left byte-for-byte unchanged.
+# =============================================================================
+test_setmodel_01() {
+  home=$(new_home)
+  ok=0
+
+  # (a) Header-marked fixture: accepted, model gained at the fixed position.
+  dest="$home/.claude/agents/antz-coder.md"
+  write_claude_fixture "$dest" coder
+  cp "$dest" "$dest.orig"
+
+  out=$(HOME="$home" "$CLAUDE_SCRIPT" --agent coder --model opus 2>&1)
+  status=$?
+  [ "$status" -eq 0 ] || { echo "  header-marked run exited $status ($out)"; ok=1; }
+  grep -qxF 'model: opus' "$dest" || { echo "  header-marked file did not gain 'model: opus'"; ok=1; }
+  desc_line=$(grep -n '^description:' "$dest" | head -n1 | cut -d: -f1)
+  expected=$(mktemp)
+  sed "${desc_line}a\\
+model: opus" "$dest.orig" > "$expected"
+  cmp -s "$expected" "$dest" || { echo "  header-marked file differs from expected (insert after description, before tools)"; ok=1; }
+  rm -f "$expected"
+  case "$out" in *"now has model: opus"*) ;; *) echo "  reply does not confirm success: $out"; ok=1 ;; esac
+
+  # (b) Mid-body-mention-only fixture: refused as not antz-managed, untouched.
+  mid="$home/.claude/agents/antz-specifier.md"
+  write_midbody_marker_fixture "$mid" specifier
+  cp "$mid" "$mid.orig"
+
+  out=$(HOME="$home" "$CLAUDE_SCRIPT" --agent specifier --model opus 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || { echo "  mid-body-mention file was accepted (exit 0)"; ok=1; }
+  case "$out" in *"not antz-managed"*) ;; *) echo "  refusal is not the existing not-antz-managed error: $out"; ok=1 ;; esac
+  cmp -s "$mid.orig" "$mid" || { echo "  mid-body-mention file was modified"; ok=1; }
+
+  rm -rf "$home"
+  return $ok
+}
+
+# =============================================================================
+# setmodel-02 (ADD): the mktemp scratch file is cleaned up on every normal
+# exit path -- a successful set, a successful clear, and the nothing-to-clear
+# no-op -- with each run exiting 0 and printing its documented reply, and no
+# file left behind in the isolated TMPDIR.
+# =============================================================================
+test_setmodel_02() {
+  home=$(new_home)
+  tmpdir=$(mktemp -d)
+  ok=0
+
+  leftover() {
+    if [ -n "$(find "$tmpdir" -mindepth 1 -print -quit)" ]; then
+      echo "  $1: leftover scratch file(s) in TMPDIR: $(find "$tmpdir" -mindepth 1)"
+      return 0
+    fi
+    return 1
+  }
+
+  # (1) Successful set.
+  dest="$home/.claude/agents/antz-coder.md"
+  write_claude_fixture "$dest" coder
+  out=$(HOME="$home" TMPDIR="$tmpdir" "$CLAUDE_SCRIPT" --agent coder --model opus 2>&1)
+  status=$?
+  [ "$status" -eq 0 ] || { echo "  set run exited $status ($out)"; ok=1; }
+  case "$out" in *"now has model: opus"*) ;; *) echo "  set reply not as documented: $out"; ok=1 ;; esac
+  grep -qxF 'model: opus' "$dest" || { echo "  set run did not write the model line (trap removed the wrong file?)"; ok=1; }
+  leftover "after the set run" && ok=1
+
+  # (2) Successful clear on a configured file.
+  out=$(HOME="$home" TMPDIR="$tmpdir" "$CLAUDE_SCRIPT" --agent coder --clear 2>&1)
+  status=$?
+  [ "$status" -eq 0 ] || { echo "  clear run exited $status ($out)"; ok=1; }
+  case "$out" in *[Cc]leared*) ;; *) echo "  clear reply not as documented: $out"; ok=1 ;; esac
+  grep -q '^model:' "$dest" && { echo "  clear run left the model line (trap removed the wrong file?)"; ok=1; }
+  leftover "after the clear run" && ok=1
+
+  # (3) Nothing-to-clear no-op on an unconfigured file (never creates one).
+  dest2="$home/.claude/agents/antz-verifier.md"
+  write_claude_fixture "$dest2" verifier
+  cp "$dest2" "$dest2.orig"
+  out=$(HOME="$home" TMPDIR="$tmpdir" "$CLAUDE_SCRIPT" --agent verifier --clear 2>&1)
+  status=$?
+  [ "$status" -eq 0 ] || { echo "  nothing-to-clear run exited $status ($out)"; ok=1; }
+  case "$out" in *"nothing to clear"*) ;; *) echo "  no-op reply not as documented: $out"; ok=1 ;; esac
+  cmp -s "$dest2.orig" "$dest2" || { echo "  no-op clear changed the file"; ok=1; }
+  leftover "after the nothing-to-clear run" && ok=1
+
+  rm -rf "$home" "$tmpdir"
+  return $ok
+}
+
+# =============================================================================
+# setmodel-03 (ADD): the cleanup holds on failure too -- a read-only target
+# makes the rewrite die mid-run; the script exits non-zero, the target is
+# byte-for-byte unchanged, and no scratch file survives in TMPDIR. The
+# failure mechanism (permission bits) cannot bind for uid 0, so the test
+# skips explicitly when run as root (environmental, same pattern as
+# posixsh-02's provision-failure skip).
+# =============================================================================
+test_setmodel_03() {
+  if [ "$(id -u)" -eq 0 ]; then
+    SETMODEL_03_SKIP="running as uid 0: a read-only file does not block root's writes"
+    echo "  $SETMODEL_03_SKIP"
+    return 1
+  fi
+  home=$(new_home)
+  tmpdir=$(mktemp -d)
+  dest="$home/.claude/agents/antz-coder.md"
+  write_claude_fixture "$dest" coder
+  cp "$dest" "$dest.orig"
+  chmod 555 "$dest"
+  ok=0
+
+  out=$(HOME="$home" TMPDIR="$tmpdir" "$CLAUDE_SCRIPT" --agent coder --model opus 2>&1)
+  status=$?
+  chmod 644 "$dest"
+
+  [ "$status" -ne 0 ] || { echo "  expected non-zero exit when the rewrite write fails, got 0 ($out)"; ok=1; }
+  cmp -s "$dest.orig" "$dest" || { echo "  target was modified by the failed run (trap must never remove/rewrite the target)"; ok=1; }
+  if [ -n "$(find "$tmpdir" -mindepth 1 -print -quit)" ]; then
+    echo "  leftover scratch file(s) in TMPDIR after the failed run: $(find "$tmpdir" -mindepth 1)"
+    ok=1
+  fi
+
+  rm -rf "$home" "$tmpdir"
+  return $ok
+}
+
+# =============================================================================
+# setmodel-04 (ADD): the emitted script's token constraint survives the
+# anchored check + trap changes -- the embedded script in each client's
+# rendered command body carries no dollar-digit token and no $ARGUMENTS
+# sequence (the corruption class command-install-06 guards against), the
+# script still parses as POSIX sh, and each command body keeps exactly the
+# one intended "Arguments: $ARGUMENTS" injection line.
+# =============================================================================
+test_setmodel_04() {
+  home=$(new_home)
+  ok=0
+
+  ( cd "$SCRIPT_DIR" && HOME="$home" "$INSTALL_SH" --all >/dev/null 2>&1 )
+
+  for cmd_file in "$home/.claude/commands/antz-set-model.md" "$home/.config/opencode/commands/antz-set-model.md"; do
+    [ -f "$cmd_file" ] || { echo "  $cmd_file missing"; ok=1; continue; }
+    embedded=$(mktemp)
+    extract_script "$cmd_file" > "$embedded"
+    if grep -qE '\$[0-9]' "$embedded"; then
+      echo "  embedded script of $cmd_file contains a dollar-digit token:"
+      grep -nE '\$[0-9]' "$embedded" | head -n5
+      ok=1
+    fi
+    grep -qF '$ARGUMENTS' "$embedded" && { echo "  embedded script of $cmd_file contains a \$ARGUMENTS sequence"; ok=1; }
+    sh -n "$embedded" || { echo "  embedded script of $cmd_file fails sh -n (not POSIX-parseable)"; ok=1; }
+    rm -f "$embedded"
+    arg_lines=$(grep -cF '$ARGUMENTS' "$cmd_file")
+    [ "$arg_lines" -eq 1 ] \
+      || { echo "  $cmd_file carries $arg_lines \$ARGUMENTS occurrences, expected exactly the one injection line"; ok=1; }
+    grep -qxF 'Arguments: $ARGUMENTS' "$cmd_file" \
+      || { echo "  $cmd_file missing the intended 'Arguments: \$ARGUMENTS' injection line"; ok=1; }
+  done
+
+  rm -rf "$home"
+  return $ok
+}
+
 # ---- run everything ---------------------------------------------------------
 
 setup_extracted_scripts
@@ -784,6 +981,22 @@ run_test "set-model-cmd-09: usage error when both --model and --clear are given 
 run_test "set-model-cmd-10: invoking the claude copy never touches the opencode file for the same agent" test_set_model_cmd_10
 run_test "set-model-cmd-11: invoking for one agent never touches another agent's file" test_set_model_cmd_11
 run_test "set-model-cmd-12: the supplied model value is written verbatim, unvalidated" test_set_model_cmd_12
+
+# ---- hardening-installsh sub-spec 04: embedded-script scenarios ------------
+
+run_test "setmodel-01: embedded script's managed check is anchored to the line-start header marker (header fixture accepted at the fixed position; mid-body-mention-only fixture refused as not antz-managed, exit non-zero, byte-for-byte unchanged)" test_setmodel_01
+run_test "setmodel-02: no mktemp scratch left in TMPDIR after a successful set, a successful clear, or the nothing-to-clear no-op (each exits 0 with its documented reply)" test_setmodel_02
+run_test "setmodel-03: mid-run rewrite failure (read-only target) exits non-zero, leaves the target byte-for-byte unchanged, and the cleanup trap removes the scratch file" test_setmodel_03
+if [ -n "${SETMODEL_03_SKIP:-}" ]; then
+  # The uid-0 case: downgrade the FAIL run_test just counted into an explicit
+  # SKIP stub (environmental limitation of the failure mechanism, not a code
+  # failure and not a BLOCKED refusal -- same pattern as posixsh-02's).
+  fail_count=$((fail_count - 1))
+  echo "SKIP: setmodel-03: mid-run rewrite failure leaves the target unchanged and no scratch behind (${SETMODEL_03_SKIP})"
+  skip_count=$((skip_count + 1))
+  unset SETMODEL_03_SKIP
+fi
+run_test "setmodel-04: emitted script survives the changes token-free (no dollar-digit, no \$ARGUMENTS in either embedded script, POSIX-parseable), each body keeps exactly the one 'Arguments: \$ARGUMENTS' injection line" test_setmodel_04
 
 # ---- command-level interactive-picker scenarios: e2e-only -------------------
 # Observable only in a live client session (question-asking); the sub-spec's

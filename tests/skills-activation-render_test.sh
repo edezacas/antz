@@ -17,6 +17,17 @@
 # e2e-render-01 (03-render.feature) is observable only by reinstalling on a
 # user machine and reading the installed copies -- verifier's e2e suite; it
 # appears below as an explicit SKIP stub so no scenario id is unaccounted for.
+#
+# Re-scoped by change hardening-installsh (sub-spec 02-quoting): rendered
+# description: values became double-quoted YAML scalars. The render-03 and
+# render-04-scoping renderer comparisons stay current by construction --
+# their "pre-change" baseline is the controlled single-line mutation of the
+# WORKING install.sh (prechange_install_checkout), never a pre-quoting
+# render -- so both sides carry the quoted descriptions and the comparisons
+# pin only the tools-string delta they were built to pin. No stale
+# pre-quoting byte-identity survives here; verified green with the quoted
+# renders (the same controlled-mutation gate keeps holding for any future
+# renderer change outside the tools line).
 
 set -u
 
@@ -195,6 +206,9 @@ test_render_02() {
 # prompts already carry 01/05 sub-spec body edits, which flow into both
 # clients' bodies alike -- the renderer comparison isolates exactly this
 # change's layer.)
+# 02-quoting re-scope: the baseline is a controlled mutation of the working
+# install.sh, so both sides carry the quoted descriptions and this
+# comparison stays current with the renderer.
 # =============================================================================
 test_render_03() {
   head_root=$(new_tmp_dir)
@@ -266,6 +280,9 @@ test_render_04() {
 # prompts are shared with the working render, so
 # mutation-only diff) and the working render: exactly the three Claude
 # readwrite agent files differ, and each diff is exactly its tools line.
+# 02-quoting re-scope: the mutation baseline derives from the working
+# install.sh, so the quoted descriptions are identical on both sides and
+# the scoping diff stays exactly the tools line.
 test_render_04_scoping() {
   head_root=$(new_tmp_dir)
   prechange_install_checkout "$head_root/tree"
