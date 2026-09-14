@@ -3,7 +3,11 @@
 # suite owns (change optimize-test-suite, sub-spec 08-renderdedup): the
 # Skill-grant scoping (render-02), the OpenCode frontmatter shape guard
 # (render-03), and the marker format plus render determinism (render-04),
-# plus the originating change's e2e-render-01 skip stub.
+# plus the originating change's e2e-render-01 skip stub. renderindependence-01
+# extends the same whole-render scan surface: every file install.sh produces
+# -- agents, commands, and the installed libdir scripts -- is checked for
+# references back to this repo, so a careless prompt edit cannot ship an
+# artifact that points at the antz repo from a host project.
 #
 # The render-01 id is owned by tests/access-model_test.sh alone: this
 # suite's three render-01 registrations pinned the same rendered bytes
@@ -175,6 +179,45 @@ test_render_04() {
 }
 
 # =============================================================================
+# renderindependence-01: every file install.sh produces -- rendered agent
+# files, command files, and the installed libdir scripts -- is free of
+# references back to this repo (its policy docs, its test area, its docs
+# directory). This asserts the render output, not doc prose: an installed
+# artifact is shipped into an arbitrary host project, so pointing back here
+# would be a product defect. URLs are stripped before the scan so a doc URL's
+# path segment is not mistaken for a repo path; spdd/, the standard skills
+# directories, the XDG libdir, and the antz:generated marker are design
+# conventions, not violations. The four needles are quote-split so this
+# suite's own source never carries them whole (the hygiene convention).
+# =============================================================================
+produced_files() {
+  # $1 = a rendered sandbox home: every file install.sh produced there.
+  find "$1" -type f | LC_ALL=C sort
+}
+
+test_renderindependence_01() {
+  rind_ok=0
+  rind_list="$SELF_ROOT/ri.files"
+  rind_scan="$SELF_ROOT/ri.scan"
+  produced_files "$WORK_HOME" > "$rind_list"
+  rind_n=$(wc -l < "$rind_list" | tr -d ' ')
+  [ "$rind_n" -eq 16 ] \
+    || { echo "  expected 16 produced files, found $rind_n"; rind_ok=1; }
+  for rind_pat in 'AGENTS.m''d' 'CLAUDE.m''d' 'tests''/' 'doc''s/'; do
+    while IFS= read -r rind_f; do
+      [ -n "$rind_f" ] || continue
+      sed -E 's#https?://[^[:space:]]*##g' "$rind_f" > "$rind_scan"
+      if rind_hits=$(grep -nF -- "$rind_pat" "$rind_scan"); then
+        echo "  repo reference '$rind_pat' in $rind_f:"
+        printf '%s\n' "$rind_hits" | sed 's/^/    /'
+        rind_ok=1
+      fi
+    done < "$rind_list"
+  done
+  return $rind_ok
+}
+
+# =============================================================================
 # renderdedup-02/-03 (change optimize-test-suite, sub-spec 08): this suite's
 # own retained render shape, scanned from SELF_NONCOMMENTS (its own source
 # minus comment lines -- a suite may read its own file). Needles are
@@ -251,6 +294,8 @@ run_test "render-02: the Skill grant is readwrite-only -- forced readonly and or
 run_test "render-03: the OpenCode frontmatter shape guard -- no permission.skill block, no tools: entry, and no skill mention anywhere in any rendered OpenCode frontmatter" test_render_03
 
 run_test "render-04: the marker line appears on every rendered agent and command file, and a second independent render of the same tree is byte-identical" test_render_04
+
+run_test "renderindependence-01: every file install.sh produces (all rendered agents and commands and the installed libdir scripts) is free of references back to this repo, with URLs excluded from the scan" test_renderindependence_01
 
 run_test "renderdedup-02: this suite's three render-01 registrations are gone, render-02, render-03, and render-04 stay registered under their ids, and the e2e-render-01 skip stub stays" test_renderdedup_02
 run_test "renderdedup-03: current-version re-keying -- render-02 asserts Skill scoping only, render-03 asserts the OpenCode frontmatter shape only, render-04 asserts marker format and determinism, and the scoping registration and its controlled-mutation fixture machinery are deleted, not left as dead code" test_renderdedup_03

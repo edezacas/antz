@@ -20,7 +20,7 @@
 #     names no other suite.
 #   hygiene-04: the laws are era-independent -- the identical scans pass
 #     against a staged copy of the working tree under temp space in which
-#     this change is committed and its change directory archived. The scans
+#     a change is committed and its change directory archived. The scans
 #     are pure source scans: they read no spdd/changes/ content, query no
 #     git state, and invoke no install.sh.
 #
@@ -542,19 +542,24 @@ test_hygiene_04_committed_and_archived_era_scans_green_unchanged() {
   mkdir -p "$stage"
   ( cd "$HARNESS_REPO" && tar cf - --exclude=./.git . ) | ( cd "$stage" && tar xf - ) \
     || { echo "  could not stage a copy of the working tree"; return 1; }
-  [ -d "$stage/spdd/changes/optimize-test-suite" ] \
-    || { echo "  staging copy is missing this change's directory"; return 1; }
-  rm -rf "$stage/spdd/archive/optimize-test-suite"
-  mv "$stage/spdd/changes/optimize-test-suite" "$stage/spdd/archive/optimize-test-suite"
+  # Synthesize the change this era archives: the scans are pure and
+  # era-independent, so the staged fixture must not depend on a real
+  # in-flight change dir (between flows spdd/changes/ is empty, and pinning
+  # a particular change's path would be a stale, non-current-version guard).
+  era_dir=era-fixture
+  mkdir -p "$stage/spdd/changes/$era_dir"
+  : > "$stage/spdd/changes/$era_dir/README.md"
+  rm -rf "$stage/spdd/archive/$era_dir"
+  mv "$stage/spdd/changes/$era_dir" "$stage/spdd/archive/$era_dir"
   git -C "$stage" init -q >/dev/null 2>&1 || { echo "  fixture git init failed"; return 1; }
   git -C "$stage" add -A >/dev/null 2>&1
   git -C "$stage" -c user.email=t@t -c user.name=t commit -q -m \
     "commit the change and archive its directory" >/dev/null 2>&1 \
     || { echo "  fixture commit failed"; return 1; }
   [ -z "$(git -C "$stage" status --porcelain)" ] || { echo "  staged tree is not clean"; return 1; }
-  [ -d "$stage/spdd/archive/optimize-test-suite" ] \
+  [ -d "$stage/spdd/archive/$era_dir" ] \
     || { echo "  staged tree lost the archive move"; return 1; }
-  [ ! -d "$stage/spdd/changes/optimize-test-suite" ] \
+  [ ! -d "$stage/spdd/changes/$era_dir" ] \
     || { echo "  staged tree still holds the in-flight change dir"; return 1; }
   # every scan passes UNCHANGED on the staged tests/ -- identical scans, no
   # era branch, no test edit.
