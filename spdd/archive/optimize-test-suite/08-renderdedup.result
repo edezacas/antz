@@ -1,0 +1,62 @@
+# Receipt — sub-spec 08-renderdedup (change optimize-test-suite)
+# Session outcome. Deduplication done per the ownership map and the owner's
+# revision (current-version behavior only).
+#
+# tests/access-model_test.sh — now OWNS the render-01 id: registered for
+# specifier, coder, AND verifier (coder added; the sole registrations of the
+# role agents' Claude readwrite tools line; the marker checks in render-01
+# moved to the marker-format owner). render-02 stays registered for specifier
+# and verifier. render-03 (the byte-compare of the coder/orchestrator renders
+# against a pre-change meta render) removed entirely, together with every
+# git-HEAD mechanism (the HEAD-baseline staging helper, the
+# byte-identical-to-history guard, and the install.sh source-line greps in
+# render-04). meta-03 keeps field checks only — its history pins replaced by
+# name/description field checks. render-04 re-keyed as the sole mapping-level
+# owner: forced readonly render pins the Claude reader-only line (no Edit,
+# Write, or Skill) and the OpenCode mode: subagent / edit: deny / task: deny
+# shape; forced orchestrateonly render pins the Claude line plus Agent (no
+# Skill); markers present. docs-01..04 (exact-phrase policy-doc assertions)
+# deleted per the owner's revision; the policy-doc paths now appear nowhere
+# in the suite's non-comment source. The e2e-meta/e2e-render/e2e-docs SKIP
+# stubs stay. The suite now sources tests/harness.sh (runner, readers,
+# stage_checkout + render_tree — no hand-rolled renders remain) and ends with
+# the harness output contract (finish_suite). Self-pins renderdedup-01/-04/
+# -05 scan its own non-comment source with quote-split/column-0-anchored
+# needles; they were red-verified against the pre-refactor file before the
+# refactor took them green.
+#
+# tests/skills-activation-render_test.sh — its three render-01 registrations
+# (the same rendered bytes access-model render-01 now solely owns) are gone,
+# render-01's test function with them. render-02 re-keyed to the Skill-grant
+# scoping only (forced readonly + orchestrateonly renders grant no Skill; the
+# exact mapping strings are no longer pinned here). render-03 re-keyed to the
+# OpenCode frontmatter shape only (no permission.skill block, no tools: entry,
+# no skill mention in any rendered frontmatter; the pre-change-renderer byte
+# comparison removed). render-04 re-keyed to marker format on every rendered
+# agent and command file plus render determinism (second independent render
+# of the same tree byte-identical); the "only rendered change vs the
+# pre-change renderer" scoping registration is deleted and its
+# controlled-mutation fixture machinery (prechange_install_checkout) removed
+# alongside it — no dead code. The e2e-render-01 SKIP stub stays. Also
+# harness-sourced, finish_suite output contract, and red-verified-then-green
+# renderdedup-02/-03 self-pins.
+#
+# tests/versioncurrent_test.sh — supersession reconciliation (per the
+# delegation): versioncurrent-01's stale clause "access-model still registers
+# meta-01..03, render-01..04, and docs-01..04" is updated to sub-spec 08's
+# retention set — positives meta-01..03 + render-01 + render-02 + render-04,
+# negatives render-03 and docs-01..04 added to the retired list next to
+# bump-01..03. Red-verified between the slices (5 no-longer-registers hits),
+# green after the update. No other suite touched: description-quoting,
+# libdirinstall, header-marker, and orchestrator-render-sync are untouched
+# (their facets are already single-owned), and no cross-suite source scan was
+# introduced anywhere. Verified: git status shows zero changes under agents/,
+# install.sh, scripts/, spdd/specs/ (tests-only). Full-area run:
+# sh tests/run_all.sh -> suites=31 passed=31 failed=0 tests_failed=0
+# elapsed=64s. Nothing committed.
+test_command=sh tests/access-model_test.sh && sh tests/skills-activation-render_test.sh && sh tests/versioncurrent_test.sh
+id=renderdedup-01 result=green reason=unit test "renderdedup-01: render-01 is registered for specifier, coder, and verifier (sole owner of the role agents' Claude readwrite tools line) and render-02 stays registered for specifier and verifier only" (access-model_test.sh; plus the three functional render-01 registrations and two render-02 registrations it pins, all passing)
+id=renderdedup-02 result=green reason=unit test "renderdedup-02: this suite's three render-01 registrations are gone, render-02, render-03, and render-04 stay registered under their ids, and the e2e-render-01 skip stub stays" (skills-activation-render_test.sh; red-verified pre-removal with the three registrations present)
+id=renderdedup-03 result=green reason=unit test "renderdedup-03: current-version re-keying -- render-02 asserts Skill scoping only, render-03 asserts the OpenCode frontmatter shape only, render-04 asserts marker format and determinism, and the scoping registration and its controlled-mutation fixture machinery are deleted, not left as dead code" (skills-activation-render_test.sh; plus the re-keyed render-02/-03/-04 registrations themselves, all passing)
+id=renderdedup-04 result=green reason=unit test "renderdedup-04: render-03 is removed entirely, meta-03 keeps its field checks alone, and render-04 pins the mapping levels via forced renders with no source-line greps -- current-version mechanisms only" (access-model_test.sh; plus the re-keyed render-04 registration and field-check-only meta-03, all passing)
+id=renderdedup-05 result=green reason=unit test "renderdedup-05: docs-01..04 are no longer registered, no exact-phrase policy-doc assertion survives here, and the access model stays pinned by the meta declarations and the render mappings" (access-model_test.sh; the four non-owning retained render suites were separately confirmed prose-pin-free without being touched)

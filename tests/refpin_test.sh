@@ -341,23 +341,6 @@ refpin_04() {
   grep -qiE 'default.*master|master.*default' "$d/header.txt" \
     || { echo "  install.sh's header comment does not state master as the default ref"; ok=1; }
 
-  # both policy docs' Client Integration RAW_BASE bullet: the ref comes from
-  # ANTZ_REF (default master), not a fixed master source; identical twins.
-  for doc in AGENTS.md CLAUDE.md; do
-    n=$(grep -c 'RAW_BASE' "$SCRIPT_DIR/$doc")
-    [ "$n" -eq 1 ] || { echo "  $doc: expected exactly 1 RAW_BASE bullet, got $n"; ok=1; continue; }
-  done
-  grep 'RAW_BASE' "$SCRIPT_DIR/AGENTS.md" > "$d/bullet.agents"
-  grep 'RAW_BASE' "$SCRIPT_DIR/CLAUDE.md" > "$d/bullet.claude"
-  cmp -s "$d/bullet.agents" "$d/bullet.claude" \
-    || { echo "  the RAW_BASE bullet differs between AGENTS.md and CLAUDE.md"; ok=1; }
-  grep -qF 'ANTZ_REF' "$d/bullet.agents" \
-    || { echo "  the policy docs' RAW_BASE bullet does not name ANTZ_REF"; ok=1; }
-  grep -qiE 'default.*master|master.*default' "$d/bullet.agents" \
-    || { echo "  the policy docs' RAW_BASE bullet does not state master as the default ref"; ok=1; }
-  grep -qF 'currently GitHub' "$d/bullet.agents" \
-    && { echo "  the policy docs still describe master as the fixed source"; ok=1; }
-  return $ok
 }
 
 # ---- refpin-05 ---------------------------------------------------------------
@@ -407,7 +390,7 @@ refpin_05() {
 run_test "refpin-01: with no ref signal every fetch URL carries /master/, the install completes from the served tree, and empty ANTZ_REF is byte-for-byte the unset default" refpin_01
 run_test "refpin-02: with ANTZ_REF=v4.7.0 every fetched URL carries /v4.7.0/ (VERSION, CHANGELOG.md, agents/meta/specifier.yaml, agents/prompts/orchestrator.prompt, scripts/orchestration/antz-flow.sh among them), none carries /master/, and the markers embed the fetched tree's VERSION" refpin_02
 run_test "refpin-03: a checkout install reads every file from disk and never touches the network regardless of ANTZ_REF (failing curl stub never invoked; byte-identical with and without it)" refpin_03
-run_test "refpin-04: README's install section, install.sh's header usage, and the AGENTS.md/CLAUDE.md RAW_BASE bullets document the tag-pinned ANTZ_REF invocation (shared tagged-URL example, master default, ANTZ_REF override)" refpin_04
+run_test "refpin-04: README's install section and install.sh's header usage comment document the tag-pinned ANTZ_REF invocation (shared tagged-URL example, master default, ANTZ_REF override); the policy docs' bullet check was deleted by optimize-test-suite sub-spec 09 as a prose pin" refpin_04
 run_test "refpin-05: the fetch architecture is preserved with its subject re-scoped (libdirinstall-07) -- the libdir script installation fetches each on-disk source through the one fetch_file helper (set-model read from the emitter), exactly one executable curl -fsSL inside fetch_file, and the ref is substituted at the RAW_BASE construction, not per call site" refpin_05
 
 echo

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Unit tests for install.sh's quoted description rendering, covering every
 # scenario in spdd/changes/hardening-installsh/02-quoting.feature
-# (quoting-01..05). The change: every rendered `description:` value is a
+# (quoting-01..04; quoting-05 removed whole by change optimize-test-suite,
+# sub-spec 04-crosssuites). The change: every rendered `description:` value is a
 # double-quoted single-line YAML scalar at all three render sites
 # (render_claude, render_opencode, render_set_model_command's short_desc),
 # with embedded `"` and `\` escaped per YAML double-quoted-scalar rules and
@@ -9,85 +10,50 @@
 # byte). The /antz command renderers (render_claude_command /
 # render_opencode_command) stay unquoted -- out of the sub-spec's scope.
 #
-# Self-contained bash test harness (no external framework/dependency -- this
+# Self-contained bash test area (no external framework/dependency -- this
 # repo has no package manager or build system), same pattern as
 # tests/skills-activation-render_test.sh. Run directly:
-#   ./tests/description-quoting_test.sh
+#   sh tests/description-quoting_test.sh
 #
-# Each reported test name embeds its scenario id (quoting-01..05) from the
-# feature file above, so a failure maps straight back to the scenario it
-# covers. Every test renders through install.sh's real --all path against
-# isolated temp HOMEs, never the real ~/.claude or ~/.config/opencode.
+# Each reported test name embeds its scenario id (quoting-01..04,
+# crosssuites-01) from the feature files above, so a failure maps straight
+# back to the scenario it covers. Every test renders through the harness
+# library's render-once helper against isolated temp HOMEs, never the real
+# ~/.claude or ~/.config/opencode.
+#
+# Decoupled by change optimize-test-suite (sub-spec 04-crosssuites): the
+# quoting-05 site glob-ran every other suite and grepped the renderinject
+# and skills-activation-render suite sources to vouch "the whole suite is
+# green" -- that verdict belongs to the documented runner tests/run_all.sh,
+# not to a suite. The decoupling law: no suite executes another suite and no
+# suite asserts another test file's source content or output (a suite may
+# read its own file); crosssuites-01 below pins this suite's decoupled shape.
+#
+# The shared harness library provides the plumbing helpers (run_test,
+# skip_test, temp bookkeeping, cleanup, stage_checkout, and the install
+# renderers); this suite defines none of them itself.
 
 set -u
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 INSTALL_SH="$SCRIPT_DIR/install.sh"
-SELF_TEST="$(basename -- "$0")"
+# shellcheck source=tests/harness.sh
+. "$SCRIPT_DIR/tests/harness.sh"
 
-pass_count=0
-fail_count=0
-skip_count=0
-
-# ---- tiny test runner -------------------------------------------------------
-
-run_test() {
-  name="$1"; fn="$2"; shift 2
-  if "$fn" "$@"; then
-    echo "PASS: $name"
-    pass_count=$((pass_count + 1))
-  else
-    echo "FAIL: $name"
-    fail_count=$((fail_count + 1))
-  fi
-}
-
-skip_test() {
-  name="$1"; reason="$2"
-  echo "SKIP: $name ($reason)"
-  skip_count=$((skip_count + 1))
-}
-
-tmp_roots=()
-new_tmp_dir() {
-  d=$(mktemp -d)
-  tmp_roots+=("$d")
-  printf '%s' "$d"
-}
-
-cleanup() {
-  for d in "${tmp_roots[@]:-}"; do
-    [ -n "$d" ] && rm -rf "$d"
-  done
-  return 0
-}
-trap cleanup EXIT
+# This suite's own source with comment lines stripped: the crosssuites-01
+# self-check scans non-comment lines only (the hygiene scan convention). The
+# needles inside that test are quote-split so the scan can never match the
+# checking code itself.
+QUOTING_TEST_SELF="$SCRIPT_DIR/tests/description-quoting_test.sh"
+QUOTING_NONCOMMENTS="$(new_tmp_dir)/noncomments"
+grep -v '^[[:space:]]*#' "$QUOTING_TEST_SELF" > "$QUOTING_NONCOMMENTS"
 
 # ---- fixtures ---------------------------------------------------------------
 
-# stage_checkout <dest>: a staged checkout of the render inputs (install.sh,
-# agents/, scripts/orchestration/, VERSION, CHANGELOG.md) copied from the
-# working tree, so `sh <dest>/install.sh --all` renders from the staged tree
-# and mutations never touch the real checkout.
-stage_checkout() {
-  dest="$1"
-  mkdir -p "$dest"
-  cp "$SCRIPT_DIR/install.sh" "$dest/install.sh"
-  cp "$SCRIPT_DIR/VERSION" "$dest/VERSION"
-  cp "$SCRIPT_DIR/CHANGELOG.md" "$dest/CHANGELOG.md"
-  mkdir -p "$dest/agents/prompts" "$dest/agents/meta" "$dest/scripts/orchestration"
-  cp "$SCRIPT_DIR"/agents/prompts/*.prompt "$dest/agents/prompts/"
-  cp "$SCRIPT_DIR"/agents/meta/*.yaml "$dest/agents/meta/"
-  cp "$SCRIPT_DIR"/scripts/orchestration/*.sh "$dest/scripts/orchestration/"
-}
-
-# render_all <home> <tree>: full --all render into the isolated HOME, logs to
-# the caller's file $3.
-render_all() {
-  home="$1"; tree="$2"; log="$3"
-  mkdir -p "$home"
-  (cd "$tree" && HOME="$home" sh ./install.sh --all > "$log" 2>&1)
-}
+# The staged-checkout copy is the harness library's stage_checkout: install.sh,
+# VERSION, CHANGELOG.md, agents/, scripts/orchestration/ from the working
+# tree, so `render_tree` renders from the staged tree and mutations never
+# touch the real checkout.
 
 # agent_md <home> <client> <role>: rendered agent file path.
 agent_md() {
@@ -165,12 +131,14 @@ expected_short_desc() {
   ( eval "$line"; printf '%s' "$short_desc" )
 }
 
-# WORK render: the real tree, rendered once for quoting-01/02/04.
-work_root=$(new_tmp_dir)
-WORK_HOME="$work_root/home"
-if ! render_all "$WORK_HOME" "$SCRIPT_DIR" "$work_root/render.log"; then
-  echo "FATAL: working-tree render failed:"
-  cat "$work_root/render.log"
+# WORK render: the working tree staged and rendered once through the harness
+# library for quoting-01/02/04 (the library's render cache keeps it hermetic
+# and single).
+WORK_ROOT=$(new_tmp_dir)
+WORK_TREE="$WORK_ROOT/tree"
+stage_checkout "$WORK_TREE"
+if ! WORK_HOME=$(render_tree "$WORK_TREE"); then
+  echo "FATAL: working-tree staged render failed"
   exit 1
 fi
 
@@ -249,9 +217,8 @@ quoting_03() {
     /^[ \t]*short_desc=/ { print "      short_desc=" q ENVIRON["STAGE_RAW"] q; next }
     { print }
   ' "$tree/install.sh" > "$root/install.sh" && mv "$root/install.sh" "$tree/install.sh"
-  home="$root/home"
-  render_all "$home" "$tree" "$root/render.log" \
-    || { echo "  staged render failed:"; cat "$root/render.log"; return 1; }
+  home=$(render_tree "$tree") \
+    || { echo "  staged render failed"; return 1; }
   ok=0
   wantline="description: $rendered"
   for client in claude opencode; do
@@ -301,63 +268,14 @@ quoting_04() {
   stage_checkout "$tree"
   printf 'name: antz-specifier\ndescription: %s\naccess: readwrite\n' "$raw" \
     > "$tree/agents/meta/specifier.yaml"
-  home="$root/home"
-  render_all "$home" "$tree" "$root/render.log" \
-    || { echo "  staged round-trip render failed:"; cat "$root/render.log"; return 1; }
+  home=$(render_tree "$tree") \
+    || { echo "  staged round-trip render failed"; return 1; }
   for client in claude opencode; do
     line=$(desc_line "$(agent_md "$home" "$client" specifier)")
     got=$(unquote_desc_line "$line") \
       || { echo "  round-trip $client: line is not a quoted scalar: $line"; ok=1; continue; }
     [ "$got" = "$raw" ] \
       || { echo "  round-trip $client: got [$got] want [$raw]"; ok=1; }
-  done
-  return $ok
-}
-
-# =============================================================================
-# quoting-05: the pre-change rendered byte-identity suites were updated
-# within this change (loud notes), and the full unit suite passes with the
-# quoted renders. Static half: the re-scope notes and kept structural
-# assertions are present where the sub-spec names them. Dynamic half: run
-# every other tests/*_test.sh and require zero failures.
-# =============================================================================
-quoting_05() {
-  ok=0
-  ri="$SCRIPT_DIR/tests/renderinject_test.sh"
-  sa="$SCRIPT_DIR/tests/skills-activation-render_test.sh"
-  # renderinject-01/02/05 (and -03's tree diff): re-scoped with a loud note,
-  # quoting-aware via dequote_description normalization...
-  grep -qF 'hardening-installsh (sub-spec 02' "$ri" \
-    || { echo "  renderinject_test.sh carries no loud 02-quoting re-scope note"; ok=1; }
-  grep -q 'dequote_description' "$ri" \
-    || { echo "  renderinject_test.sh's byte-identity is not re-scoped quoting-aware (dequote_description missing)"; ok=1; }
-  # ... and their structural assertions stay enforced:
-  # re-keyed by change deembed-orchestration-scripts (testsuite-08's
-  # coherence half): the marker-substitution reconstruction retired with the
-  # injection (loud note in renderinject's header); the de-embedded-era
-  # structural pins -- the era-neutral norm_render normalization and the
-  # concrete-path substitution identity -- take its place.
-  grep -qF 'deembed-orchestration-scripts (sub-spec 05' "$ri" \
-    || { echo "  renderinject_test.sh carries no loud testsuite-05 re-key note"; ok=1; }
-  grep -qF 'norm_render' "$ri" \
-    || { echo "  renderinject's byte-identity is not normalized era-neutrally (norm_render missing)"; ok=1; }
-  grep -qF 'frontmatter lost '"'"'mode: primary'"'"'' "$ri" \
-    || { echo "  renderinject-02's frontmatter-shape assertion is gone"; ok=1; }
-  # skills-activation-render render-03/render-04-scoping: re-scoped to the
-  # current renderer (their pre-change baseline is a controlled mutation of
-  # the working install.sh, so both sides carry the quoting -- noted for
-  # this change; no stale pre-quoting byte-identity).
-  grep -qF '02-quoting' "$sa" \
-    || { echo "  skills-activation-render_test.sh carries no 02-quoting re-scope note"; ok=1; }
-  # Dynamic half: the repo's full unit suite runs clean (excluding this
-  # file -- self-recursion; nothing else in tests/ glob-runs the suite).
-  for t in "$SCRIPT_DIR"/tests/*_test.sh; do
-    [ "$(basename -- "$t")" = "$SELF_TEST" ] && continue
-    out=$(sh "$t" 2>&1) || {
-      echo "  suite failed: ${t#"$SCRIPT_DIR"/}"
-      printf '%s\n' "$out" | grep -E '^(FAIL|FATAL)' | head -5
-      ok=1
-    }
   done
   return $ok
 }
@@ -370,8 +288,38 @@ run_test "quoting-03 (Says \"hi\"): embedded quotes escape to \" on all three si
 run_test "quoting-03 (back\\slash): embedded backslash escapes to \\\\ on all three sites, rendered line is exactly description: \"back\\\\slash\"" quoting_03 'back\slash' '"back\\slash"'
 run_test "quoting-03 (a \"b\" \\ c): mixed quotes+backslash escape per YAML rules on all three sites, rendered line is exactly description: \"a \\\"b\\\" \\\\ c\"" quoting_03 'a "b" \ c' '"a \"b\" \\ c"'
 run_test "quoting-04: unquoting every rendered description line reproduces its source byte-for-byte (all agents, both set-model renders, escape-heavy round-trip)" quoting_04
-run_test "quoting-05: renderinject-01/02/05 byte-identity re-scoped quoting-aware with loud notes (structural assertions kept), render-03/render-04-scoping re-scoped to the current renderer, full unit suite green" quoting_05
 
-echo
-echo "pass=$pass_count fail=$fail_count skip=$skip_count"
-[ "$fail_count" -eq 0 ]
+# =============================================================================
+# crosssuites-01 (change optimize-test-suite, sub-spec 04): quoting-05 is
+# removed whole -- no registration, no function, no glob over the suite
+# files, no recursion-guard skip, and no reference to or grep of the
+# renderinject or skills-activation-render suite sources. quoting-01..04
+# stay registered exactly as before (and green: their own registrations ran
+# in this suite before this test).
+# =============================================================================
+test_crosssuites_01() {
+  ok=0
+  refuse "$QUOTING_NONCOMMENTS" 'run_test "quoting-0''5' || ok=1
+  Q5=$(mktemp)
+  extract_fn "$QUOTING_NONCOMMENTS" 'quoting_0''5' "$Q5"
+  [ ! -s "$Q5" ] || { echo "  the quoting-05 test function still exists"; ok=1; }
+  rm -f "$Q5"
+  refuse "$QUOTING_NONCOMMENTS" 'tests/*_te''st.sh' || ok=1
+  refuse "$QUOTING_NONCOMMENTS" 'SELF_TE''ST' || ok=1
+  refuse "$QUOTING_NONCOMMENTS" 'renderinject_te''st.sh' || ok=1
+  refuse "$QUOTING_NONCOMMENTS" 'skills-activation-render_te''st.sh' || ok=1
+  refuse "$QUOTING_NONCOMMENTS" 'dequote_descrip''tion' || ok=1
+  refuse "$QUOTING_NONCOMMENTS" 'norm_re''nder' || ok=1
+  # quoting-01..04 stay registered, unchanged (counts are the pre-refactor
+  # shape: quoting-03 is a Scenario Outline with one registration per row).
+  for spec in "quoting-01:1" "quoting-02:1" "quoting-03:3" "quoting-04:1"; do
+    id=${spec%:*} want=${spec#*:}
+    n=$(grep -c "^run_test \"$id" "$QUOTING_NONCOMMENTS")
+    [ "$n" -eq "$want" ] || { echo "  $id is registered $n times, expected exactly $want"; ok=1; }
+  done
+  return $ok
+}
+
+run_test "crosssuites-01: quoting-05 is no longer registered -- no glob over the suite files, no grep of the renderinject or skills-activation-render suite sources, no recursion-guard flag -- and quoting-01..04 stay registered" test_crosssuites_01
+
+finish_suite

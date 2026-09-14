@@ -1,15 +1,31 @@
 #!/usr/bin/env bash
-# Unit tests for install.sh's POSIX-sh parseability surface (the
-# fix-install-sh-syntax change), covering every scenario in
-# spdd/changes/fix-install-sh-syntax/01-posixsh.feature.
+# Unit tests for install.sh's POSIX-sh parseability surface: the posixsh
+# scenarios of the posixsh domain spec (posixsh-01..04), re-keyed to the
+# current version's behavior by change optimize-test-suite's sub-spec
+# 07-posixshfix (posixshfix-01..04).
 #
-# Self-contained bash test harness (no external framework/dependency -- this
-# repo has no package manager or build system), same pattern as
-# tests/set-model-command_test.sh. Run directly:
-#   ./tests/installsh-posixsh_test.sh
+# Current-version law (the re-key's premise): every expectation derives from
+# the working tree's install.sh alone. This suite extracts nothing from git
+# history, compares nothing against the default branch, and counts no lines
+# through a text comparison. The old posixsh-04 pair -- a HOME-tree identity
+# against a base render, and a base-vs-working console report diff whose
+# empty-removal counting idiom reported an empty diff as one line (the "got:
+# 1" root red) -- is re-keyed to ONE console-inventory registration: a
+# single fresh hermetic --all render asserted, whole-report and in order,
+# against the documented 22-line inventory (two client status lines, four
+# script-artifact report lines, twelve client "Installed" lines, four libdir
+# "Installed" lines; the outcome vocabulary is libdirinstall-04's, and the
+# sixteen-file HOME tree those renders create is pinned by the render and
+# libdir suites, not here).
 #
-# Each reported test name embeds its scenario id (posixsh-01..04) from the
-# feature file above, so a failure maps straight back to the scenario it
+# The shared harness library (tests/harness.sh) provides the plumbing helpers
+# (run_test, skip_test, temp bookkeeping, cleanup, the content readers, and
+# the install render helper install_at that posixsh-04 renders through); this
+# suite defines none of them itself. Run directly:
+#   sh tests/installsh-posixsh_test.sh
+#
+# Each reported test name embeds its scenario id (posixsh-01..04,
+# posixshfix-01..04), so a failure maps straight back to the scenario it
 # covers. Every test that touches the filesystem runs against isolated temp
 # dirs, never the real ~/.claude or ~/.config/opencode.
 #
@@ -17,80 +33,26 @@
 # tests/bash32-sh.sh (cached after the first run). If provisioning fails
 # (no gcc/make/curl, no network, refused tarball, build failure), the test
 # reports SKIP with the machine reason -- an environmental limitation, not a
-# code failure, and not a BLOCKED code refusal (the sub-spec's fix itself is
-# implemented and guarded by the posixsh-01 mechanical scan either way).
+# code failure, and not a BLOCKED code refusal (the posixsh-01 mechanical
+# scan still guards the fix either way).
 
 set -u
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 INSTALL_SH="$SCRIPT_DIR/install.sh"
 BASH32_HELPER="$SCRIPT_DIR/tests/bash32-sh.sh"
+# This suite's own source, the scan surface of the posixshfix structural
+# clauses (a suite may read its own file).
+SELF="$SCRIPT_DIR/tests/installsh-posixsh_test.sh"
 
-pass_count=0
-fail_count=0
-skip_count=0
-
-# ---- tiny test runner ------------------------------------------------------
-
-run_test() {
-  # $1 = reported test name (must contain its scenario id), $2 = function name
-  name="$1"; fn="$2"
-  if "$fn"; then
-    echo "PASS: $name"
-    pass_count=$((pass_count + 1))
-  else
-    echo "FAIL: $name"
-    fail_count=$((fail_count + 1))
-  fi
-}
-
-skip_test() {
-  # $1 = reported test name (must contain its scenario id), $2 = reason.
-  # An explicit, accounted-for stub for a scenario that is out of scope for
-  # unit-level TDD (never a silent omission).
-  name="$1"; reason="$2"
-  echo "SKIP: $name ($reason)"
-  skip_count=$((skip_count + 1))
-}
-
-tmp_roots=()
-new_tmp_dir() {
-  d=$(mktemp -d)
-  tmp_roots+=("$d")
-  printf '%s' "$d"
-}
-
-cleanup() {
-  for d in "${tmp_roots[@]:-}"; do
-    [ -n "$d" ] && rm -rf "$d"
-  done
-  return 0
-}
-trap cleanup EXIT
+# shellcheck source=tests/harness.sh
+. "$SCRIPT_DIR/tests/harness.sh"
 
 # ---- helpers ---------------------------------------------------------------
 
-# Prints the pre-fix install.sh to stdout, extracted from git at this
-# change's base (merge-base with master) so the suite keeps passing after
-# the change is committed. Falls back to HEAD when master is unknown.
-base_install_sh() {
-  base_commit=$(git -C "$SCRIPT_DIR" merge-base master HEAD 2>/dev/null) || base_commit=HEAD
-  git -C "$SCRIPT_DIR" show "$base_commit:install.sh"
-}
-
-# Materializes the base install.sh to a temp file ($2) and echoes 1 when the
-# base content is still distinct from the fixed tree ($1), 0 when the two
-# already agree (a post-merge degenerate tree: the base is the fix itself,
-# so base-derived negative assertions are vacuous and must not fail).
-prep_base_if_distinct() {
-  fixed="$1"; out="$2"
-  base_install_sh > "$out"
-  ! cmp -s "$fixed" "$out"
-}
-
 # Writes the synthetic heredoc-in-command-substitution trap fixture (the
-# construct class bash 3.2 mis-parses, in the exact single-line shape the
-# base install.sh carried at lines 204/424/448) to $1.
+# construct class bash 3.2 mis-parses, the exact single-line shape the
+# pre-fix install.sh carried) to $1.
 write_trap_fixture() {
   cat > "$1" <<'FIXTURE'
 x=$(cat <<'INNER'
@@ -127,7 +89,7 @@ posixsh_01() {
   # directly inside a function body, never inside a command substitution.
   # The scan above IS that assertion for this construct class; pin the
   # scanner against false negatives with a synthetic three-hit file: the
-  # scanner must find exactly 3 there, forever, without needing git. (The
+  # scanner must find exactly 3 there, forever, from this file alone. (The
   # pin is only scanned, never parsed -- three repeated heredocs would not
   # be a valid shell file.)
   one=$(new_tmp_dir)/one.sh
@@ -139,23 +101,6 @@ posixsh_01() {
     echo "scanner drifted: synthetic 3-hit pin shows $pins hits (expected 3)"
     return 1
   }
-  # Historical fidelity check: while this change's base tree is still
-  # distinct (pre-merge), the same scan there must find exactly the three
-  # documented instances (lines 204, 424, 448). Post-fix changes that
-  # legitimately edit install.sh (e.g. skills-activation's readwrite tools
-  # grant) leave the merge-base as neither the broken tree nor the fixed
-  # tree; the base clause is then vacuous, not a failure -- a broken-era
-  # signature (any hit) is required before asserting the count.
-  base=$(new_tmp_dir)/base-install.sh
-  if prep_base_if_distinct "$INSTALL_SH" "$base"; then
-    base_hits=$(scan_heredoc_in_cmdsub "$base" | grep -c "[0-9]")
-    if [ "$base_hits" -gt 0 ]; then
-      [ "$base_hits" -eq 3 ] || {
-        echo "scanner drifted: base tree shows $base_hits hits (expected 3)"
-        return 1
-      }
-    fi
-  fi
   return 0
 }
 
@@ -185,44 +130,21 @@ posixsh_02() {
     return 1
   }
   err=$(new_tmp_dir)/err.txt
-  # Fixed tree must parse clean under the macOS-fidelity parser.
+  # The current install.sh must parse clean under the macOS-fidelity parser.
   if ! "$BASH32" --posix -n "$INSTALL_SH" 2>"$err"; then
     echo "fixed install.sh failed bash3.2 --posix -n: $(cat "$err")"
     return 1
   fi
   [ ! -s "$err" ] || { echo "unexpected stderr on fixed parse: $(cat "$err")"; return 1; }
-  # Proof the instrument reproduces the macOS failure -- two instruments:
-  # (a) the synthetic trap fixture must always fail to parse; (b) while the
-  # base tree is still distinct (pre-merge), the base commit's install.sh
-  # must fail there with the reported error.
+  # Proof the instrument reproduces the macOS failure: the synthetic trap
+  # fixture must always fail to parse -- the negative control, carried by
+  # the fixture alone.
   fixture=$(new_tmp_dir)/fixture.sh
   write_trap_fixture "$fixture"
   fixture_err=$(new_tmp_dir)/fixture-err.txt
   if "$BASH32" -n "$fixture" >/dev/null 2>"$fixture_err"; then
     echo "trap fixture unexpectedly parsed clean -- instrument lost the defect"
     return 1
-  fi
-  base=$(new_tmp_dir)/base-install.sh
-  if prep_base_if_distinct "$INSTALL_SH" "$base"; then
-    # The base negative assertion only applies while the base is still the
-    # documented broken tree (has the trap signature). Post-fix install.sh
-    # changes (e.g. skills-activation) evolve the merge-base past that era;
-    # the clause is then vacuous, like the base==fixed degenerate case.
-    if [ -n "$(scan_heredoc_in_cmdsub "$base")" ]; then
-      base_err=$(new_tmp_dir)/base-err.txt
-      if "$BASH32" --posix -n "$base" >/dev/null 2>"$base_err"; then
-        echo "base install.sh unexpectedly parsed clean -- instrument lost the defect"
-        return 1
-      fi
-      grep -q "syntax error near unexpected token" "$base_err" || {
-        echo "base failure was not the reported syntax error: $(cat "$base_err")"
-        return 1
-      }
-      grep -q "line 230" "$base_err" || {
-        echo "base failure was not at line 230: $(cat "$base_err")"
-        return 1
-      }
-    fi
   fi
   return 0
 }
@@ -264,119 +186,253 @@ posixsh_03_execute() {
 }
 
 # ---- posixsh-04 ------------------------------------------------------------
-
-# Renders with install.sh at $2 (--all, isolated $1 as HOME), stdout+stderr
-# to $3, returning the exit status. XDG_CONFIG_HOME is unset so the libdir
-# scripts installed by change deembed-orchestration-scripts (sub-spec 01)
-# resolve inside the staged HOME -- an exported session value would point
-# the shared libdir at the developer's real config directory (hermeticity,
-# same as the isolated HOME everywhere else in this suite).
-render_tree() {
-  home="$1"; install_sh="$2"; log="$3"
-  mkdir -p "$home"
-  env -u XDG_CONFIG_HOME HOME="$home" sh "$install_sh" --all > "$log" 2>&1
-}
-
-# The base install.sh materialized to a temp file (the pre-fix tree),
-# extracted from git so the suite keeps passing after this change is
-# committed. See prep_base_if_distinct.
-base_install_file() {
-  base=$(new_tmp_dir)/base-install.sh
-  prep_base_if_distinct "$1" "$base" >/dev/null
-  printf '%s' "$base"
-}
+#
+# The single console-inventory registration (re-keyed by sub-spec 07): one
+# fresh hermetic --all render of the CURRENT install.sh, through the harness
+# library's render helper, asserted whole-report and in order against the
+# documented 22-line report inventory -- two client status lines, four
+# script-artifact report lines, twelve client "Installed" lines, four libdir
+# "Installed" lines. The version token is the only free slot (the outcome
+# vocabulary libdirinstall-04 pins carries it); every other byte is pinned.
+# The whole-report cmp means no line count is ever derived from a
+# comparison, so the empty-removal "got: 1" bug class cannot recur. The
+# sixteen-file HOME tree the render creates is pinned by the render and
+# libdir suites.
 
 posixsh_04() {
-  old_home=$(new_tmp_dir)/old-home
-  new_home=$(new_tmp_dir)/new-home
-  base=$(base_install_file "$INSTALL_SH")
-  olog=$(new_tmp_dir)/old-render.log; nlog=$(new_tmp_dir)/new-render.log
-  render_tree "$old_home" "$base" "$olog" || { echo "pre-fix render failed: $(cat "$olog")"; return 1; }
-  render_tree "$new_home" "$INSTALL_SH" "$nlog" || { echo "post-fix render failed: $(cat "$nlog")"; return 1; }
-  # Byte-for-byte recursive comparison of the two HOME trees -- applies
-  # while the base is the documented broken tree (the trap signature) and
-  # the fix could have altered output. Post-fix install.sh changes
-  # (e.g. skills-activation's readwrite tools grant) legitimately change the
-  # render, so in that era the full-tree identity is vacuous; the render
-  # must still succeed and the documented inventory must still hold below.
-  if [ -n "$(scan_heredoc_in_cmdsub "$base")" ]; then
-    treediff=$(new_tmp_dir)/treediff.txt
-    if ! diff -r "$old_home" "$new_home" > "$treediff"; then
-      head -20 "$treediff"
-      return 1
-    fi
-  fi
-  # The full documented inventory must actually be present in both trees
-  # (diff -r alone would vacuously pass two equally empty trees). Since
-  # change deembed-orchestration-scripts the twelve client files are joined
-  # by the four shared libdir scripts (posixsh-04 re-key, setmodeldeembed-05
-  # -- loud note: the documented inventory is sixteen files now).
-  for f in \
-    .claude/agents/antz-specifier.md .config/opencode/agents/antz-specifier.md \
-    .claude/agents/antz-coder.md .config/opencode/agents/antz-coder.md \
-    .claude/agents/antz-verifier.md .config/opencode/agents/antz-verifier.md \
-    .claude/agents/antz-orchestrator.md .config/opencode/agents/antz-orchestrator.md \
-    .claude/commands/antz.md .config/opencode/commands/antz.md \
-    .claude/commands/antz-set-model.md .config/opencode/commands/antz-set-model.md \
-    .config/antz/scripts/antz-flow.sh .config/antz/scripts/antz-probe.sh \
-    .config/antz/scripts/antz-skills.sh .config/antz/scripts/antz-set-model.sh; do
-    [ -f "$new_home/$f" ] || { echo "missing installed file: $f"; return 1; }
-  done
-  # The heredoc-emitted set-model script text must be intact in the
-  # installed libdir file -- its `for arg do` line included (feature clause;
-  # re-keyed by setmodeldeembed-05 from the command bodies, which embed no
-  # script anymore, to the installed antz-set-model.sh).
-  grep -q '^for arg do$' "$new_home/.config/antz/scripts/antz-set-model.sh" || {
-    echo "emitted set-model script's 'for arg do' line missing from the installed antz-set-model.sh"
+  home=$(new_tmp_dir)/home
+  mkdir -p "$home"
+  log=$(new_tmp_dir)/report.log
+  # XDG_CONFIG_HOME cleared by the helper, so the libdir resolves inside the
+  # sandbox HOME -- hermetic, never the developer's real config directory.
+  install_at "$home" "$INSTALL_SH" --all > "$log" 2>&1 \
+    || { echo "fresh --all render failed: $(cat "$log")"; return 1; }
+  # Normalize the two volatile pieces: the sandbox HOME prefix inside the
+  # "Installed <dest>" lines, and the version token inside the six outcome
+  # lines (each exactly one non-space word).
+  norm=$(new_tmp_dir)/report.norm
+  exp=$(new_tmp_dir)/report.expected
+  sed -e "s|$home||g" \
+      -e 's|^\(.*: fresh install of antz\) [^ ]*$|\1 @VERSION@|' \
+      "$log" > "$norm"
+  cat > "$exp" <<'INVENTORY'
+Claude Code: fresh install of antz @VERSION@
+OpenCode: fresh install of antz @VERSION@
+antz-flow.sh: fresh install of antz @VERSION@
+antz-probe.sh: fresh install of antz @VERSION@
+antz-skills.sh: fresh install of antz @VERSION@
+antz-set-model.sh: fresh install of antz @VERSION@
+Installed /.claude/agents/antz-specifier.md
+Installed /.config/opencode/agents/antz-specifier.md
+Installed /.claude/agents/antz-coder.md
+Installed /.config/opencode/agents/antz-coder.md
+Installed /.claude/agents/antz-verifier.md
+Installed /.config/opencode/agents/antz-verifier.md
+Installed /.claude/agents/antz-orchestrator.md
+Installed /.config/opencode/agents/antz-orchestrator.md
+Installed /.claude/commands/antz.md
+Installed /.claude/commands/antz-set-model.md
+Installed /.config/opencode/commands/antz.md
+Installed /.config/opencode/commands/antz-set-model.md
+Installed /.config/antz/scripts/antz-flow.sh
+Installed /.config/antz/scripts/antz-probe.sh
+Installed /.config/antz/scripts/antz-skills.sh
+Installed /.config/antz/scripts/antz-set-model.sh
+INVENTORY
+  if ! cmp -s "$exp" "$norm"; then
+    echo "fresh --all report does not match the documented inventory:"
+    echo "--- expected ---"; sed 's/^/  /' "$exp"
+    echo "--- actual ---"; sed 's/^/  /' "$norm"
     return 1
-  }
+  fi
   return 0
 }
 
-# The console-report half of posixsh-04, as its own test so a console drift
-# is distinguishable from a tree drift: stdout identical except for the HOME
-# path prefixes inside the "Installed <dest>" lines.
+# ---- posixshfix-01..04 (change optimize-test-suite, sub-spec 07) ---------
 #
-# Re-scoped by change deembed-orchestration-scripts (sub-spec 01,
-# libdirinstall-04, loud note per the repo's re-scope convention): an
-# installing run legitimately GROWS -- the four script-artifact report lines
-# after the per-client lines, and the four "Installed <libdir>/<script>"
-# lines (the report's three outcomes and the CHANGELOG-printed-once rule
-# themselves pin in tests/libdirinstall_test.sh, as does the libdir
-# inventory). The pre-change console output is therefore no longer byte-
-# identical to the current one; what survives as the structural pin asserted
-# here: every base-report line still appears, in the same relative order
-# (nothing removed or reordered), and every added line is one of the two
-# documented new shapes -- nothing else may appear.
-posixsh_04_console() {
-  old_home=$(new_tmp_dir)/old-home
-  new_home=$(new_tmp_dir)/new-home
-  base=$(base_install_file "$INSTALL_SH")
-  olog=$(new_tmp_dir)/old-render.log; nlog=$(new_tmp_dir)/new-render.log
-  render_tree "$old_home" "$base" "$olog" || { echo "pre-fix render failed: $(cat "$olog")"; return 1; }
-  render_tree "$new_home" "$INSTALL_SH" "$nlog" || { echo "post-fix render failed: $(cat "$nlog")"; return 1; }
-  # Strip the HOME prefixes inside the "Installed <dest>" lines, then compare.
-  sed "s|$old_home||g" "$olog" > "$olog.n"
-  sed "s|$new_home||g" "$nlog" > "$nlog.n"
-  # (1) Every base line still appears in the new report, in the same
-  # relative order: the old report is a line-wise subsequence of the new.
-  if ! awk '
-      NR == FNR { m++; want[m] = $0; next }
-      { if (j < m && $0 == want[j + 1]) j++ }
-      END { exit (m > 0 && j == m) ? 0 : 1 }
-    ' "$olog.n" "$nlog.n"; then
-    echo "base console report is no longer an ordered subsequence of the current one (a line was removed or reordered)"
-    return 1
+# Structural scans over this suite's own source: the current-version-only
+# re-key of posixsh-04 (direct console inventories instead of a
+# base-vs-working render diff), the retirement of the base-extraction
+# machinery and the tree-identity registration, and the freedom of the
+# retained suite from history comparisons and prose pins. The suite's
+# "exits 0 with every id green" clauses are bought by the recorded run
+# itself (permanent law 1: no suite executes another suite, this one
+# included).
+
+mk() {
+  # Prints the plain concatenation of its arguments. Used to spell forbidden
+  # strings in two fragments so this file never carries whole the literals
+  # its own scans forbid (the quote-split needle pattern).
+  s=""
+  for a in "$@"; do s="$s$a"; done
+  printf '%s' "$s"
+}
+
+count_f() {
+  # $1 = fixed needle, $2 = file: number of lines containing the needle.
+  c=$(grep -cF "$1" "$2" 2>/dev/null || true)
+  printf '%s' "${c:-0}"
+}
+
+suite_nc_file() {
+  # Writes this suite's source minus full-line comments to $1 -- the
+  # whole-suite scan surface of the posixshfix clauses.
+  grep -v '^[[:space:]]*#' "$SELF" > "$1"
+}
+
+body_nc_file() {
+  # $1 = function name, $2 = output file: the named function's source body
+  # minus its full-line comment lines.
+  raw=$(new_tmp_dir)/body.raw
+  extract_fn "$SELF" "$1" "$raw"
+  grep -v '^[[:space:]]*#' "$raw" > "$2"
+}
+
+posixshfix_01() {
+  ok=0
+  b4=$(new_tmp_dir)/posixsh_04.nc
+  body_nc_file posixsh_04 "$b4"
+  nc=$(new_tmp_dir)/suite.nc
+  suite_nc_file "$nc"
+  n_at=$(mk 'install_' 'at')
+  n_d=$(mk 'di' 'ff')
+  n_vxF=$(mk 'grep -vx' 'F')
+  n_empty=$(mk 'grep -c ' "''")
+  # One render through the harness library's render helper, of the CURRENT
+  # install.sh; no second render of any other source.
+  [ "$(count_f "$n_at" "$nc")" -eq 1 ] || {
+    echo "  expected exactly one $n_at line in the suite, found $(count_f "$n_at" "$nc")"
+    ok=1
+  }
+  grep -F "$n_at" "$nc" | grep -qF 'INSTALL_SH' || {
+    echo "  the suite's single render helper line does not reference INSTALL_SH (the current install.sh)"
+    ok=1
+  }
+  # The documented inventory and its order are embedded in the clause.
+  require "$b4" 'Claude Code: fresh install of antz @VERSION@' || ok=1
+  require "$b4" 'OpenCode: fresh install of antz @VERSION@' || ok=1
+  require "$b4" 'antz-set-model.sh: fresh install of antz @VERSION@' || ok=1
+  require "$b4" 'Installed /.claude/agents/antz-specifier.md' || ok=1
+  require "$b4" 'Installed /.config/opencode/commands/antz-set-model.md' || ok=1
+  require "$b4" 'Installed /.config/antz/scripts/antz-set-model.sh' || ok=1
+  # Order is asserted by the whole-report cmp, never by a counted view.
+  require "$b4" 'cmp -s' || ok=1
+  refuse "$b4" "$n_d" || ok=1
+  # The empty-count bug class cannot recur: no comparison machinery and no
+  # comparison-derived line count remains anywhere in the suite.
+  refuse "$nc" "$n_d" || ok=1
+  refuse "$nc" "$n_vxF" || ok=1
+  refuse "$nc" "$n_empty" || ok=1
+  # The clause itself runs green at the current disk state.
+  if ! posixsh_04; then
+    echo "  posixsh-04's console-inventory clause is not green at the current disk state"
+    ok=1
   fi
-  # (2) Every ADDED line is one of the two documented new shapes: a
-  # script-artifact report line (one of the three outcomes) or an
-  # "Installed <...>/antz/scripts/<script>" line. Nothing else may appear.
-  added=$(grep -vxF -f "$olog.n" "$nlog.n" || true)
-  bad=$(printf '%s\n' "$added" | grep -vE '^antz-(flow|probe|skills|set-model)\.sh: (fresh install of antz [^ ]*|already up to date \(antz [^]*\)|antz [^ ]* -> [^ ]*)$|^Installed .*/antz/scripts/antz-(flow|probe|skills|set-model)\.sh$' || true)
-  [ -z "$bad" ] || { echo "unexpected added console lines:"; printf '%s\n' "$bad" | sed 's/^/    /'; return 1; }
-  n_added=$(printf '%s\n' "$added" | grep -c '' )
-  [ "$n_added" -eq 8 ] || { echo "expected exactly 8 added lines (4 script reports + 4 libdir Installed), got: $n_added"; return 1; }
-  return 0
+  [ "$ok" -eq 0 ]
+}
+
+posixshfix_02() {
+  ok=0
+  nc=$(new_tmp_dir)/suite.nc
+  suite_nc_file "$nc"
+  # The base-extraction machinery is gone from the whole suite.
+  refuse "$nc" "$(mk 'base_install_' 'sh')" || ok=1
+  refuse "$nc" "$(mk 'base_install_' 'file')" || ok=1
+  refuse "$nc" "$(mk 'prep_base_if_' 'distinct')" || ok=1
+  refuse "$nc" "$(mk '$ba' 'se')" || ok=1
+  refuse "$nc" "$(mk 'merge-' 'base')" || ok=1
+  # The tree-identity registration is gone: it rendered a second install.sh
+  # source and byte-compared two trees.
+  refuse "$nc" "$(mk 'byte-identic' 'al')" || ok=1
+  refuse "$nc" "$(mk 'pre-fix ren' 'der')" || ok=1
+  # The suite sources the harness library and defines none of its helpers.
+  require "$nc" '. "$SCRIPT_DIR/tests/harness.sh"' || ok=1
+  defs_re='^(run_te''st|skip_te''st|new_tm''p_dir|clea''nup|fin''ish_suite|requi''re|refu''se|extract_sec''tion|extract_bu''llet|extract_bulle''t_line|extract_li''ne|extract_f''n|stage_che''ckout|install_''at|install_xd''g|render_''tree)\(\)'
+  defs=$(grep -Ec "$defs_re" "$nc" || true)
+  [ "${defs:-0}" -eq 0 ] || {
+    echo "  the suite still defines $defs library helper(s) locally"
+    ok=1
+  }
+  # posixsh-01 keeps its synthetic-fixture pin and drops the historical
+  # clause; posixsh-02's negative control is the synthetic fixture alone.
+  b1=$(new_tmp_dir)/posixsh_01.nc
+  body_nc_file posixsh_01 "$b1"
+  require "$b1" 'write_trap_fixture' || ok=1
+  require "$b1" '-eq 3' || ok=1
+  refuse "$b1" "$(mk 'ba' 'se')" || ok=1
+  b2=$(new_tmp_dir)/posixsh_02.nc
+  body_nc_file posixsh_02 "$b2"
+  require "$b2" 'write_trap_fixture' || ok=1
+  require "$b2" 'trap fixture unexpectedly parsed clean' || ok=1
+  refuse "$b2" "$(mk 'ba' 'se')" || ok=1
+  refuse "$b2" 'line 230' || ok=1
+  # posixsh-01..03 keep their ids and registrations.
+  rt=$(mk 'run_te' 'st')
+  [ "$(count_f "$rt \"posixsh-01 " "$nc")" -eq 1 ] || ok=1
+  [ "$(count_f "$rt \"posixsh-02 " "$nc")" -eq 1 ] || ok=1
+  [ "$(count_f "$rt \"posixsh-03 " "$nc")" -eq 2 ] || ok=1
+  [ "$ok" -eq 0 ]
+}
+
+posixshfix_03() {
+  ok=0
+  nc=$(new_tmp_dir)/suite.nc
+  suite_nc_file "$nc"
+  rt=$(mk 'run_te' 'st')
+  # The retained posixsh-04 id keeps its name and is carried by exactly one
+  # console registration, whose function is posixsh_04.
+  [ "$(count_f "$rt \"posixsh-04 " "$nc")" -eq 1 ] || {
+    echo "  expected exactly one posixsh-04 registration, found $(count_f "$rt \"posixsh-04 " "$nc")"
+    ok=1
+  }
+  reg=$(grep -F "$rt \"posixsh-04 " "$nc")
+  case "$reg" in
+    *console*posixsh_04) ;;
+    *) echo "  the posixsh-04 registration is not the console-inventory one: $reg"; ok=1 ;;
+  esac
+  # Every scenario id of this suite is carried by exactly its own
+  # registrations: 5 posixsh + 4 posixshfix = 9 run_test lines.
+  [ "$(count_f "$rt \"" "$nc")" -eq 9 ] || {
+    echo "  expected 9 id-headed registrations, found $(count_f "$rt \"" "$nc")"
+    ok=1
+  }
+  i=1
+  while [ "$i" -le 4 ]; do
+    [ "$(count_f "$rt \"posixshfix-0$i:" "$nc")" -eq 1 ] || {
+      echo "  posixshfix-0$i is not carried by exactly one registration"
+      ok=1
+    }
+    i=$((i + 1))
+  done
+  [ "$ok" -eq 0 ]
+}
+
+posixshfix_04() {
+  ok=0
+  nc=$(new_tmp_dir)/suite.nc
+  suite_nc_file "$nc"
+  # No comparison of the real tree against git history, no byte-pin against
+  # HEAD: the history machinery cannot even be named in the suite.
+  refuse "$nc" "$(mk 'gi' 't')" || ok=1
+  refuse "$nc" "$(mk 'HEA' 'D')" || ok=1
+  refuse "$nc" "$(mk 'merge-' 'base')" || ok=1
+  refuse "$nc" "$(mk 'base_commit' ':')" || ok=1
+  g=$(mk 'gi' 't')
+  h=$(mk 'HEA' 'D')
+  d=$(mk 'di' 'ff')
+  refuse "$nc" "$g show" || ok=1
+  refuse "$nc" "show $h:" || ok=1
+  refuse "$nc" "$d --quiet" || ok=1
+  refuse "$nc" "$d -" || ok=1
+  # No exact-phrase prose pins of prompts or docs; assertions on install.sh
+  # itself and on installed product files are not prose pins.
+  refuse "$nc" "$(mk 'agents/p' 'rompts')" || ok=1
+  refuse "$nc" "$(mk 'agents/me' 'ta')" || ok=1
+  refuse "$nc" "$(mk '.pro' 'mpt')" || ok=1
+  refuse "$nc" "$(mk 'AGENTS.m' 'd')" || ok=1
+  refuse "$nc" "$(mk 'CLAUDE.m' 'd')" || ok=1
+  refuse "$nc" "$(mk 'spd' 'd/')" || ok=1
+  [ "$ok" -eq 0 ]
 }
 
 # ---- run -------------------------------------------------------------------
@@ -389,16 +445,17 @@ if [ "${posixsh_02_rc:-0}" -eq 2 ]; then
   # into an explicit SKIP stub (environmental, not a code failure and not a
   # BLOCKED refusal -- posixsh-01's mechanical scan still guards the fix).
   fail_count=$((fail_count - 1))
-  echo "SKIP: posixsh-02 parse clean under macOS-fidelity POSIX sh (bash 3.2) (${posixsh_02_skip:-bash32 provision failed})"
-  skip_count=$((skip_count + 1))
+  skip_test "posixsh-02 parse clean under macOS-fidelity POSIX sh (bash 3.2)" "${posixsh_02_skip:-bash32 provision failed}"
 fi
 unset posixsh_02_rc
 
 run_test "posixsh-03 parse and execute clean under plain POSIX sh: sh -n" posixsh_03_parse
 run_test "posixsh-03 parse and execute clean under plain POSIX sh: no-flag refusal" posixsh_03_execute
-run_test "posixsh-04 rendered output byte-identical to the pre-fix render (HOME trees)" posixsh_04
-run_test "posixsh-04 console report keeps the pre-fix lines in order with only the two documented script-artifact line shapes added (libdirinstall-04 re-scope of the old byte-identity)" posixsh_04_console
+run_test "posixsh-04 fresh hermetic --all console report matches the documented line inventory and order" posixsh_04
 
-echo
-echo "pass=$pass_count fail=$fail_count skip=$skip_count"
-[ "$fail_count" -eq 0 ]
+run_test "posixshfix-01: posixsh-04's console half asserts the fresh render against the documented inventory and order, from the current install.sh alone, with no second render and no comparison-derived line count" posixshfix_01
+run_test "posixshfix-02: the base-extraction machinery and the tree-identity registration are gone; every render uses the current install.sh; posixsh-01..03 keep their ids, registrations, and synthetic instruments" posixshfix_02
+run_test "posixshfix-03: the retained posixsh-04 id keeps its name with exactly one console-inventory registration, and all nine scenario registrations are accounted for" posixshfix_03
+run_test "posixshfix-04: the retained suite source holds no history comparison, no byte-pin against the default branch, and no exact-phrase pin of prompts or docs" posixshfix_04
+
+finish_suite

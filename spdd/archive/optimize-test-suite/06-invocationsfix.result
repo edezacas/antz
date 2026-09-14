@@ -1,0 +1,31 @@
+# Receipt — sub-spec 06-invocationsfix (change optimize-test-suite)
+# Session outcome. Suite touched: tests/invocations_test.sh — exactly the two
+# in-scope functional changes plus the two id-tagged coverage registrations:
+# (1) invocations-07's record clause re-keyed from the in-flight path
+# "spdd/changes/deembed-orchestration-scripts/README.md" (archived away, the
+# root red) to the durable immutable record
+# "spdd/archive/deembed-orchestration-scripts/README.md", keeping all three
+# fact-reads (KV-cache priority, ~335 embedded lines, per-session
+# re-materialization dropping to zero) as independent gated greps; (2) the
+# deferred CHANGELOG clause deleted with its SKIP stub and stale deferral
+# text (history/evolution calibration deleted, not relocated;
+# versioncurrent-02 stays the area's only CHANGELOG-touching assertion).
+# invocations-07 is now carried by exactly two id-headed run_test
+# registrations and no skip_test one. No real-tree-vs-git-HEAD comparison,
+# byte-pin vs HEAD, or exact-phrase prose pin of prompts/product docs is
+# introduced (the archive is read solely as the durable record). Product
+# surfaces and spdd/archive/ untouched. Suite: bash tests/invocations_test.sh
+# -> pass=14 fail=0 skip=0 exit 0 (was pass=11 fail=1 skip=1 exit 1 at
+# session start; both new tests red-verified first for the right reasons —
+# in-flight-path presence and stub presence — before the fix). Runner:
+# sh tests/run_all.sh -> suites=31 passed=30 failed=1 elapsed=54s; the only
+# failure is posixsh-04, owned by pending sub-spec 07. Deviation noted: the
+# suite was NOT migrated to source tests/harness.sh — sub-spec 06's scope law
+# confines this file to the two changes above and rules out a suite-wide
+# scrub; the new registrations carry the harness output contract and
+# id-tagging convention through the suite's existing runner, and the
+# area-wide single-invocation/definition-point scans (harness-04/05) remain
+# the later migration sub-specs' deferred end state.
+test_command=bash tests/invocations_test.sh
+id=invocationsfix-01 result=green reason=unit test "invocationsfix-01: invocations-07's record clause reads the immutable archived change README (spdd/archive/deembed-orchestration-scripts/README.md), still requires the three recorded cache-effect facts as gated reads, runs green at the current disk state, and introduces no git comparison, byte-pin vs HEAD, or prose pin of prompts/docs" (extracts the record clause's body from the suite's own source, requires the archive path and forbids the in-flight path, counts 3 gated fact-reads with the KV-cache / ~335 / per-session re-materialization literals, forbids git/HEAD/cmp/diff/merge/agents//docs/install.sh forms inside the clause, and runs the clause itself green at the current disk state; red-verified pre-fix on the in-flight-path and failing-clause clauses)
+id=invocationsfix-02 result=green reason=unit test "invocationsfix-02: the CHANGELOG-clause SKIP stub of invocations-07 is deleted with its stale deferral text, neither retained invocations-07 registration asserts CHANGELOG content, and exactly two id-headed registrations carry the invocations-07 id" (own-source non-comment scan: zero skip_test registrations naming invocations-07, the stub's "CHANGELOG clause"/"versionbump"/"deferred:" strings gone from non-comment lines, both retained invocations-07 function bodies CHANGELOG-free, anchored id-headed run_test count equals 2 equals the quoted-id total; red-verified pre-deletion on all four clauses; the scenario's suite-exits-0 line is bought by the recorded run itself — bash tests/invocations_test.sh -> pass=14 fail=0 skip=0 exit 0, and sh tests/run_all.sh -> tests/invocations_test.sh pass=14 fail=0 skip=0 -> ok — never by a self-recursive suite execution, per permanent law 1)

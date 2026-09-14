@@ -1,0 +1,102 @@
+# Receipt — sub-spec 09-hygiene (change optimize-test-suite)
+# The four permanent laws are now mechanically enforced over tests/ by one
+# hygiene suite, and the retained suite area was cleaned (and shrunk) to
+# satisfy them. Nothing committed; all changes are under tests/ plus this
+# receipt. Product surfaces (agents/, install.sh, scripts/, spdd/specs/) are
+# untouched; spdd/archive/ untouched.
+#
+# tests/hygiene_test.sh — NEW, 8 registrations over the 4 declared ids (two
+# per scenario: the real-tree scan and its planted-vacuity guard). Scans are
+# three awk programs driven over one process per scan root (suite files only,
+# hygiene itself exempt). Shared lexer (stripper.awk): POSIX-quote-aware —
+# single-quoted strings (including multi-line ones) and comments dropped,
+# double-quoted content kept, escapes honored — so the area's quote-split
+# self-guard needles never self-match. Carve-outs per the spec's Background:
+# only comment text skipped; a suite may read its own file; nonexistent
+# fixture names are not references; git aimed at temp fixture repos (a -C
+# target assigned from mktemp/new_tmp_dir/HARNESS_RUN_TMP/TMPDIR) is not a
+# real-tree comparison. law-1/2 scan: existing-suite basename anywhere;
+# bare "*_test.sh" glob only where a tool/exec reads or runs its matches;
+# the glob-LOOP leak (for f in ...*_test.sh; do <tool> "$f") via a loop-var
+# rule. law-3 scan: git-verb patterns (merge-base, show HEAD:, show $rev:,
+# cat-file -e HEAD, diff --quiet HEAD) gated on a same-line git invocation;
+# git -C "$SCRIPT_DIR"/"$HARNESS_REPO"; bare git+HEAD naming real subcommands
+# only. law-4 scan: prose sources (agents/prompts/*.prompt, AGENTS.md,
+# CLAUDE.md, docs/) derived through assignment/redirect/extract/for chains;
+# flagged with any assertion tool incl. bare continuation operand lines;
+# cmp/diff with two prose-or-zero operands is live-vs-live, not a pin; the
+# SOLE exception region (hygiene:working-root-exception-begin/-end markers,
+# honored only in roles_test.sh — hygiene-03 asserts the marker pair names
+# no other carrier). hygiene-04 proves era-independence: scan drivers carry
+# no git query / spdd/changes read / install.sh invocation (self-extracted),
+# and a staged temp copy with the change committed and archived scans clean
+# unchanged. Known deliberate blind spots: an assertion whose tool and file
+# operand sit on different continuation lines (law 1/2/4 line-wise rules),
+# and git verbs not in the subcommand list; each has no instance in the
+# retained area, and every planted fixture keeps the scans non-vacuous.
+#
+# Cleaned to satisfy the scans (revision invariant: law-breaking residual
+# sites are deleted, not re-calibrated):
+# - 15 suites deleted whole (README's Deleted list, minus the nine bump-era
+#   ones already gone in sub-spec 05): docslaw, repodocs, readmefile,
+#   skills-activation-docs, skills-activation-prompts,
+#   orchestrator-skills-block, orchestrator-sessionguards, sluglimit,
+#   rolechecks, renderinject, conventions, entities-operations-table,
+#   closingblock, receipts, setmodeldeembed. receipts/closingblock/setmodel-
+#   deembed died whole (deviation, resolved here per the deletion law): their
+#   retained coverage was prompt-prose pins; the receipt-contract mechanics
+#   they certified stay covered by the probe suite's ten receipts-06 tests +
+#   the runner; set-model command behavior by set-model-command_test.sh.
+# - tests/roles_test.sh — shrunk to its law-4 exception: the Working-Root
+#   triplication check (extract ## Working Root from the three role prompts,
+#   byte-identical to each other, none in the orchestrator prompt) wrapped in
+#   the exception markers; roles-01..04, verifier-01..02, terminology-01/02
+#   (docs-bullet half kept: dropped — docs prose), testsuite-06/08 and the
+#   rolesdecouple self-pins deleted. terminology-03 stays green, re-keyed to
+#   the prompts-only check.
+# - tests/invocations_test.sh — invocations-04's merge-base/`show "$base:"`
+#   HEAD block deleted (literals stay as product-source greps);
+#   invocations-01 and -06 re-keyed from prompt-source prose greps to the
+#   installed renders (one shared staged render, reused by -01/-03/-04/-05/
+#   -06/-08; the reconstruct-prompt-body cmp deleted — the exact-substitution
+#   render mechanism remains pinned against install.sh itself); all -01..08 +
+#   invocationsfix-01/-02 ids stay green.
+# - tests/antz-flow_test.sh — the prompt-prose family deleted whole
+#   (orchestrator-01..06, flow-01..10, testsuite-01, PROSE_* extractors, and
+#   ensure-19 which existed to certify flow-09's HEAD guard; testharness-02's
+#   and testharness-01's prompt greps cut). The 35 ensure-*/fixture-git
+#   behavior tests stay green, unchanged, on temp-space git fixtures.
+# - tests/orchestrator-status-probe_test.sh — the suite-HEAD byte-pin block
+#   excised from probealign-03 (its extraction/fixture self-pins stay, id
+#   green, registration re-worded); the prompt prose greps deleted from
+#   testharness-02 (file-source facts stay); testsuite-02 (self-pins of
+#   those two zones) deleted with its registration.
+# - tests/versioncurrent_test.sh — versioncurrent-01 thinned to the
+#   files-gone clause; the id-absence glob scan and the sibling
+#   registration clause deleted (law 2); id stays green, name re-worded.
+# - tests/refpin_test.sh — refpin-04's AGENTS.md/CLAUDE.md RAW_BASE bullet
+#   checks deleted (law 4); README/install.sh clauses stay; id green.
+# - tests/orchestrator-render-sync_test.sh — testsuite-07's prompt
+#   fence-count clause deleted (law 4); its self-scan clauses stay; id green.
+#
+# Orphaning this session caused, by earlier receipt (ids whose green/skip
+# tests are deleted above; their receipts stay as-written, and no id of this
+# change is left unclassified — the probe reads receipts as files):
+# 03-rolesdecouple: rolesdecouple-01..05, verifier-02, testsuite-08 green ->
+# deleted; roles-05 skip stub -> deleted. 04-crosssuites: crosssuites-02..05,
+# coder-04 green -> deleted; conventions-04, specifier-02,
+# setmodeldeembed-05 skip stubs -> deleted. 05/06/07/08 receipts: fully
+# alive (checked; versioncurrent-01/02/03, the invocation ids, posixshfix,
+# renderdedup all still registered and green).
+#
+# Budget: sh tests/run_all.sh -> suites=17 passed=17 failed=0 tests_failed=0
+# elapsed=51s (under the 60s e2e budget; baseline before this session was
+# 31 suites / 85s). hygiene itself ~3s. No coverage was deleted that the
+# laws do not demand: every deletion is a law-1..4 site; the behavioral
+# facts several of them carried are now asserted on installed/product
+# sources.
+test_command=sh tests/hygiene_test.sh
+id=hygiene-01 result=green reason=unit tests "hygiene-01: no suite executes another suite or asserts another existing suite's source content or output (the real tests/ scans clean, the discovery contract holds, self-reads and nonexistent fixture names carve out)" and "hygiene-01: planted suite execution, planted suite source-grep, and a planted *_test.sh glob are each named with file and line (no vacuous pass)" — the planted guard also covers the glob-loop exec leak
+id=hygiene-02 result=green reason=unit tests "hygiene-02: no suite compares the real tree against git HEAD and none byte-pins its own file against a HEAD copy; git in throwaway temp-space fixture repos stays legal" and "hygiene-02: planted merge-base, show HEAD:, diff --quiet HEAD, show $base:, and own-file HEAD byte-pin are each named with file and line (no vacuous pass)"
+id=hygiene-03 result=green reason=unit tests "hygiene-03: no suite pins an exact prose phrase of a prompt or doc; the Working-Root triplication check in roles_test.sh is the sole exception and the only marker carrier" and "hygiene-03: planted prose greps, derived-extract pins, and prose-vs-embedded byte-compares are named, while live-vs-live comparisons, quoted needles, and comment lines are not (no vacuous pass)"
+id=hygiene-04 result=green reason=unit tests "hygiene-04: the scans are pure source scans -- no git query of the working tree, no spdd/changes/ read, no install.sh invocation" and "hygiene-04: against a staged, committed, change-archived copy of the working tree under temp space every scan passes unchanged, so the committed era needs no test edit"

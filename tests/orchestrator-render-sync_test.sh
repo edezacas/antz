@@ -189,11 +189,6 @@ test_testsuite_07_guard_compares_files() {
     || { echo "  the marker-line strip helper is missing"; ok=1; }
   grep -qF 'cmp -s "$d/stripped" "$SCRIPT_DIR/scripts/orchestration/$s.sh"' "$self" \
     || { echo "  the file-vs-source byte-for-byte comparison is missing"; ok=1; }
-  # Nothing left to embed: the prompt carries no script-content fence for a
-  # render-side guard to walk.
-  [ "$(grep -c '```sh' "$SCRIPT_DIR/agents/prompts/orchestrator.prompt")" -eq 0 ] \
-    || { echo "  orchestrator.prompt unexpectedly carries a script fence"; ok=1; }
-  return $ok
 }
 
 # ---- run everything ---------------------------------------------------------

@@ -13,6 +13,16 @@
   rule with create-when-new, and the re-scoped roles-03 pin. The change's
   scenarios and end-to-end QA are preserved for history in
   `spdd/archive/precision-gaps/`, not reproduced here.
+- Extended by change `optimize-test-suite` (merged 2026-09-14): adds five
+  rolesdecouple scenarios (ADD `rolesdecouple-01..05`) verifying that
+  `tests/roles_test.sh` and `tests/rolechecks_test.sh` are decoupled from
+  the other suites: no cross-suite execution, no cross-suite source
+  assertions, no git-HEAD byte-pins of other suites' content. The removed
+  sites (roles-05, rolechecks-05, verifier-02's probe-suite rerun,
+  testsuite-08's glob half) are decoupled per the four permanent laws
+  enforced by the hygiene suite. The change's scenarios and end-to-end QA
+  are preserved for history in `spdd/archive/optimize-test-suite/`, not
+  reproduced here.
 
 ## Goal
 The coder's directory ownership is stated by write surface, not read surface,
@@ -230,6 +240,71 @@ its reason stated in the prompt.
     And a test asserts the three prompts' "## Working Root" sections are
       byte-identical to each other
     And the new docs bullet is additive
+
+## Feature: roles_test.sh and rolechecks_test.sh are decoupled from the other suites (from optimize-test-suite)
+
+  Background:
+    Given "tests/roles_test.sh" and "tests/rolechecks_test.sh", both
+      sourcing the harness library
+    And the decoupling law: no suite executes another suite, and no suite
+      asserts another test file's source content or output — verifying
+      "the whole suite is green" is the documented runner's job
+
+  # ADD - rolesdecouple-01: testsuite-08 keeps its product halves and drops
+  # the glob half and the idiom scan.
+  Scenario: rolesdecouple-01
+    When testsuite-08 runs
+    Then it executes no other suite and scans no tests/*_test.sh source
+      (the recursion-guard flag and the excluded-suite cases are gone with
+      the glob)
+    And it still asserts, from one hermetic render through the harness
+      library: no role prompt carries an "# antz-include:" marker or a
+      script-content fence, the four orchestration scripts install under
+      the resolved libdir, and no rendered client file carries a fence or
+      an include marker
+    And every other id the suite registered before the refactor stays
+      registered and green
+
+  # ADD - rolesdecouple-02: roles-05 is removed whole — every clause is
+  # cross-test coupling.
+  Scenario: rolesdecouple-02
+    When the roles suite runs
+    Then roles-05 is no longer registered
+    And no line of roles_test.sh executes skills-activation-prompts,
+      receipts, or closingblock suites, observes their output, or requires
+      their source content
+    And roles-01..04 and the suite's other retained ids stay registered
+      and green
+
+  # ADD - rolesdecouple-03: verifier-02 keeps its product pins and its
+  # frozen-surface guard, drops the probe-suite rerun.
+  Scenario: rolesdecouple-03
+    When verifier-02 runs
+    Then it executes no other suite
+    And it still pins the rejection-contract wording on the verifier
+      prompt and asserts scripts/orchestration/ and agents/meta/ are
+      byte-identical to git HEAD — a frozen-surface guard that is green in
+      both the uncommitted and the committed era
+
+  # ADD - rolesdecouple-04: terminology-03 keeps the docs bullet pins and
+  # drops the five-suite loop.
+  Scenario: rolesdecouple-04
+    When terminology-03 runs
+    Then it executes no other suite
+    And it still asserts that the three role prompts' "## Working Root"
+      sections are byte-identical to each other, and that AGENTS.md and
+      CLAUDE.md each carry one identical Working-Root-triplication gotcha
+      bullet stating the rule
+
+  # ADD - rolesdecouple-05: rolechecks-05 is removed whole — its
+  # byte-identity-vs-HEAD on roles test functions and its roles-suite
+  # rerun are one-change migration guards.
+  Scenario: rolesdecouple-05
+    When the rolechecks suite runs
+    Then rolechecks-05 is no longer registered
+    And no line of rolechecks_test.sh executes roles_test.sh or byte-
+      compares any of its functions against a git HEAD copy
+    And rolechecks-01..04 stay registered and green, unchanged
 
 ## Invariants
 - The governing rule holds: no role, including the orchestrator, may depend on

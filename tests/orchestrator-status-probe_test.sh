@@ -51,7 +51,6 @@
 set -u
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-ORCHESTRATOR_PROMPT="$SCRIPT_DIR/agents/prompts/orchestrator.prompt"
 PROBE_SH="$SCRIPT_DIR/scripts/orchestration/antz-probe.sh"
 SUITE_FILE="$SCRIPT_DIR/tests/orchestrator-status-probe_test.sh"
 
@@ -123,14 +122,12 @@ test_probe_extracted() {
 }
 
 # =============================================================================
+# =============================================================================
 # testharness-02: the suite runs scripts/orchestration/antz-probe.sh directly
-# (no extraction from the prompt) -- the file exists, parses as POSIX sh,
-# keeps its shebang. Re-keyed by change deembed-orchestration-scripts
-# (testsuite-02): the former '```sh probe fence holding exactly the include
-# marker' assertion is retired with the embed — the prompt now references the
-# probe by its __ANTZ_SCRIPTS_DIR__ path form (step 2's state invocation
-# passes the probe's installed path as its second argument), and no script
-# fence exists anywhere to extract from.
+# as a file -- it exists, parses as POSIX sh, and keeps its shebang. The
+# prompt-side path-reference pin was deleted by change optimize-test-suite
+# (sub-spec 09): reading the orchestrator prompt for prose is law 4; the
+# same fact is asserted on the installed render by tests/invocations_test.sh.
 # =============================================================================
 test_testharness_02_file_source() {
   ok=0
@@ -139,38 +136,9 @@ test_testharness_02_file_source() {
   sh -n "$PROBE_SH" || { echo "  probe file fails sh -n"; ok=1; }
   [ "$(head -n 1 "$PROBE_SH")" = '#!/bin/sh' ] \
     || { echo "  probe file lost its shebang first line"; ok=1; }
-  grep -qF 'sh "__ANTZ_SCRIPTS_DIR__/antz-flow.sh" state <slug> "__ANTZ_SCRIPTS_DIR__/antz-probe.sh"' \
-    "$ORCHESTRATOR_PROMPT" \
-    || { echo "  prompt does not reference the probe by its __ANTZ_SCRIPTS_DIR__ path form"; ok=1; }
-  grep -qF 'antz-include' "$ORCHESTRATOR_PROMPT" \
-    && { echo "  an include marker survives in the de-embedded prompt"; ok=1; }
-  [ "$(grep -c '^   ```sh$' "$ORCHESTRATOR_PROMPT")" = "0" ] \
-    || { echo "  a sh-fence opener survives in the de-embedded prompt"; ok=1; }
   return $ok
 }
 
-# =============================================================================
-# testsuite-02 (change deembed-orchestration-scripts, sub-spec 05): the
-# probe-fence pin re-keys to the path form; the probe matrix passes
-# unmodified. The re-keyed shape pin lives in this suite, id-named: the
-# file-source guard body carries the __ANTZ_SCRIPTS_DIR__ reference (and no
-# fence reconstruction), and probealign-03's byte-identity list loudly drops
-# exactly that one function while keeping every probe-behavior group pinned.
-# =============================================================================
-test_testsuite_02_probe_fence_pin_rekeyed() {
-  ok=0
-  body=$(awk '/^test_testharness_02_file_source\(\)/,/^}$/' "$0")
-  printf '%s\n' "$body" | grep -qF 'state <slug> "__ANTZ_SCRIPTS_DIR__/antz-probe.sh"' \
-    || { echo "  the file-source guard does not pin the path-form probe reference"; ok=1; }
-  printf '%s\n' "$body" | grep -qF '# antz-include: scripts/orchestration/antz-probe.sh' \
-    && { echo "  the file-source guard still reconstructs the include-marker fence"; ok=1; }
-  pa=$(awk '/^test_probealign_03_suite_pins_the_aligned_extraction\(\)/,/^}$/' "$0")
-  printf '%s\n' "$pa" | grep -qF 'LOUD NOTE (change deembed-orchestration-scripts, testsuite-02)' \
-    || { echo "  probealign-03's byte-identity list lacks the loud re-scope note"; ok=1; }
-  printf '%s\n' "$pa" | grep -qF 'pinned="test_probe_extracted' \
-    || { echo "  probealign-03's pinned list was not re-scoped"; ok=1; }
-  return $ok
-}
 
 # =============================================================================
 # probe-open-questions: OPEN_QUESTIONS.md present short-circuits the probe --
@@ -801,44 +769,6 @@ test_probealign_03_suite_pins_the_aligned_extraction() {
     || { echo "  the tag-crossref leak check no longer catches a violation-splitting leak"; ok=1; }
   rm -f "$XR"
 
-  # Every other assertion of the suite stays unchanged (byte-identical to HEAD's
-  # copy of this file). Git-gated: with no readable HEAD copy the rest of this
-  # scenario's clauses above still run.
-  if command -v git >/dev/null 2>&1 && [ -e "$SCRIPT_DIR/.git" ] \
-     && git -C "$SCRIPT_DIR" cat-file -e HEAD:tests/orchestrator-status-probe_test.sh 2>/dev/null; then
-    HEADSUITE=$(mktemp)
-    git -C "$SCRIPT_DIR" show HEAD:tests/orchestrator-status-probe_test.sh > "$HEADSUITE"
-    # LOUD NOTE (change deembed-orchestration-scripts, testsuite-02):
-    # test_testharness_02_file_source is out of this list — its probe-fence
-    # pin (the '```sh fence holding exactly the include marker) was retired
-    # by this change with the embed itself, re-keyed to the prompt's
-    # __ANTZ_SCRIPTS_DIR__ path reference. Every other function stays
-    # byte-pinned: all probe-behavior groups (open questions, rejections,
-    # ids extraction, receipts classification, change_dir=missing, empty
-    # ids) pass unmodified against the byte-identical probe file.
-    pinned="test_probe_extracted
-      test_probe_open_questions test_probe_no_open_questions
-      test_probe_rejected_count_one test_probe_rejected_count_two
-      test_probe_rejected_count_malformed_not_counted
-      test_probe_rejected_count_trailing_space
-      test_probe_subspec_ids_from_comments test_probe_subspec_ids_ignore_prose
-      test_probe_subspec_ids_ignore_loose_comments test_probe_subspec_ids_tag_reset
-      test_probe_subspec_ids_scenario_outline
-      test_probe_subspec_empty_ids test_probe_no_subspecs
-      test_probe_change_dir_missing_path test_probe_missing_change_dir
-      $(grep -oE '^test_receipts_06_[a-z0-9_]+' "$HEADSUITE" | tr '\n' ' ')"
-    for fn in $pinned; do
-      a=$(mktemp); b=$(mktemp)
-      suite_fn_body "$fn" "$SUITE_FILE" > "$a"
-      suite_fn_body "$fn" "$HEADSUITE" > "$b"
-      [ -s "$a" ] || { echo "  $fn is missing from the working suite"; ok=1; }
-      cmp -s "$a" "$b" || { echo "  $fn differs from HEAD (it must stay unchanged)"; ok=1; }
-      rm -f "$a" "$b"
-    done
-    rm -f "$HEADSUITE"
-  else
-    echo "  note: no readable git HEAD copy of this suite; the unchanged-surface clause was not checked"
-  fi
   return $ok
 }
 
@@ -1112,7 +1042,6 @@ id=ui-2 result=skip reason=visual-only scenario, not unit-testable'
 
 run_test "probe-extracted: scripts/orchestration/antz-probe.sh is found and looks correct" test_probe_extracted
 run_test "testharness-02: the probe suite runs scripts/orchestration/antz-probe.sh directly (no extraction from the prompt)" test_testharness_02_file_source
-run_test "testsuite-02: the probe-fence pin re-keys to the step-2 path-form probe reference (loud note, no fence reconstruction) with every probe-behavior assertion unmodified" test_testsuite_02_probe_fence_pin_rekeyed
 run_test "probe-open-questions: OPEN_QUESTIONS.md present short-circuits to exactly one line" test_probe_open_questions
 run_test "probe-no-open-questions: prints open_questions=no and rejected_count=0 with no REJECTED.md" test_probe_no_open_questions
 run_test "probe-rejected-count-one: counts a single exact '## Rejection 1' heading" test_probe_rejected_count_one
@@ -1126,7 +1055,7 @@ run_test "probe-subspec-ids-tag-reset: a tagless Scenario following a tagged one
 run_test "probealign-02 probe-subspec-ids-hyphenated-feature: a conforming one-word feature name extracts whole while a hyphenated feature name yields only its trailing convention-shaped portion" test_probe_subspec_ids_hyphenated_feature
 run_test "probealign-01: the extraction admits no hyphen in the feature portion (shape [A-Za-z][A-Za-z0-9_]*-[0-9]+) and every conforming id extracts exactly as before" test_probealign_01_extraction_admits_no_hyphen_in_feature
 run_test "probealign-02: a hyphenated feature tag reports only its trailing convention-shaped portion, surfaces downstream as a foreign-id mismatch, and every other probe output is byte-unchanged" test_probealign_02_hyphenated_tag_surfaces_as_mismatch
-run_test "probealign-03: this suite pins the aligned extraction -- the tolerant pin is rewritten both-sided, the hyphenated-feature fixtures are updated with their properties intact, the assertions carry the probealign ids, and every other assertion stays byte-identical to HEAD" test_probealign_03_suite_pins_the_aligned_extraction
+run_test "probealign-03: this suite pins the aligned extraction -- the tolerant pin is rewritten both-sided, the hyphenated-feature fixtures are updated with their properties intact, and the assertions carry the probealign ids" test_probealign_03_suite_pins_the_aligned_extraction
 run_test "probe-subspec-ids-scenario-outline: the tag above a Scenario Outline is picked up like a plain Scenario" test_probe_subspec_ids_scenario_outline
 run_test "probe-subspec-ids-multiline-tag: an id on the first line of a multi-line tag comment is picked up" test_probe_subspec_ids_multiline_tag
 run_test "probe-subspec-ids-ignore-tag-crossrefs: another scenario's id in a tag description line is not picked up" test_probe_subspec_ids_ignore_tag_crossrefs
