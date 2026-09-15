@@ -1,0 +1,5 @@
+test_command=sh tests/bench-harness_test.sh
+id=clientconfig-01 result=green reason=test_clientconfig_01_credential_from_the_data_dir
+id=clientconfig-02 result=green reason=test_clientconfig_02_provider_config_carried_read_only
+id=clientconfig-03 result=green reason=test_clientconfig_03_absent_files_skipped_not_fabricated
+id=clientconfig-04 result=green reason=test_clientconfig_04_xdg_relocated_runner_env_honored

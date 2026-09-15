@@ -344,8 +344,10 @@ do_repetition() {
   case "$client" in
     claude|opencode)
       # The checkout under test is measured: its OWN install.sh renders it
-      # into the sandbox; the user's credential is copied in read-only when
-      # it exists (skipped, never fabricated, when it does not).
+      # into the sandbox; the user's client files are copied in read-only
+      # when they exist (skipped, never fabricated, when they do not) --
+      # for Claude the credential, for OpenCode the credential (data dir,
+      # where the client reads it) plus the provider config (config dir).
       bench_sandbox_install "$sandbox" "$client" "$CHECKOUT_ROOT" \
         || warn "repetition $client r$rep: the sandbox render failed (the run proceeds)"
       case "$client" in
@@ -355,9 +357,12 @@ do_repetition() {
             || warn "repetition $client r$rep: the credential copy failed"
           ;;
         opencode)
-          bench_sandbox_copy_credentials "$HOME/.config/opencode/auth.json" \
-            "$sandbox/home/.config/opencode/auth.json" >/dev/null \
+          bench_sandbox_copy_credentials "${XDG_DATA_HOME:-$HOME/.local/share}/opencode/auth.json" \
+            "$sandbox/home/.local/share/opencode/auth.json" >/dev/null \
             || warn "repetition $client r$rep: the credential copy failed"
+          bench_sandbox_copy_credentials "${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode.json" \
+            "$sandbox/home/.config/opencode/opencode.json" >/dev/null \
+            || warn "repetition $client r$rep: the provider-config copy failed"
           ;;
       esac
       ;;

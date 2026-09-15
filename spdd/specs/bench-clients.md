@@ -5,8 +5,10 @@ Real client adapters, sandbox/isolation, model pinning, subagent attribution.
 ## Contract
 - Per repetition, one sandbox: fresh HOME / XDG_CONFIG_HOME / XDG_DATA_HOME /
   CLAUDE_CONFIG_DIR under temp space; the checkout under test is rendered
-  into it with install.sh; credentials are copied in read-only; the client
-  process runs under a minimal allowlist environment.
+  into it with install.sh; credentials and provider config are copied in
+  read-only (Claude: credential only; OpenCode: credential from the data
+  dir plus provider config from the config dir); the client process runs
+  under a minimal allowlist environment.
 - Model pinning: the runner's --model value is forwarded to the client and
   recorded; the client-reported models actually used are recorded alongside.
 - Attribution: telemetry totals cover the primary session and all delegated
@@ -129,6 +131,53 @@ Real client adapters, sandbox/isolation, model pinning, subagent attribution.
       passed
     And models_used is null exactly when the client reported no models, and
       otherwise the distinct client-reported identifiers comma-joined
+
+  # ADD - clientconfig-01: the OpenCode credential is sourced from the real
+  # data dir -- a file at the pre-fix config-dir path is ignored.
+  Scenario: clientconfig-01
+    Given the runner home holds "auth.json" under its ".local/share/opencode"
+      data dir and a decoy "auth.json" under ".config/opencode" (the pre-fix
+      source path), with distinguishable bytes
+    When the runner runs one forced OpenCode repetition (--client opencode)
+    Then the sandbox the client ran in carried the credential at the
+      sandbox's data-dir location with the data-dir file's bytes
+    And no credential exists at the sandbox's config-dir location -- the
+      decoy was never copied
+    And both host files keep their bytes and locations after the run
+
+  # ADD - clientconfig-02: the host's OpenCode provider config reaches the
+  # sandbox read-only and byte-faithful.
+  Scenario: clientconfig-02
+    Given the runner home holds an "opencode.json" under its
+      ".config/opencode" config dir declaring a custom provider
+    When the runner runs one forced OpenCode repetition (--client opencode)
+    Then the sandbox the client ran in carried that file at the sandbox's
+      config-dir location with byte-identical content
+    And the carried copy carries no write permission for the client
+    And the host file keeps its bytes and location after the run
+
+  # ADD - clientconfig-03: absent host files are skipped, never fabricated;
+  # the run still completes and records.
+  Scenario: clientconfig-03
+    When the runner runs one forced OpenCode repetition (--client opencode)
+      from the default runner home holding neither a credential nor a
+      provider config
+    Then the run exits 0 and the results JSONL holds exactly one record
+    And the sandbox the client ran in carried neither file -- nothing was
+      fabricated
+
+  # ADD - clientconfig-04: the sourcing follows the real dirs -- an
+  # XDG-relocated runner environment is honored.
+  Scenario: clientconfig-04
+    Given the runner's environment sets XDG_CONFIG_HOME and XDG_DATA_HOME to
+      test dirs that hold the provider config and the credential under their
+      "opencode" subdirectories
+    When the runner runs one forced OpenCode repetition (--client opencode)
+    Then the sandbox the client ran in carried both files with the bytes of
+      the XDG-relocated sources
+    And no file was copied from the HOME-default locations, which hold
+      nothing
+    And the sources keep their bytes and locations after the run
 
 ## Invariants
 - The sandbox is the only writable world for the client process: the user's

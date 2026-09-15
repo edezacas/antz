@@ -2355,12 +2355,25 @@ stage_runner_checkout() {
 }
 
 bench_cli() {
-  # $1 = staged checkout, $2 = runner HOME, $3 = runner PATH, rest = CLI args.
-  # The suite's single runner funnel: env -i carries ONLY HOME and PATH.
-  # Returns the runner's exit status; stdout/stderr pass through to the
-  # caller's redirections.
+  # $1 = staged checkout, $2 = runner HOME, $3 = runner PATH. Leading
+  # KEY=VALUE arguments (single words, no spaces) are appended to the
+  # pinned environment -- the clientconfig group relocates the runner's
+  # XDG roots this way; every other argument is a runner CLI argument.
+  # The suite's single runner funnel: env -i carries ONLY HOME, PATH, and
+  # those leading assignments, so the real host's client config,
+  # credentials, and binaries never reach the runner (runner-06
+  # hermeticity). Returns the runner's exit status; stdout/stderr pass
+  # through to the caller's redirections.
   co="$1"; h="$2"; p="$3"; shift 3
-  env -i HOME="$h" PATH="$p" sh "$co/bench/antz-bench.sh" "$@" < /dev/null
+  _bc_env=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      [A-Za-z_]*=*) _bc_env="${_bc_env:+$_bc_env }$1"; shift ;;
+      *) break ;;
+    esac
+  done
+  # shellcheck disable=SC2086
+  env -i HOME="$h" PATH="$p" $_bc_env sh "$co/bench/antz-bench.sh" "$@" < /dev/null
 }
 
 rec_val() {
@@ -2428,6 +2441,72 @@ case "\${1:-}" in
     exit 1
     ;;
 esac
+cat "\$sd/events.jsonl"
+exit 0
+EOS
+  chmod +x "$d/opencode"
+}
+
+make_recording_opencode_stub() {
+  # $1 = bin dir: the clientconfig group's observer. It answers the adapter
+  # contract exactly like make_runner_opencode_stub (--version, canned run
+  # events, canned exports), and on EACH run invocation it records beside
+  # itself what the client sees inside the sandbox: the credential at the
+  # sandbox's data-dir location, the credential at the sandbox's config-dir
+  # location (the pre-fix source path, so a decoy there is observable), and
+  # the provider config at the sandbox's config-dir location -- existence,
+  # mode and writability in oc-record.d/seen.N, plus the bytes seen in
+  # oc-record.d/captured.N.<label> (written exactly when the file existed).
+  # The sandbox dies with the repetition; the recording lives outside it.
+  d="$1"
+  mkdir -p "$d/oc-record.d" || return 1
+  printf '%s\n' "$OC_CANNED_EVENTS" > "$d/oc-record.d/events.jsonl" || return 1
+  printf '%s\n' "$OC_CANNED_PARENT" > "$d/oc-record.d/export-ses_parent_1.json" || return 1
+  printf '%s\n' "$OC_CANNED_CHILD_A" > "$d/oc-record.d/export-ses_child_a.json" || return 1
+  printf '%s\n' "$OC_CANNED_CHILD_B" > "$d/oc-record.d/export-ses_child_b.json" || return 1
+  cat > "$d/opencode" <<EOS || return 1
+#!/bin/sh
+sd="\$(dirname "\$0")/oc-record.d"
+case "\${1:-}" in
+  --version)
+    printf '%s\n' '1.18.31-stub'
+    exit 0
+    ;;
+  export)
+    if [ -f "\$sd/export-\$2.json" ]; then
+      cat "\$sd/export-\$2.json"
+      exit 0
+    fi
+    printf 'no such session: %s\n' "\$2" 1>&2
+    exit 1
+    ;;
+esac
+# The run invocation is the only one reaching here: record the sandbox's
+# client files under the environment the sandbox relocated.
+n=\$(cat "\$sd/runs" 2>/dev/null)
+n=\${n:-0}
+n=\$((n + 1))
+printf '%s\n' "\$n" > "\$sd/runs"
+: > "\$sd/seen.\$n"
+seen() {
+  # \$1 = label, \$2 = path to observe.
+  if [ -f "\$2" ]; then
+    printf '%s=exists\n' "\$1" >> "\$sd/seen.\$n"
+    mode=\$(ls -l "\$2" | awk '{print \$1}')
+    printf '%s.mode=%s\n' "\$1" "\$mode" >> "\$sd/seen.\$n"
+    if [ -w "\$2" ]; then
+      printf '%s.writable=yes\n' "\$1" >> "\$sd/seen.\$n"
+    else
+      printf '%s.writable=no\n' "\$1" >> "\$sd/seen.\$n"
+    fi
+    cp "\$2" "\$sd/captured.\$n.\$1" || exit 3
+  else
+    printf '%s=absent\n' "\$1" >> "\$sd/seen.\$n"
+  fi
+}
+seen cred_data "\$XDG_DATA_HOME/opencode/auth.json"
+seen cred_config "\$XDG_CONFIG_HOME/opencode/auth.json"
+seen provider_config "\$XDG_CONFIG_HOME/opencode/opencode.json"
 cat "\$sd/events.jsonl"
 exit 0
 EOS
@@ -3022,6 +3101,171 @@ test_runner_06_full_cli_works_without_any_client_host() {
 run_test "runner-06: the owning suite matches tests/run_all.sh's mechanical *_test.sh glob and run_all.sh names no suite (a new suite needs no runner edit)" test_runner_06_discovery_is_mechanical
 run_test "runner-06: the suite is hermetic by construction -- every runner invocation goes through the single env -i funnel, no network tool appears in the bench tree or the suite's code, and no real credential path is referenced" test_runner_06_suite_is_hermetic_by_construction
 run_test "runner-06: the whole runner CLI (dry-run repetition + report mode) succeeds under env -i on a host with no client CLIs, no config directories, and no credentials, while auto-detection refuses there" test_runner_06_full_cli_works_without_any_client_host
+
+# ---- clientconfig-01 --------------------------------------------------------------
+# The OpenCode credential is sourced from the host's REAL data dir --
+# "${XDG_DATA_HOME:-$HOME/.local/share}/opencode/auth.json", where the client
+# actually reads it -- and lands at the sandbox's data-dir location. A
+# credential at the pre-fix config-dir path is a decoy: never copied. Both
+# host files keep their bytes and location after the run.
+
+test_clientconfig_01_credential_from_the_data_dir() {
+  t=$(new_tmp_dir)
+  stage_runner_checkout "$t/co" || { echo "  staging the runner checkout failed"; return 1; }
+  runner_farm || return 1; farm=$RUNNER_FARM
+  make_recording_opencode_stub "$t/bin" || return 1
+  mkdir -p "$t/hosthome/.local/share/opencode" "$t/hosthome/.config/opencode" || return 1
+  printf 'CRED-FROM-DATA-DIR\n' > "$t/hosthome/.local/share/opencode/auth.json" || return 1
+  printf 'CRED-FROM-CONFIG-DIR-DECOY\n' > "$t/hosthome/.config/opencode/auth.json" || return 1
+  bench_cli "$t/co" "$t/hosthome" "$t/bin:$farm" --client opencode --repetitions 1 \
+    --jsonl "$t/res.jsonl" > "$t/out" 2> "$t/err"
+  rc=$?
+  [ "$rc" -eq 0 ] || { echo "  the forced opencode repetition exited $rc:"; sed 's/^/    /' "$t/err"; return 1; }
+  [ "$(rec_count "$t/res.jsonl")" = 1 ] \
+    || { echo "  the repetition yielded $(rec_count "$t/res.jsonl") records, expected 1"; return 1; }
+  sd="$t/bin/oc-record.d"
+  [ -f "$sd/seen.1" ] || { echo "  the stub saw no run invocation"; cat "$t/err"; return 1; }
+  grep -qx 'cred_data=exists' "$sd/seen.1" \
+    || { echo "  no credential at the sandbox's data-dir location:"; sed 's/^/    /' "$sd/seen.1"; return 1; }
+  cmp -s "$t/hosthome/.local/share/opencode/auth.json" "$sd/captured.1.cred_data" \
+    || { echo "  the carried credential is not the data-dir file's bytes"; return 1; }
+  grep -qx 'cred_config=absent' "$sd/seen.1" \
+    || { echo "  a credential sits at the sandbox's config-dir location -- the decoy was copied:"; sed 's/^/    /' "$sd/seen.1"; return 1; }
+  # both host files keep their bytes and location after the run
+  printf 'CRED-FROM-DATA-DIR\n' | cmp -s - "$t/hosthome/.local/share/opencode/auth.json" \
+    || { echo "  the host data-dir credential's bytes changed"; return 1; }
+  printf 'CRED-FROM-CONFIG-DIR-DECOY\n' | cmp -s - "$t/hosthome/.config/opencode/auth.json" \
+    || { echo "  the host config-dir decoy's bytes changed"; return 1; }
+  return 0
+}
+
+run_test "clientconfig-01: the OpenCode credential is carried from the host's real data dir to the sandbox's data-dir location byte-faithfully, while a decoy at the pre-fix config-dir path is never copied and both host files keep their bytes and location" test_clientconfig_01_credential_from_the_data_dir
+
+# ---- clientconfig-02 --------------------------------------------------------------
+# The host's OpenCode provider config -- "${XDG_CONFIG_HOME:-$HOME/.config}/
+# opencode/opencode.json", declaring a custom provider -- reaches the
+# sandbox's config-dir location byte-identically and non-writable; the host
+# file keeps its bytes and location after the run.
+
+test_clientconfig_02_provider_config_carried_read_only() {
+  t=$(new_tmp_dir)
+  stage_runner_checkout "$t/co" || { echo "  staging the runner checkout failed"; return 1; }
+  runner_farm || return 1; farm=$RUNNER_FARM
+  make_recording_opencode_stub "$t/bin" || return 1
+  mkdir -p "$t/hosthome/.config/opencode" || return 1
+  cat > "$t/hosthome/.config/opencode/opencode.json" <<'EOC' || return 1
+{
+  "provider": {
+    "nan": {
+      "npm": "@ai-sdk/openai-compatible",
+      "options": { "baseURL": "local-nan-endpoint" },
+      "models": { "stub-model": {} }
+    }
+  }
+}
+EOC
+  bench_cli "$t/co" "$t/hosthome" "$t/bin:$farm" --client opencode --repetitions 1 \
+    --jsonl "$t/res.jsonl" > "$t/out" 2> "$t/err"
+  rc=$?
+  [ "$rc" -eq 0 ] || { echo "  the forced opencode repetition exited $rc:"; sed 's/^/    /' "$t/err"; return 1; }
+  sd="$t/bin/oc-record.d"
+  [ -f "$sd/seen.1" ] || { echo "  the stub saw no run invocation"; cat "$t/err"; return 1; }
+  grep -qx 'provider_config=exists' "$sd/seen.1" \
+    || { echo "  no provider config at the sandbox's config-dir location:"; sed 's/^/    /' "$sd/seen.1"; return 1; }
+  cmp -s "$t/hosthome/.config/opencode/opencode.json" "$sd/captured.1.provider_config" \
+    || { echo "  the carried provider config is not byte-identical to the host file"; return 1; }
+  grep -qx 'provider_config.writable=no' "$sd/seen.1" \
+    || { echo "  the carried provider config is writable by the client:"; sed 's/^/    /' "$sd/seen.1"; return 1; }
+  case "$(grep '^provider_config\.mode=' "$sd/seen.1")" in
+    *w*) echo "  the carried provider config keeps a write bit: $(grep '^provider_config\.mode=' "$sd/seen.1")"; return 1 ;;
+  esac
+  # the host file keeps its bytes and location after the run
+  cmp -s "$t/hosthome/.config/opencode/opencode.json" "$sd/captured.1.provider_config" \
+    || { echo "  the host provider config changed during the run"; return 1; }
+  [ -w "$t/hosthome/.config/opencode/opencode.json" ] \
+    || { echo "  the host provider config lost its write permission"; return 1; }
+  return 0
+}
+
+run_test "clientconfig-02: the host's OpenCode provider config reaches the sandbox's config-dir location byte-identically and non-writable, and the host file keeps its bytes and location after the run" test_clientconfig_02_provider_config_carried_read_only
+
+# ---- clientconfig-03 --------------------------------------------------------------
+# Absent host files are skipped, never fabricated: a runner home carrying
+# neither an OpenCode credential nor a provider config still yields a run
+# that exits 0 with exactly one record, and the sandbox the client ran in
+# holds neither file.
+
+test_clientconfig_03_absent_files_skipped_not_fabricated() {
+  t=$(new_tmp_dir)
+  stage_runner_checkout "$t/co" || { echo "  staging the runner checkout failed"; return 1; }
+  runner_farm || return 1; farm=$RUNNER_FARM
+  make_recording_opencode_stub "$t/bin" || return 1
+  # the default controlled runner home: no client state of any kind
+  mkdir -p "$t/hosthome" || return 1
+  bench_cli "$t/co" "$t/hosthome" "$t/bin:$farm" --client opencode --repetitions 1 \
+    --jsonl "$t/res.jsonl" > "$t/out" 2> "$t/err"
+  rc=$?
+  [ "$rc" -eq 0 ] || { echo "  the credential-less run exited $rc:"; sed 's/^/    /' "$t/err"; return 1; }
+  [ "$(rec_count "$t/res.jsonl")" = 1 ] \
+    || { echo "  expected exactly one record, got $(rec_count "$t/res.jsonl")"; return 1; }
+  sd="$t/bin/oc-record.d"
+  [ -f "$sd/seen.1" ] || { echo "  the stub saw no run invocation"; cat "$t/err"; return 1; }
+  grep -qx 'cred_data=absent' "$sd/seen.1" \
+    || { echo "  a credential was FABRICATED at the sandbox's data-dir location:"; sed 's/^/    /' "$sd/seen.1"; return 1; }
+  grep -qx 'cred_config=absent' "$sd/seen.1" \
+    || { echo "  a credential was FABRICATED at the sandbox's config-dir location:"; sed 's/^/    /' "$sd/seen.1"; return 1; }
+  grep -qx 'provider_config=absent' "$sd/seen.1" \
+    || { echo "  a provider config was FABRICATED at the sandbox's config-dir location:"; sed 's/^/    /' "$sd/seen.1"; return 1; }
+  [ ! -e "$sd/captured.1.cred_data" ] && [ ! -e "$sd/captured.1.cred_config" ] && [ ! -e "$sd/captured.1.provider_config" ] \
+    || { echo "  the stub captured bytes for a file that was absent"; return 1; }
+  return 0
+}
+
+run_test "clientconfig-03: a host with neither credential nor provider config yields a run that exits 0 with exactly one record and a sandbox carrying neither file -- nothing is fabricated" test_clientconfig_03_absent_files_skipped_not_fabricated
+
+# ---- clientconfig-04 --------------------------------------------------------------
+# The sourcing follows the REAL dirs: when the runner's environment sets
+# XDG_DATA_HOME and XDG_CONFIG_HOME, both files are sourced from those
+# relocated dirs (the HOME-default locations exist and hold nothing, so any
+# default-path sourcing shows up as absence).
+
+test_clientconfig_04_xdg_relocated_runner_env_honored() {
+  t=$(new_tmp_dir)
+  stage_runner_checkout "$t/co" || { echo "  staging the runner checkout failed"; return 1; }
+  runner_farm || return 1; farm=$RUNNER_FARM
+  make_recording_opencode_stub "$t/bin" || return 1
+  mkdir -p "$t/xdgdata/opencode" "$t/xdgconf/opencode" \
+    "$t/hosthome/.local/share/opencode" "$t/hosthome/.config/opencode" || return 1
+  printf 'CRED-IN-RELOCATED-DATA\n' > "$t/xdgdata/opencode/auth.json" || return 1
+  printf 'PROVIDER-IN-RELOCATED-CONFIG\n' > "$t/xdgconf/opencode/opencode.json" || return 1
+  bench_cli "$t/co" "$t/hosthome" "$t/bin:$farm" \
+    XDG_DATA_HOME="$t/xdgdata" XDG_CONFIG_HOME="$t/xdgconf" \
+    --client opencode --repetitions 1 --jsonl "$t/res.jsonl" > "$t/out" 2> "$t/err"
+  rc=$?
+  [ "$rc" -eq 0 ] || { echo "  the XDG-relocated run exited $rc:"; sed 's/^/    /' "$t/err"; return 1; }
+  [ "$(rec_count "$t/res.jsonl")" = 1 ] \
+    || { echo "  expected exactly one record, got $(rec_count "$t/res.jsonl")"; return 1; }
+  sd="$t/bin/oc-record.d"
+  [ -f "$sd/seen.1" ] || { echo "  the stub saw no run invocation"; cat "$t/err"; return 1; }
+  grep -qx 'cred_data=exists' "$sd/seen.1" \
+    || { echo "  no credential at the sandbox's data-dir location:"; sed 's/^/    /' "$sd/seen.1"; return 1; }
+  cmp -s "$t/xdgdata/opencode/auth.json" "$sd/captured.1.cred_data" \
+    || { echo "  the carried credential is not the XDG-relocated data dir file's bytes"; return 1; }
+  grep -qx 'provider_config=exists' "$sd/seen.1" \
+    || { echo "  no provider config at the sandbox's config-dir location:"; sed 's/^/    /' "$sd/seen.1"; return 1; }
+  cmp -s "$t/xdgconf/opencode/opencode.json" "$sd/captured.1.provider_config" \
+    || { echo "  the carried provider config is not the XDG-relocated config dir file's bytes"; return 1; }
+  grep -qx 'cred_config=absent' "$sd/seen.1" \
+    || { echo "  a credential reached the sandbox's config-dir location:"; sed 's/^/    /' "$sd/seen.1"; return 1; }
+  # the relocated sources keep their bytes and locations after the run
+  printf 'CRED-IN-RELOCATED-DATA\n' | cmp -s - "$t/xdgdata/opencode/auth.json" \
+    || { echo "  the relocated credential's bytes changed"; return 1; }
+  printf 'PROVIDER-IN-RELOCATED-CONFIG\n' | cmp -s - "$t/xdgconf/opencode/opencode.json" \
+    || { echo "  the relocated provider config's bytes changed"; return 1; }
+  return 0
+}
+
+run_test "clientconfig-04: an XDG-relocated runner environment is honored -- both files are carried with the bytes of the relocated sources, nothing arrives from the empty HOME-default locations, and the sources keep their bytes and location" test_clientconfig_04_xdg_relocated_runner_env_honored
 
 # ---- report test helpers --------------------------------------------------------
 # Sub-spec 06 owns the aggregate statistics behind the bench_report seam
