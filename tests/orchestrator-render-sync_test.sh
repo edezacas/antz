@@ -35,7 +35,7 @@ set -u
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 INSTALL_SH="$SCRIPT_DIR/install.sh"
-SCRIPTS="antz-flow antz-probe"
+SCRIPTS="antz-flow"
 
 pass_count=0
 fail_count=0
@@ -156,15 +156,15 @@ test_testharness_04_drift_is_caught() {
   render_all "$home" "$log" \
     || { echo "  install.sh --all failed: $(cat "$log")"; return 1; }
   dir=$(installed_dir "$home")
-  [ -f "$dir/antz-probe.sh" ] || { echo "  missing installed antz-probe.sh"; return 1; }
+  [ -f "$dir/antz-flow.sh" ] || { echo "  missing installed antz-flow.sh"; return 1; }
   # Tamper one byte below the marker line: flip the first executable-looking
-  # line after line 2 of the installed probe copy.
-  target=$(awk 'NR > 2 && /^[a-z_]+=/ { print NR; exit }' "$dir/antz-probe.sh")
+  # line after line 2 of the installed flow copy.
+  target=$(awk 'NR > 2 && /^[a-z_]+=/ { print NR; exit }' "$dir/antz-flow.sh")
   [ -n "$target" ] || { echo "  no assignable line found to tamper"; return 1; }
-  sed -i "${target}s/$/_TAMPERED/" "$dir/antz-probe.sh"
+  sed -i "${target}s/$/_TAMPERED/" "$dir/antz-flow.sh"
   bad=$(out_of_sync_scripts "$home")
-  [ "$bad" = "antz-probe" ] \
-    || { echo "  expected exactly antz-probe out of sync after the tamper, got: '$bad'"; return 1; }
+  [ "$bad" = "antz-flow" ] \
+    || { echo "  expected exactly antz-flow out of sync after the tamper, got: '$bad'"; return 1; }
   return 0
 }
 

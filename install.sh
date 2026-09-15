@@ -1,8 +1,7 @@
 #!/bin/sh
 # Installs the antz agents (antz-specifier, antz-coder, antz-verifier, and
 # antz-orchestrator) as native subagents for whichever of Claude Code /
-# OpenCode / Pi are detected on this machine, along with the /antz and
-# /antz-set-model commands.
+# OpenCode / Pi are detected on this machine, along with the /antz command.
 #
 # Usage:
 #   ./install.sh [--claude] [--opencode] [--pi] [--all] [--check]
@@ -65,7 +64,7 @@ MARKER="antz:generated"
 # clients (one libdir, not a per-client subdirectory). An empty
 # XDG_CONFIG_HOME falls back exactly like an unset one.
 LIBDIR_SUBPATH="antz/scripts"
-SCRIPTS="antz-flow.sh antz-probe.sh antz-set-model.sh"
+SCRIPTS="antz-flow.sh"
 
 resolve_libdir() {
   # Echoes the resolved absolute libdir, with no trailing slash. $HOME is
@@ -268,13 +267,13 @@ render_pi() {
 
 render_claude_command() {
   # $1 version
-  printf -- '---\n# %s version=%s -- do not edit by hand; regenerate with install.sh\ndescription: Recommended entry point for antz. Delegates to the antz-orchestrator subagent, which sequences specifier -> coder -> verifier for one change.\nargument-hint: [request]\n---\n\nDelegate the user'"'"'s request verbatim to the antz-orchestrator subagent via the Agent tool: $ARGUMENTS\n' \
+  printf -- '---\n# %s version=%s -- do not edit by hand; regenerate with install.sh\ndescription: Recommended entry point for antz. Delegates to the antz-orchestrator subagent, which runs one change in direct or spec mode.\nargument-hint: [request]\n---\n\nDelegate the user'"'"'s request verbatim to the antz-orchestrator subagent via the Agent tool: $ARGUMENTS\n' \
     "$MARKER" "$1"
 }
 
 render_opencode_command() {
   # $1 version
-  printf -- '---\n# %s version=%s -- do not edit by hand; regenerate with install.sh\ndescription: Recommended entry point for antz. Runs the antz-orchestrator agent, which sequences specifier -> coder -> verifier for one change.\nagent: antz-orchestrator\n---\n\n$ARGUMENTS\n' \
+  printf -- '---\n# %s version=%s -- do not edit by hand; regenerate with install.sh\ndescription: Recommended entry point for antz. Runs the antz-orchestrator agent, which runs one change in direct or spec mode.\nagent: antz-orchestrator\n---\n\n$ARGUMENTS\n' \
     "$MARKER" "$1"
 }
 
@@ -282,361 +281,8 @@ render_pi_command() {
   # $1 version. Pi prompt templates (docs/prompt-templates.md) take an
   # optional description and argument-hint; the body runs in the invoking
   # main session, which delegates through the pi-subagents `subagent` tool.
-  printf -- '---\n# %s version=%s -- do not edit by hand; regenerate with install.sh\ndescription: Recommended entry point for antz. Delegates to the antz-orchestrator subagent, which sequences specifier -> coder -> verifier for one change.\nargument-hint: [request]\n---\n\nDelegate the user'"'"'s request verbatim to the antz-orchestrator subagent via the subagent tool: $ARGUMENTS\n' \
+  printf -- '---\n# %s version=%s -- do not edit by hand; regenerate with install.sh\ndescription: Recommended entry point for antz. Delegates to the antz-orchestrator subagent, which runs one change in direct or spec mode.\nargument-hint: [request]\n---\n\nDelegate the user'"'"'s request verbatim to the antz-orchestrator subagent via the subagent tool: $ARGUMENTS\n' \
     "$MARKER" "$1"
-}
-
-# Emits the COMPLETE bytes of the installed antz-set-model.sh (the third
-# libdir file): the "#!/bin/sh" shebang, then the antz:generated marker as a
-# line-start header comment immediately after it (the marker-in-scripts
-# contract, carrying install.sh's own $MARKER and $version), then the script
-# body. install_libdir_scripts redirects this straight into the libdir
-# destination -- plain redirection, no command-substitution capture
-# (setmodeldeembed-03). The emitted file is standalone, never templated by
-# any client, so the body may use positional parameters freely: the client
-# arrives as the script's first positional argument (each per-client
-# /antz-set-model command body passes its own; the user never supplies one)
-# and selects the agents directory. $HOME inside the body is a literal
-# token resolved at edit time by the shell running the script, not by
-# install.sh.
-emit_set_model_script() {
-  printf '#!/bin/sh\n# %s version=%s -- do not edit by hand; regenerate with install.sh\n' "$MARKER" "$version"
-  cat <<'SCRIPT'
-set -eu
-
-MARKER="antz:generated"
-VALID_AGENTS="specifier coder verifier orchestrator"
-
-usage() {
-  echo "Usage: /antz-set-model --agent <specifier|coder|verifier|orchestrator> (--model <value>|--clear)" >&2
-}
-
-# The first positional argument names the client this invocation serves --
-# claude, opencode, or pi. It selects the agents directory the editor works
-# in and the client name the messages print. A missing or unknown client is
-# a usage error naming all valid values, and nothing is written.
-case "${1:-}" in
-  claude)
-    CLIENT=claude
-    AGENTS_DIR="$HOME/.claude/agents"
-    ;;
-  opencode)
-    CLIENT=opencode
-    AGENTS_DIR="$HOME/.config/opencode/agents"
-    ;;
-  pi)
-    CLIENT=pi
-    AGENTS_DIR="$HOME/.pi/agent/agents"
-    ;;
-  *)
-    echo "Error: the first argument must be the client: claude, opencode, or pi." >&2
-    usage
-    exit 1
-    ;;
-esac
-shift
-
-agent=""
-model_value=""
-have_model=0
-have_clear=0
-
-# Flag values are captured through a pending-flag state machine over a
-# plain for-loop.
-pending=""
-for arg do
-  if [ -n "$pending" ]; then
-    case "$pending" in
-      agent) agent="$arg" ;;
-      model) have_model=1; model_value="$arg" ;;
-    esac
-    pending=""
-    continue
-  fi
-  case "$arg" in
-    --agent) pending=agent ;;
-    --model) pending=model ;;
-    --clear) have_clear=1 ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    *)
-      echo "Error: unknown option: $arg" >&2
-      usage
-      exit 1
-      ;;
-  esac
-done
-
-if [ -n "$pending" ]; then
-  case "$pending" in
-    agent) echo "Error: --agent requires a value." >&2 ;;
-    model) echo "Error: --model requires a value." >&2 ;;
-  esac
-  usage
-  exit 1
-fi
-
-if [ -z "$agent" ]; then
-  echo "Error: --agent is required." >&2
-  usage
-  exit 1
-fi
-
-case " $VALID_AGENTS " in
-  *" $agent "*) ;;
-  *)
-    echo "Error: unknown agent '$agent'. Must be one of: $VALID_AGENTS." >&2
-    usage
-    exit 1
-    ;;
-esac
-
-if [ "$have_model" -eq 1 ] && [ "$have_clear" -eq 1 ]; then
-  echo "Error: --model and --clear are mutually exclusive; use exactly one." >&2
-  usage
-  exit 1
-fi
-
-if [ "$have_model" -eq 0 ] && [ "$have_clear" -eq 0 ]; then
-  echo "Error: exactly one of --model/--clear is required." >&2
-  usage
-  exit 1
-fi
-
-dest="$AGENTS_DIR/antz-$agent.md"
-
-if [ ! -f "$dest" ]; then
-  echo "Error: antz-$agent is not installed for $CLIENT yet (no file at $dest); install it first, e.g. ./install.sh --$CLIENT. No file was written." >&2
-  exit 1
-fi
-
-# Managed-file detection is anchored to the line-start header comment
-# "# antz:generated ..." -- the same header-marker contract install.sh's own
-# install_file/installed_version_of reads apply. A file that merely mentions
-# the marker string mid-body (or with leading indentation) is not
-# antz-managed: it is refused here, untouched.
-if ! grep -q "^# $MARKER " "$dest" 2>/dev/null; then
-  echo "Error: $dest is not antz-managed (missing the '$MARKER' marker); refusing to modify it. No file was written." >&2
-  exit 1
-fi
-
-if [ "$have_clear" -eq 1 ] && ! grep -q '^model:' "$dest" 2>/dev/null; then
-  echo "antz-$agent ($CLIENT) has no model configured; nothing to clear. $dest is unchanged."
-  exit 0
-fi
-
-if [ "$have_model" -eq 1 ]; then
-  newline="model: $model_value"
-  insert=1
-else
-  newline=""
-  insert=0
-fi
-
-# The rewrite loop mirrors the retired awk version, but reads lines into a
-# variable instead of awk's whole-line positional: drop any "model:" line
-# inside the frontmatter (between the first two "---" lines), and optionally
-# insert the new model line directly after the "description:" line.
-tmp=$(mktemp)
-# The scratch file is removed on EVERY exit path -- success, the
-# nothing-to-clear no-op (which never reaches the mktemp above), and a
-# mid-run failure (set -e exits, e.g. the target turned read-only so the
-# rewrite's write fails): the trap is set the moment the scratch exists and
-# removes exactly that file -- never the target, never a backup.
-trap 'rm -f "$tmp"' EXIT
-dashes=0
-while IFS= read -r line || [ -n "$line" ]; do
-  if [ "$line" = "---" ]; then
-    dashes=$((dashes + 1))
-    printf '%s\n' "$line"
-    continue
-  fi
-  if [ "$dashes" -eq 1 ]; then
-    case "$line" in
-      model:*)
-        continue
-        ;;
-      description:*)
-        printf '%s\n' "$line"
-        if [ "$insert" -eq 1 ]; then
-          printf '%s\n' "$newline"
-        fi
-        continue
-        ;;
-    esac
-  fi
-  printf '%s\n' "$line"
-done < "$dest" > "$tmp"
-cat "$tmp" > "$dest"
-
-if [ "$have_model" -eq 1 ]; then
-  echo "antz-$agent ($CLIENT) now has model: $model_value ($dest)"
-else
-  echo "Cleared the model for antz-$agent ($CLIENT); $dest no longer has a model: line."
-fi
-SCRIPT
-}
-
-set_model_flow_head() {
-  # Emits the client-independent part of the /antz-set-model command body:
-  # argument validation (fail fast), the non-interactive bypass, and the
-  # interactive path's pre-flight. Everything here happens BEFORE any
-  # question is asked, so a doomed request is refused without ever asking
-  # the user anything (see the Ordering contract in
-  # spdd/changes/set-model-interactive-picker/README.md). __CLIENT__ and
-  # __AGENTS_PATH__ are substituted per client by render_set_model_command.
-  cat <<'FLOWHEAD'
-Arguments: $ARGUMENTS
-
-This command does not delegate to any of the four antz-* subagents -- perform every step below yourself, in this session, using your own Bash tool wherever a shell command is called for.
-
-Step 1 -- Validate the arguments, before asking any question. Accepted arguments: `--agent <specifier|coder|verifier|orchestrator>` (required), plus AT MOST one of `--model <value>` / `--clear`. Each of the following is a usage error: an unknown agent name (must be one of specifier, coder, verifier, orchestrator); a missing `--agent` (including an entirely empty invocation); `--agent` or `--model` given without its value; both `--model` and `--clear` given; unknown options or otherwise malformed arguments. On a usage error: refuse with the specific reason, without asking any question, without running the script, and without writing any file.
-
-Step 2 -- Non-interactive bypass. If `--model <value>` or `--clear` WAS given, never ask anything: run the installed script (the invocation line at the end of this command) with the arguments exactly as given after its fixed client argument, then reply to the user using exactly what the script printed (on failure, the script's own refusal message and the fact that no file was written are the reply).
-
-Step 3 -- Pre-flight. Only when neither `--model` nor `--clear` was given; still strictly before asking any question:
-- Confirm the target file `__AGENTS_PATH__/antz-<agent>.md` exists and carries the `antz:generated` marker. If it does not exist, refuse with the failure reason: antz-<agent> must be installed for __CLIENT__ first (e.g. via install.sh). If it exists but does not carry the marker, refuse: the file is not antz-managed. Either way, refuse without asking any question and without writing anything.
-- Read the file's current frontmatter `model:` line: the value after `model: `, or note that none is configured.
-FLOWHEAD
-}
-
-set_model_flow_tail() {
-  # Emits the shared apply/relay instructions that close the /antz-set-model
-  # command body: how the picker's outcome reaches the installed script (the
-  # libdir's antz-set-model.sh, invoked by its concrete resolved path with
-  # the copy's own client as the first argument), and the rule that the
-  # reply is exactly what the script printed. __CLIENT__ and
-  # __SET_MODEL_PATH__ are substituted per client by
-  # render_set_model_command.
-  cat <<'FLOWTAIL'
-Step 5 -- Apply the answer, then reply. Never invoke the script without exactly one of `--model`/`--clear`: the only two valid invocations are `--agent <agent> --model <chosen>` and `--agent <agent> --clear`.
-- If the user dismissed the question, or answered with an empty value: cancel -- never run the script, write nothing, and reply that nothing was changed.
-- If the user chose the `Revert to default (clear)` option: run the script with `--agent <agent> --clear`.
-- Otherwise: run the script with `--agent <agent> --model <chosen>`, passing the chosen value verbatim -- never validated or translated, including free-form answers.
-
-The script is the installed file at `__SET_MODEL_PATH__`, and its first argument is always the client this command serves: run it as `sh "__SET_MODEL_PATH__" __CLIENT__` followed by the chosen flags (e.g. `sh "__SET_MODEL_PATH__" __CLIENT__ --agent coder --model opus`). Then reply to the user using exactly what the script printed: on success, which file changed and what its `model:` line now is (or that it was cleared); on failure, the specific reason and that no file was written. Do not reinterpret, add to, or omit that message.
-FLOWTAIL
-}
-
-render_set_model_command() {
-  # $1 = client ("claude" or "opencode"), $2 = version. Renders the
-  # /antz-set-model command file for that client: unlike /antz, this command
-  # never delegates to any antz-* subagent -- its body instructs the
-  # invoking session to validate, pre-flight, then either run the installed
-  # script directly (explicit --model/--clear) or ask the user which model
-  # to assign via that client's native question mechanism and feed the
-  # chosen value to the same script as --model (the interactive picker; the
-  # no-flag form). Each rendered copy is scoped to exactly one client (see
-  # README Client binding); the two bodies never mention the other client's
-  # directory or frontmatter position. The command body embeds no script:
-  # the run instruction invokes the installed libdir file by its concrete
-  # resolved path with the copy's client as the first argument
-  # (setmodeldeembed-02), and the script itself is unchanged by the picker:
-  # the interactive flow is only a new way to PRODUCE the --model value.
-  client="$1"
-  version="$2"
-
-  case "$client" in
-    claude)
-      short_desc='Configure or clear an installed antz agent'"'"'s model in Claude Code. Omitting --model/--clear opens an interactive model picker; the explicit flags edit the target file directly in this session; never delegates to a subagent.'
-      intro='Configure or clear the model: line in an already-installed Claude Code antz agent file'"'"'s frontmatter (`~/.claude/agents/antz-<agent>.md`).'
-      extra_frontmatter='argument-hint: --agent <specifier|coder|verifier|orchestrator> [--model <value>|--clear]
-'
-      agents_path='$HOME/.claude/agents'
-      # No runtime model enumeration exists on Claude Code: the option source
-      # is this install-time-embedded documented alias vocabulary
-      # (https://code.claude.com/docs/es/model-config), refreshed only by
-      # re-running install.sh. AskUserQuestion hard-caps explicit options at
-      # 4 per question (with a built-in free-text row), so the explicit set
-      # is the three stable family aliases plus the mandated clear option;
-      # the rest of the vocabulary is named verbatim in the question text so
-      # free-form entry of it carries no typo risk.
-      picker=$(emit_picker_claude)
-      ;;
-    opencode)
-      short_desc='Configure or clear an installed antz agent'"'"'s model in OpenCode. Omitting --model/--clear opens an interactive model picker; the explicit flags edit the target file directly in this session; never delegates to a subagent.'
-      intro='Configure or clear the model: line in an already-installed OpenCode antz agent file'"'"'s frontmatter (`~/.config/opencode/agents/antz-<agent>.md`).'
-      extra_frontmatter=''
-      agents_path='$HOME/.config/opencode/agents'
-      # The option source is enumerated at invocation time via `opencode
-      # models`; no catalog is embedded. Presentation trimming is
-      # prompt-level guidance only, and the free-form and clear options must
-      # always remain offered so no value is unreachable. There is an
-      # EXPLICIT free-form option here (no built-in free-text row is
-      # assumed), and the picker degrades to free-form + clear when the
-      # enumeration fails or returns nothing.
-      picker=$(emit_picker_opencode)
-      ;;
-    pi)
-      short_desc='Configure or clear an installed antz agent'"'"'s model in Pi. Omitting --model/--clear opens an interactive model picker; the explicit flags edit the target file directly in this session; never delegates to a subagent.'
-      intro='Configure or clear the model: line in an already-installed Pi antz agent file'"'"'s frontmatter (`~/.pi/agent/agents/antz-<agent>.md`).'
-      extra_frontmatter='argument-hint: --agent <specifier|coder|verifier|orchestrator> [--model <value>|--clear]
-'
-      agents_path='$HOME/.pi/agent/agents'
-      # The option source is enumerated at invocation time via `pi
-      # --list-models`; no catalog is embedded. Pi core ships no question
-      # tool, so the picker asks through one only when the session actually
-      # exposes one and otherwise degrades to printing the enumerated ids
-      # and naming the explicit-flag re-invocation.
-      picker=$(emit_picker_pi)
-      ;;
-    *) echo "Unknown client: $client" >&2; exit 1 ;;
-  esac
-
-  flow_head=$(set_model_flow_head | sed "s|__CLIENT__|$client|; s|__AGENTS_PATH__|$agents_path|")
-  # The tail names the installed script's concrete resolved path and this
-  # copy's client -- the single run instruction of a body that embeds no
-  # script (setmodeldeembed-02).
-  set_model_path="$ANTZ_SCRIPTS_DIR/antz-set-model.sh"
-  flow_tail=$(set_model_flow_tail | sed "s|__CLIENT__|$client|g; s|__SET_MODEL_PATH__|$set_model_path|g")
-
-  body=$(printf '%s\n\n%s\n\n%s\n\n%s\n' \
-    "$intro" "$flow_head" "$picker" "$flow_tail")
-
-  desc=$(yaml_quote_desc "$short_desc")
-  printf -- '---\n# %s version=%s -- do not edit by hand; regenerate with install.sh\ndescription: %s\n%s---\n\n%s\n' \
-    "$MARKER" "$version" "$desc" "$extra_frontmatter" "$body"
-}
-
-# The two picker paragraphs below live in their own top-level, no-argument
-# emitter functions -- instead of being written inline as heredocs captured
-# by command substitutions inside render_set_model_command's case branches --
-# because bash 3.2 (macOS /bin/sh in POSIX mode) mis-parses a heredoc whose
-# body sits inside $( ... ) (see change fix-install-sh-syntax, posixsh-01).
-# Capturing a function's stdout inside $(...) is plain POSIX and parses under
-# bash 3.2. The bodies are verbatim: relocating them must not change the
-# rendered command files byte-for-byte (posixsh-04).
-emit_picker_claude() {
-  cat <<'PICKER'
-Step 4 -- Ask the user which model to assign to antz-<agent>, via `AskUserQuestion` in this session (it is a main-session tool; never from or via a subagent). Ask ONE question. Its text must state the current state from Step 3 -- either "the currently configured model is <value>" or "no model is currently configured" -- and, when the current value exactly equals one of the offered options' value strings, that option is marked as the current one; otherwise no option is marked. Offer exactly these explicit options, in this order:
-1. `sonnet`
-2. `opus`
-3. `haiku`
-4. `Revert to default (clear)` -- choosing it runs the script with `--clear`
-`AskUserQuestion` automatically appends a built-in free-text row, so the user can enter any other value via free-form input; do not spend an option slot on a separate "type another value" entry. Also name these further documented alias values verbatim in the question text, so they can be entered via free-form input without typo risk: `best`, `fable`, `sonnet[1m]`, `opus[1m]`, `opusplan`.
-
-The full documented alias vocabulary (source: https://code.claude.com/docs/es/model-config) is embedded in this command at install time: `best`, `fable`, `opus`, `sonnet`, `haiku`, `sonnet[1m]`, `opus[1m]`, `opusplan`. This list is embedded and refreshed only by re-running install.sh; it is never queried at runtime.
-PICKER
-}
-
-emit_picker_opencode() {
-  cat <<'PICKER'
-Step 4 -- Ask the user which model to assign to antz-<agent>, via the session's `question` tool. First, enumerate the available models at invocation time: run `opencode models` via the Bash tool; its output lists `provider/model` ids (for example `anthropic/claude-opus-4-5`). No model catalog is embedded in this command. Offer the enumerated `provider/model` ids as the question options; when the catalog is too large to present in one question, you may filter, group, or paginate the presentation sensibly (for example, the current session provider's models first) -- but the free-form option and the revert-to-default (clear) option must always remain offered, so no value is unreachable. If `opencode models` fails or returns no model ids, degrade instead of failing: still ask the question, with the question text stating that no models could be enumerated, offering only the free-form option and the revert-to-default (clear) option.
-
-Alongside any enumerated ids, ALWAYS offer an explicit `Type another value` free-form option (the `question` tool has no built-in free-text row) and the `Revert to default (clear)` option (choosing it runs the script with `--clear`). The question text must state the current state from Step 3 -- either "the currently configured model is <value>" or "no model is currently configured" -- and, when the current value exactly equals one of the offered options' value strings, that option is marked as the current one; otherwise no option is marked. A free-form answer is passed to the script verbatim, never validated or translated.
-PICKER
-}
-
-emit_picker_pi() {
-  cat <<'PICKER'
-Step 4 -- Enumerate the available models at invocation time: run `pi --list-models` via the Bash tool; its output lists `provider/model` ids (for example `nan/deepseek-v4-flash`). No model catalog is embedded in this command.
-
-Then ask the user which model to assign to antz-<agent> through the session's own question tool, WHEN the session exposes one (some Pi installations provide an `ask_user_question` tool; check whether it is available in this session). Offer the enumerated `provider/model` ids as the question options; when the catalog is too large to present in one question, you may filter, group, or paginate the presentation sensibly (for example, the current session provider's models first) -- but a free-form entry and the `Revert to default (clear)` option must always remain offered, so no value is unreachable. The question text must state the current state from Step 3 -- either "the currently configured model is <value>" or "no model is currently configured" -- and, when the current value exactly equals one of the offered options' value strings, that option is marked as the current one; otherwise no option is marked. A free-form answer is passed to the script verbatim, never validated or translated; `Revert to default (clear)` runs the script with `--clear`.
-
-When the session exposes no question tool, or `pi --list-models` fails or returns no model ids, degrade instead of failing or guessing: print the enumerated model ids (or state that none could be enumerated), state that this session cannot ask interactively, and ask the user to re-invoke the command with `--model <value>` or `--clear`. Write nothing in that path.
-PICKER
 }
 
 backup_if_unmanaged() {
@@ -703,43 +349,28 @@ install_libdir_script() {
 }
 
 read_script_sources() {
-  # libdirinstall-05 (one atomic pass): read or fetch the two on-disk
-  # script sources into variables BEFORE any destination file is written, so
-  # a failing source aborts the whole install loudly (fetch_file's own error
-  # names the unreadable file; a remote fetch honors ANTZ_REF through
-  # RAW_BASE) and leaves the previous install -- client files and libdir --
-  # completely intact. The "; printf x" sentinel stripped on the next line
-  # preserves each source's exact trailing bytes through command
-  # substitution; no heredoc body sits inside these $( ) captures
-  # (posixsh-01). The set-model script has no external source to read: its
-  # text is static content of install.sh itself, written straight to the
-  # libdir file by emit_set_model_script's redirection at install time
-  # (setmodeldeembed-03).
+  # libdirinstall-05 (one atomic pass): read or fetch the flow script source
+  # into a variable BEFORE any destination file is written, so a failing
+  # source aborts the whole install loudly (fetch_file's own error names the
+  # unreadable file; a remote fetch honors ANTZ_REF through RAW_BASE) and
+  # leaves the previous install -- client files and libdir -- completely
+  # intact. The "; printf x" sentinel stripped on the next line preserves the
+  # source's exact trailing bytes through command substitution; no heredoc
+  # body sits inside the $( ) capture (posixsh-01).
   src_flow=$(fetch_file "scripts/orchestration/antz-flow.sh"; printf x)
   src_flow=${src_flow%x}
-  src_probe=$(fetch_file "scripts/orchestration/antz-probe.sh"; printf x)
-  src_probe=${src_probe%x}
 }
 
 install_libdir_scripts() {
-  # The three libdir files (libdirinstall-01/06): written in the same single
-  # pass as the client files (one invocation, no post-install step), into the
-  # one shared client-independent libdir resolved once by resolve_libdir;
-  # every invocation of an installed script is `sh "<resolved path>"
-  # <arguments>` -- no exec bit installed or required, nothing added to
-  # PATH, no hook or plugin. The two on-disk sources were both read or
-  # fetched before this runs (read_script_sources; libdirinstall-05). The
-  # set-model script goes through the same backup-if-unmanaged rule and
-  # "Installed" message as every other file, but its text is redirected
-  # straight from its emitter into the destination -- plain redirection, no
-  # command-substitution capture (setmodeldeembed-03).
+  # The libdir file (libdirinstall-01/06): written in the same single pass as
+  # the client files (one invocation, no post-install step), into the one
+  # shared client-independent libdir resolved once by resolve_libdir; every
+  # invocation of the installed script is `sh "<resolved path>" <arguments>`
+  # -- no exec bit installed or required, nothing added to PATH, no hook or
+  # plugin. Its source was read or fetched before this runs
+  # (read_script_sources; libdirinstall-05).
   mkdir -p "$ANTZ_SCRIPTS_DIR"
   install_libdir_script antz-flow.sh "$src_flow"
-  install_libdir_script antz-probe.sh "$src_probe"
-  dest="$ANTZ_SCRIPTS_DIR/antz-set-model.sh"
-  backup_if_unmanaged "$dest"
-  emit_set_model_script > "$dest"
-  echo "Installed $dest"
 }
 
 changelog_since() {
@@ -855,20 +486,17 @@ done
 if [ "$want_claude" -eq 1 ]; then
   mkdir -p "$HOME/.claude/commands"
   install_file "$HOME/.claude/commands/antz.md" "$(render_claude_command "$version")"
-  install_file "$HOME/.claude/commands/antz-set-model.md" "$(render_set_model_command claude "$version")"
 fi
 
 if [ "$want_opencode" -eq 1 ]; then
   mkdir -p "$HOME/.config/opencode/commands"
   install_file "$HOME/.config/opencode/commands/antz.md" "$(render_opencode_command "$version")"
-  install_file "$HOME/.config/opencode/commands/antz-set-model.md" "$(render_set_model_command opencode "$version")"
 fi
 
 if [ "$want_pi" -eq 1 ]; then
   mkdir -p "$HOME/.pi/agent/prompts"
   install_file "$HOME/.pi/agent/prompts/antz.md" "$(render_pi_command "$version")"
-  install_file "$HOME/.pi/agent/prompts/antz-set-model.md" "$(render_set_model_command pi "$version")"
 fi
 
-# The three orchestration scripts install in the same pass (libdirinstall-01/06).
+# The orchestration script installs in the same pass (libdirinstall-01/06).
 install_libdir_scripts

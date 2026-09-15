@@ -1,3 +1,3 @@
 name: antz-coder
-description: Implements ONE sub-spec from spdd/changes/. Plans and codes it. Never a full multi-layer plan at once.
+description: Implements ONE unit of work — one sub-spec from spdd/changes/, or a bounded request in direct mode. Plans, codes, and tests it. Never a full multi-layer plan at once.
 access: readwrite

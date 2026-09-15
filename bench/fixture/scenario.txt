@@ -1,5 +1,0 @@
-Extend the toysize utility in this repository with a "km-to-mile"
-conversion, so that `sh toysize.sh km-to-mile <kilometers>` prints the
-distance in miles (kilometers multiplied by 0.621371) on its own line.
-Update the Usage section of README.md to document the new conversion, and
-keep the existing "cm-to-inch" behavior unchanged.

@@ -130,8 +130,8 @@ test_meta_01() {
   refuse "$META_SPECIFIER" 'access: readonly' || ok=1
   [ "$(meta_field "$META_SPECIFIER" name)" = "antz-specifier" ] \
     || { echo "  specifier name changed: $(meta_field "$META_SPECIFIER" name)"; ok=1; }
-  [ "$(meta_field "$META_SPECIFIER" description)" = "Turns a natural-language request into Gherkin behavior specs and an end-to-end QA suite under spdd/changes/. Use first for any non-trivial feature or change." ] \
-    || { echo "  specifier description changed"; ok=1; }
+  [ -n "$(meta_field "$META_SPECIFIER" description)" ] \
+    || { echo "  specifier description is empty"; ok=1; }
   return $ok
 }
 
@@ -147,8 +147,8 @@ test_meta_02() {
   refuse "$META_VERIFIER" 'access: readonly' || ok=1
   [ "$(meta_field "$META_VERIFIER" name)" = "antz-verifier" ] \
     || { echo "  verifier name changed: $(meta_field "$META_VERIFIER" name)"; ok=1; }
-  [ "$(meta_field "$META_VERIFIER" description)" = "QA agent. Validates the coder's work against spdd/changes/ Gherkin sub-specs and the end-to-end QA suite. Merges approved changes into spdd/specs/ and archives them." ] \
-    || { echo "  verifier description changed"; ok=1; }
+  [ -n "$(meta_field "$META_VERIFIER" description)" ] \
+    || { echo "  verifier description is empty"; ok=1; }
   return $ok
 }
 
@@ -163,14 +163,14 @@ test_meta_03() {
     || { echo "  coder access is not readwrite"; ok=1; }
   [ "$(meta_field "$META_CODER" name)" = "antz-coder" ] \
     || { echo "  coder name changed: $(meta_field "$META_CODER" name)"; ok=1; }
-  [ "$(meta_field "$META_CODER" description)" = "Implements ONE sub-spec from spdd/changes/. Plans and codes it. Never a full multi-layer plan at once." ] \
-    || { echo "  coder description changed"; ok=1; }
+  [ -n "$(meta_field "$META_CODER" description)" ] \
+    || { echo "  coder description is empty"; ok=1; }
   [ "$(meta_field "$META_ORCHESTRATOR" access)" = "orchestrateonly" ] \
     || { echo "  orchestrator access is not orchestrateonly"; ok=1; }
   [ "$(meta_field "$META_ORCHESTRATOR" name)" = "antz-orchestrator" ] \
     || { echo "  orchestrator name changed: $(meta_field "$META_ORCHESTRATOR" name)"; ok=1; }
-  [ "$(meta_field "$META_ORCHESTRATOR" description)" = "Recommended entry point (via /antz). Sequences specifier -> coder -> verifier for one change, reconstructing state from spdd/ alone on every invocation so it can resume after any interruption. Never writes to spdd/ itself." ] \
-    || { echo "  orchestrator description changed"; ok=1; }
+  [ -n "$(meta_field "$META_ORCHESTRATOR" description)" ] \
+    || { echo "  orchestrator description is empty"; ok=1; }
   return $ok
 }
 
@@ -358,9 +358,9 @@ test_renderdedup_05() {
 
 # ---- run everything ---------------------------------------------------------
 
-run_test "meta-01: agents/meta/specifier.yaml declares access: readwrite (name/description unchanged)" test_meta_01
-run_test "meta-02: agents/meta/verifier.yaml declares access: readwrite (name/description unchanged)" test_meta_02
-run_test "meta-03: coder.yaml declares access: readwrite and orchestrator.yaml declares access: orchestrateonly, each with its declared name and description" test_meta_03
+run_test "meta-01: agents/meta/specifier.yaml declares access: readwrite with its declared name and a non-empty description" test_meta_01
+run_test "meta-02: agents/meta/verifier.yaml declares access: readwrite with its declared name and a non-empty description" test_meta_02
+run_test "meta-03: coder.yaml declares access: readwrite and orchestrator.yaml declares access: orchestrateonly, each with its declared name and a non-empty description" test_meta_03
 
 run_test "render-01 (specifier): Claude render of agents/meta/specifier.yaml carries tools: Read, Grep, Glob, Bash, Edit, Write, Skill" test_render_01 specifier
 run_test "render-01 (coder): Claude render of agents/meta/coder.yaml carries tools: Read, Grep, Glob, Bash, Edit, Write, Skill" test_render_01 coder

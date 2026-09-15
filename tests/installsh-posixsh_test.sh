@@ -208,8 +208,8 @@ posixsh_04() {
   install_at "$home" "$INSTALL_SH" --all > "$log" 2>&1 \
     || { echo "fresh --all render failed: $(cat "$log")"; return 1; }
   # Normalize the two volatile pieces: the sandbox HOME prefix inside the
-  # "Installed <dest>" lines, and the version token inside the six outcome
-  # lines (each exactly one non-space word).
+  # "Installed <dest>" lines, and the version token inside the outcome lines
+  # (each exactly one non-space word).
   norm=$(new_tmp_dir)/report.norm
   exp=$(new_tmp_dir)/report.expected
   sed -e "s|$home||g" \
@@ -220,8 +220,6 @@ Claude Code: fresh install of antz @VERSION@
 OpenCode: fresh install of antz @VERSION@
 Pi: fresh install of antz @VERSION@
 antz-flow.sh: fresh install of antz @VERSION@
-antz-probe.sh: fresh install of antz @VERSION@
-antz-set-model.sh: fresh install of antz @VERSION@
 Installed /.claude/agents/antz-specifier.md
 Installed /.config/opencode/agents/antz-specifier.md
 Installed /.pi/agent/agents/antz-specifier.md
@@ -235,14 +233,9 @@ Installed /.claude/agents/antz-orchestrator.md
 Installed /.config/opencode/agents/antz-orchestrator.md
 Installed /.pi/agent/agents/antz-orchestrator.md
 Installed /.claude/commands/antz.md
-Installed /.claude/commands/antz-set-model.md
 Installed /.config/opencode/commands/antz.md
-Installed /.config/opencode/commands/antz-set-model.md
 Installed /.pi/agent/prompts/antz.md
-Installed /.pi/agent/prompts/antz-set-model.md
 Installed /.config/antz/scripts/antz-flow.sh
-Installed /.config/antz/scripts/antz-probe.sh
-Installed /.config/antz/scripts/antz-set-model.sh
 INVENTORY
   if ! cmp -s "$exp" "$norm"; then
     echo "fresh --all report does not match the documented inventory:"
@@ -317,11 +310,7 @@ posixshfix_01() {
   require "$b4" 'Claude Code: fresh install of antz @VERSION@' || ok=1
   require "$b4" 'OpenCode: fresh install of antz @VERSION@' || ok=1
   require "$b4" 'Pi: fresh install of antz @VERSION@' || ok=1
-  require "$b4" 'antz-set-model.sh: fresh install of antz @VERSION@' || ok=1
   require "$b4" 'Installed /.claude/agents/antz-specifier.md' || ok=1
-  require "$b4" 'Installed /.config/opencode/commands/antz-set-model.md' || ok=1
-  require "$b4" 'Installed /.pi/agent/prompts/antz-set-model.md' || ok=1
-  require "$b4" 'Installed /.config/antz/scripts/antz-set-model.sh' || ok=1
   # Order is asserted by the whole-report cmp, never by a counted view.
   require "$b4" 'cmp -s' || ok=1
   refuse "$b4" "$n_d" || ok=1

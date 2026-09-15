@@ -200,12 +200,12 @@ refpin_01() {
   grep -v "^$RAW_ROOT/master/" "$log" > "$d/bad-urls" || true
   [ -s "$d/bad-urls" ] && { echo "  URLs outside master fetched:"; sed 's/^/    /' "$d/bad-urls"; ok=1; }
   # the served tree drove the install (VERSION, CHANGELOG.md, all four meta +
-  # prompts, all three injected scripts)
+  # prompts, the flow script)
   rels_fetched "$log" > "$d/rels"
   for rel in VERSION CHANGELOG.md \
       agents/meta/specifier.yaml agents/meta/coder.yaml agents/meta/verifier.yaml agents/meta/orchestrator.yaml \
       agents/prompts/specifier.prompt agents/prompts/coder.prompt agents/prompts/verifier.prompt agents/prompts/orchestrator.prompt \
-      scripts/orchestration/antz-flow.sh scripts/orchestration/antz-probe.sh; do
+      scripts/orchestration/antz-flow.sh; do
     grep -qxF "$rel" "$d/rels" || { echo "  never fetched from master: $rel"; ok=1; }
   done
   grep -qF "fresh install of antz 9.9.9" "$d/run-a.log" \
@@ -348,27 +348,17 @@ refpin_04() {
 # deembed-orchestration-scripts (sub-spec 01, libdirinstall-07): the include
 # INJECTION sentence ("the include injection still fetches through
 # fetch_file") predates that change's script installation and is retired
-# here (loud note; the injection itself survives until sub-spec 02 retires
-# it -- its render stays pinned by tests/renderinject_test.sh either way);
-# the pinned sentence now names the LIBDIR SCRIPT INSTALLATION fetching each
-# of the three on-disk sources through the one fetch_file helper, with the
-# set-model source read from install.sh's own emitter -- since change
-# deembed-orchestration-scripts sub-spec 03 that emitter text is redirected
-# straight into the libdir file (plain redirection, no capture; this test's
-# pin re-scoped accordingly, loud note). The one-executable-
+# here; the pinned sentence now names the LIBDIR SCRIPT INSTALLATION fetching
+# its on-disk source through the one fetch_file helper. The one-executable-
 # curl and RAW_BASE-construction clauses are unchanged, and the ref
 # substitution still happens where RAW_BASE is built -- not per call site.
 
 refpin_05() {
   d=$(new_tmp_dir); ok=0
-  for rel in scripts/orchestration/antz-flow.sh scripts/orchestration/antz-probe.sh; do
+  for rel in scripts/orchestration/antz-flow.sh; do
     grep -qF "fetch_file \"$rel\"" "$INSTALL_SH" || {
       echo "  the script installation no longer fetches $rel through fetch_file"; ok=1; }
   done
-  grep -qF 'emit_set_model_script > "$dest"' "$INSTALL_SH" || {
-    echo "  the set-model script source is no longer written straight from install.sh's own emitter"; ok=1; }
-  grep -qF 'src_set_model=$(emit_set_model_script' "$INSTALL_SH" && {
-    echo "  the set-model emitter text is captured through a command substitution again (retired by setmodeldeembed-03)"; ok=1; }
   # exactly one executable curl invocation (comments excluded) -- and it is
   # fetch_file's own, still going through "$RAW_BASE/$rel" (no per-site ref)
   n=$(grep -v '^[[:space:]]*#' "$INSTALL_SH" | grep -c 'curl -fsSL')
@@ -390,7 +380,7 @@ run_test "refpin-01: with no ref signal every fetch URL carries /master/, the in
 run_test "refpin-02: with ANTZ_REF=v4.7.0 every fetched URL carries /v4.7.0/ (VERSION, CHANGELOG.md, agents/meta/specifier.yaml, agents/prompts/orchestrator.prompt, scripts/orchestration/antz-flow.sh among them), none carries /master/, and the markers embed the fetched tree's VERSION" refpin_02
 run_test "refpin-03: a checkout install reads every file from disk and never touches the network regardless of ANTZ_REF (failing curl stub never invoked; byte-identical with and without it)" refpin_03
 run_test "refpin-04: README's install section and install.sh's header usage comment document the tag-pinned ANTZ_REF invocation (shared tagged-URL example, master default, ANTZ_REF override); the policy docs' bullet check was deleted by optimize-test-suite sub-spec 09 as a prose pin" refpin_04
-run_test "refpin-05: the fetch architecture is preserved with its subject re-scoped (libdirinstall-07) -- the libdir script installation fetches each on-disk source through the one fetch_file helper (set-model read from the emitter), exactly one executable curl -fsSL inside fetch_file, and the ref is substituted at the RAW_BASE construction, not per call site" refpin_05
+run_test "refpin-05: the fetch architecture is preserved -- the libdir script installation fetches its on-disk source through the one fetch_file helper, exactly one executable curl -fsSL inside fetch_file, and the ref is substituted at the RAW_BASE construction, not per call site" refpin_05
 
 echo
 echo "pass=$pass_count fail=$fail_count skip=$skip_count"

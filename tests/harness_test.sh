@@ -299,9 +299,9 @@ test_harness_01_sourced_suite_defines_no_helpers() {
   return 0
 }
 
-# The 21 files a full install.sh --all render produces (the documented
-# install surface: 4 agents + 2 commands per client, across 3 clients, plus
-# 3 libdir scripts) -- the literal completeness set for "returns the
+# The 16 files a full install.sh --all render produces (the documented
+# install surface: 4 agents + 1 command per client, across 3 clients, plus
+# the libdir script) -- the literal completeness set for "returns the
 # complete installed tree".
 INSTALLED_TREE_FILES='
 .claude/agents/antz-coder.md
@@ -309,22 +309,17 @@ INSTALLED_TREE_FILES='
 .claude/agents/antz-specifier.md
 .claude/agents/antz-verifier.md
 .claude/commands/antz.md
-.claude/commands/antz-set-model.md
 .config/antz/scripts/antz-flow.sh
-.config/antz/scripts/antz-probe.sh
-.config/antz/scripts/antz-set-model.sh
 .config/opencode/agents/antz-coder.md
 .config/opencode/agents/antz-orchestrator.md
 .config/opencode/agents/antz-specifier.md
 .config/opencode/agents/antz-verifier.md
 .config/opencode/commands/antz.md
-.config/opencode/commands/antz-set-model.md
 .pi/agent/agents/antz-coder.md
 .pi/agent/agents/antz-orchestrator.md
 .pi/agent/agents/antz-specifier.md
 .pi/agent/agents/antz-verifier.md
 .pi/agent/prompts/antz.md
-.pi/agent/prompts/antz-set-model.md
 '
 
 fx_assert_complete_tree() {
@@ -334,7 +329,7 @@ fx_assert_complete_tree() {
     [ -f "$home/$f" ] || { echo "  installed tree missing $f"; return 1; }
   done
   n=$(find "$home" -type f | wc -l | tr -d ' ')
-  [ "$n" -eq 21 ] || { echo "  installed tree has $n files, expected the 21 contract files"; return 1; }
+  [ "$n" -eq 16 ] || { echo "  installed tree has $n files, expected the 16 contract files"; return 1; }
   return 0
 }
 
@@ -532,7 +527,7 @@ test_harness_06_stage_checkout_copies_current_working_tree_products() {
            agents/prompts/specifier.prompt agents/prompts/verifier.prompt \
            agents/meta/coder.yaml agents/meta/orchestrator.yaml \
            agents/meta/specifier.yaml agents/meta/verifier.yaml \
-           scripts/orchestration/antz-flow.sh scripts/orchestration/antz-probe.sh; do
+           scripts/orchestration/antz-flow.sh; do
     [ -f "$dest/$f" ] || { echo "  staged tree missing $f"; return 1; }
   done
 

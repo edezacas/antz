@@ -20,7 +20,7 @@
 #
 # Self-contained bash test harness (no external framework/dependency -- this
 # repo has no package manager or build system), same pattern as
-# tests/set-model-command_test.sh. Run directly:
+# tests/description-quoting_test.sh. Run directly:
 #   ./tests/header-marker_test.sh
 #
 # Each reported test name embeds its scenario id (marker-01..06) from the
@@ -321,11 +321,7 @@ marker_06() {
     grep -qF "$agent" "$d/header.txt" \
       || { echo "  header comment does not name $agent among what gets installed"; ok=1; }
   done
-  # the /antz command and the /antz-set-model command, named among what
-  # install.sh installs ("/antz" must appear as itself, not only as the
-  # /antz-set-model prefix)
-  grep -qF '/antz-set-model' "$d/header.txt" \
-    || { echo "  header comment does not name the /antz-set-model command"; ok=1; }
+  # the /antz command, named among what install.sh installs
   grep -qE '/antz([ ,.)]|$)' "$d/header.txt" \
     || { echo "  header comment does not name the /antz command"; ok=1; }
 
@@ -340,7 +336,7 @@ run_test "marker-02: a file mentioning antz:generated only mid-body is NOT manag
 run_test "marker-03: installed_version_of reads only the line-start header marker -- a body-mentioned version=9.9.9 reports a fresh install in --check, a real header marker still reports its version" marker_03
 run_test "marker-04: backups are created exactly on unmanaged overwrites; accumulated .bak.<ts> files are never pruned, renamed, or rewritten; managed re-runs create none" marker_04
 run_test "marker-05: install.sh's header comment states the .bak.<timestamp> policy -- never pruned automatically, cleanup is the user's" marker_05
-run_test "marker-06: install.sh's header comment names all four agents (including antz-orchestrator) and both commands (/antz, /antz-set-model)" marker_06
+run_test "marker-06: install.sh's header comment names all four agents (including antz-orchestrator) and the /antz command" marker_06
 
 echo
 echo "pass=$pass_count fail=$fail_count skip=$skip_count"

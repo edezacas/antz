@@ -208,8 +208,8 @@ test_renderindependence_01() {
   rind_scan="$SELF_ROOT/ri.scan"
   produced_files "$WORK_HOME" > "$rind_list"
   rind_n=$(wc -l < "$rind_list" | tr -d ' ')
-  [ "$rind_n" -eq 21 ] \
-    || { echo "  expected 21 produced files, found $rind_n"; rind_ok=1; }
+  [ "$rind_n" -eq 16 ] \
+    || { echo "  expected 16 produced files, found $rind_n"; rind_ok=1; }
   for rind_pat in 'AGENTS.m''d' 'CLAUDE.m''d' 'tests''/' 'doc''s/'; do
     while IFS= read -r rind_f; do
       [ -n "$rind_f" ] || continue
