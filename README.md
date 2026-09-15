@@ -58,7 +58,7 @@ Currently compatible with:
 
 ## Requirements
 
-- **`git`** — required to run `/antz`. Every flow is marked by its own branch `antz/<slug>`, so the orchestrator needs `git` on `PATH` and to be run inside a git repository with at least one commit. It fails closed (never falls back to an unbranched mode) if either is missing — install `git` and/or run `git init` plus an initial commit yourself first.
+- **`git`** — required to run `/antz`. Every flow is marked by its own branch `antz/<slug>`, so the orchestrator needs `git` on `PATH` and to be run inside a git repository with at least one commit. It fails closed (never falls back to an unbranched mode) if either is missing — install `git` and/or run `git init` plus an initial commit yourself first. Because nothing is ever committed for you, a *new* flow refuses a dirty working tree (`state=tree_dirty`): review and commit a finished change before starting the next one. Re-invoking the same change resumes it and is never blocked.
 - **POSIX `sh`** — `install.sh` and the installed flow script are plain `sh`, no bash-only syntax; any POSIX-compliant shell works.
 - **`curl`** — only needed to install without a local checkout (`curl | sh`, and `install.sh --check` run the same way); a local checkout installs from disk instead.
 - Claude Code, OpenCode, and/or Pi installed, for `install.sh` to detect and target.

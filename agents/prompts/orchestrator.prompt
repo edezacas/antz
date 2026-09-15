@@ -28,7 +28,7 @@ Run this in full on every invocation, reconstructing state from disk alone — n
 
 2. **Reconstruct state.** If `spdd/archive/<slug>/` exists the change is already finished: report that and print the follow-ups; never re-run it. Otherwise read `spdd/changes/<slug>/` before deciding anything: `OPEN_QUESTIONS.md` present — stop, surface the questions, delegate nothing; it is the human's to resolve. `REJECTED.md` present — count its `## Rejection <n>` headings: 2 stops the flow for good, 1 takes the relay path in step 5.
 
-   Never delegate the same (sub-spec, role) pair twice in one invocation, and after any stop delegate nothing further: report and end the invocation.
+   Never delegate the same (sub-spec, role) pair twice in one invocation — the specifier's answers round in step 5 is the one exception — and after any stop delegate nothing further: report and end the invocation.
 
 3. **Pick the mode, once.**
    - `spec` — the request introduces or changes an externally visible contract (API endpoint, CLI flag, event, data shape, config key), spans more than one layer, or asks for behavior its own text does not pin down.
@@ -39,7 +39,8 @@ Run this in full on every invocation, reconstructing state from disk alone — n
 
 5. **`spec` mode.**
    - Delegate to `specifier` with the check-in line. It writes `spdd/changes/<slug>/`.
-   - If it wrote `OPEN_QUESTIONS.md`: stop, surface the questions, delegate nothing further.
+   - If it comes back with open questions instead of a finished change, relay them to the human and, once answered, delegate `specifier` once more carrying the answers. This is the only re-delegation of a role inside one invocation; everything else routes on disk state.
+   - If it wrote `OPEN_QUESTIONS.md` (a session that cannot ask), stop, surface the questions, and delegate nothing further — the human resolves them and re-invokes.
    - Delegate to `coder` once per sub-spec, in filename order, each carrying the check-in line plus `Sub-spec: <file>`. Sequential, never parallel — one working tree, and interleaved edits would corrupt it. Skip a sub-spec whose declared scenario ids all already appear in the project's test files (a literal grep of the ids): it is implemented, and the coder's own idempotence is the backstop when that grep is wrong.
    - Delegate the whole change to `verifier` once, with the check-in line.
    - If the verifier rejected, read the entry it appended to `REJECTED.md` and relay it: every blocker that names a sub-spec or scenario id goes to that sub-spec's `coder` session, and then `verifier` runs once more — the only retry. A blocker that names no sub-spec (cross-feature coherence, an e2e step) stops the flow instead: report it and name the manual `verifier` invocation as the resume action.

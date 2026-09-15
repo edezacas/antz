@@ -17,6 +17,7 @@
 ## Gotchas
 - **Self-hosting.** This repo develops itself through `/antz`; the workflow contract lives verbatim in `agents/prompts/*.prompt` and is enforced by `tests/` — this file deliberately does not restate it. The machine-read contracts (the flow script's states, the change/archive layout, the `REJECTED.md` heading) are specified in `spdd/specs/`.
 - **No commits.** Flow work is never committed; it stays uncommitted in the tree on `antz/<slug>`.
+- **Between changes.** Because nothing is committed for you and a *new* flow refuses a dirty working tree, finish a change by reviewing and committing (or stashing) before starting the next one — otherwise the second `start` stops with `state=tree_dirty`. Re-invoking the *same* change is a resume, is never blocked, and carries its dirt into your commit.
 - **Machine-read state.** Roles never hand-edit `spdd/changes/` or `spdd/archive/` — the flow owns them. Superseding stale spec history is a deliberate maintainer action instead: a spec (or archived change) that describes behavior no longer in the product is deleted or rewritten in the same change that removes it.
 - **Prompt edits.** Editing `agents/prompts/` pulls in the Versioning law and the Working-Root triplication: `## Working Root` is byte-identical across the three role prompts — edit all three; `tests/roles_test.sh` flags drift.
 - **Specs stay true.** A spec that describes behavior this change removed or rewrote is deleted or rewritten in the same change — a false spec is worse than no spec.

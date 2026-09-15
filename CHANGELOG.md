@@ -9,6 +9,13 @@ changes to the workflow contract (directory layout, access model, etc).
 
 This branch (`master`) carries the branch-marked, no-commit variant of antz.
 
+## [6.3.0] - 2026-09-15
+
+### Changed
+- **Where the specifier asks its questions is now stated, instead of left to the session.** A live run on Pi surfaced the gap: the prompt said only "batch all open questions into `OPEN_QUESTIONS.md`", so the specifier improvised a synchronous round trip — it asked in-session, the orchestrator relayed the questions, and the human answered before any scenario was written. That worked, and it is the cheaper path (one round trip instead of a stop plus a fresh invocation), but it was outside the written contract: the orchestrator's step 5 described only the file stop, so it had to improvise the relay, and its dedup rule read as forbidding the second `specifier` delegation the answers round needs. Both prompts now say it: the specifier asks directly when its session can reach the human, writes `OPEN_QUESTIONS.md` when it cannot, and the orchestrator relays the questions, re-delegates the specifier once with the answers, and treats that as the one legitimate re-delegation of a role inside an invocation.
+- **The dirty-tree guard's operational consequence is documented rather than left to be discovered.** The validator hit it honestly: because nothing is ever committed for you and a *new* flow refuses a dirty tree, two consecutive changes in one repo stop at `state=tree_dirty` until the human commits or stashes — the first run's own uncommitted work blocks the second `start`. The guard is correct and stays (a resume is never blocked by it, and interleaving a new flow with unrelated uncommitted work is exactly what it prevents), but `AGENTS.md` and the README's Requirements now state the rhythm it implies: review and commit a finished change before starting the next one.
+- Graded **minor**: the specifier's and orchestrator's rendered behavior changes (which path an ambiguity takes, and one permitted re-delegation), with no machine line, marker, access level, flow-script state, or client render shape touched. The `v6.3.0` tag is created on this bump commit.
+
 ## [6.2.0] - 2026-09-15
 
 ### Fixed
