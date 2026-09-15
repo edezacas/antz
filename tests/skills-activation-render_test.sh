@@ -74,6 +74,7 @@ agent_md() {
   case "$2" in
     claude) printf '%s/.claude/agents/antz-%s.md' "$1" "$3" ;;
     opencode) printf '%s/.config/opencode/agents/antz-%s.md' "$1" "$3" ;;
+    pi) printf '%s/.pi/agent/agents/antz-%s.md' "$1" "$3" ;;
   esac
 }
 
@@ -113,6 +114,12 @@ test_render_02() {
       case "$r2_line" in
         *Skill*) echo "  forced $r2_access render grants Skill: $r2_role -> $r2_line"; r2_ok=1 ;;
       esac
+      # Pi's skills-catalog inheritance is the analogue of the Claude Skill
+      # grant, so a forced non-readwrite render must not turn it on. Every
+      # meta file carries access: readwrite today, so the catalog is pinned
+      # true separately (access-model's render-01) and false here.
+      grep -qxF 'inheritSkills: false' "$(agent_md "$r2_home" pi "$r2_role")" \
+        || { echo "  forced $r2_access render inherits the skills catalog: $r2_role"; r2_ok=1; }
     done
   done
   return $r2_ok
@@ -201,8 +208,8 @@ test_renderindependence_01() {
   rind_scan="$SELF_ROOT/ri.scan"
   produced_files "$WORK_HOME" > "$rind_list"
   rind_n=$(wc -l < "$rind_list" | tr -d ' ')
-  [ "$rind_n" -eq 15 ] \
-    || { echo "  expected 15 produced files, found $rind_n"; rind_ok=1; }
+  [ "$rind_n" -eq 21 ] \
+    || { echo "  expected 21 produced files, found $rind_n"; rind_ok=1; }
   for rind_pat in 'AGENTS.m''d' 'CLAUDE.m''d' 'tests''/' 'doc''s/'; do
     while IFS= read -r rind_f; do
       [ -n "$rind_f" ] || continue

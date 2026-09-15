@@ -5,7 +5,7 @@
 
 ## Stack
 - Role instructions live in `agents/prompts/<role>.prompt`; `agents/meta/<role>.yaml` holds `name`, `description`, `access`. Keep prompt bodies framework-agnostic.
-- No build system, package manager, or runtime. `install.sh` (POSIX `sh`, `curl | sh`-runnable) renders each pair into the target framework's native subagent file under `~/.claude/agents/` or `~/.config/opencode/agents/`.
+- No build system, package manager, or runtime. `install.sh` (POSIX `sh`, `curl | sh`-runnable) renders each pair into the target framework's native subagent file under `~/.claude/agents/`, `~/.config/opencode/agents/`, or `~/.pi/agent/agents/`.
 
 ## Structure
 - `agents/prompts/{specifier,coder,verifier,orchestrator}.prompt` — role instructions verbatim, no framework syntax.
@@ -19,9 +19,9 @@
 - **Prompt edits.** Editing `agents/prompts/` pulls in the Versioning law and the Working-Root triplication: `## Working Root` is byte-identical across the three role prompts — edit all three; `tests/roles_test.sh` flags drift.
 
 ## Client Integration
-- `install.sh` renders each `<name>.prompt` + `<name>.yaml` pair into each framework's frontmatter (Claude Code: `name`/`description`/`tools:`; OpenCode: `description`/`mode`/`permission:`) and installs it globally. `readonly` → no edit/write; `readwrite` → full edit plus `Skill` on Claude Code (OpenCode inherits it); `orchestrateonly` → readonly plus delegation (the `readonly` level stays defined though unused).
+- `install.sh` renders each `<name>.prompt` + `<name>.yaml` pair into each framework's frontmatter (Claude Code: `name`/`description`/`tools:`; OpenCode: `description`/`mode`/`permission:`; Pi: `name`/`description`/`tools:` plus `inheritProjectContext`/`inheritSkills`/`systemPromptMode`/`defaultContext`) and installs it globally. `readonly` → no edit/write; `readwrite` → full edit plus `Skill` on Claude Code (OpenCode inherits it; Pi maps to `inheritSkills: true`); `orchestrateonly` → readonly plus delegation (Claude Code: plain `Agent`; OpenCode: a `mode: primary` agent with a task glob allowlist; Pi: the `subagent` tool in its allowlist; the `readonly` level stays defined though unused).
 - Files `install.sh` writes carry an `antz:generated` marker in the frontmatter; re-running overwrites them in place but backups (`.bak.<timestamp>`) any same-named file lacking the marker. It also installs the orchestration scripts and the set-model script under `${XDG_CONFIG_HOME:-$HOME/.config}/antz/scripts/` under the same rules.
-- `install.sh` runs from a local checkout or via `curl | sh` (`RAW_BASE`, ref default `master`, overridden by `ANTZ_REF` — used verbatim, never validated, remote path only); `VERSION`/`CHANGELOG.md`/tagging track on `master`. `/antz` installs to `~/.claude/commands/antz.md` and `~/.config/opencode/commands/antz.md` under the same rules (mechanism in `docs/law-notes.md`).
+- `install.sh` runs from a local checkout or via `curl | sh` (`RAW_BASE`, ref default `master`, overridden by `ANTZ_REF` — used verbatim, never validated, remote path only); `VERSION`/`CHANGELOG.md`/tagging track on `master`. `/antz` installs to `~/.claude/commands/antz.md`, `~/.config/opencode/commands/antz.md`, and `~/.pi/agent/prompts/antz.md` under the same rules (mechanism in `docs/law-notes.md`).
 
 ## Benchmark
 - `bench/` (usage in `README.md`) measures the antz flow: each repetition materializes the fixture and runs a client headless, writing one telemetry record per repetition. It is repo-local and never installed; the real (LLM-invoking) bench never runs under `tests/run_all.sh` (hermetic owner: `tests/bench-harness_test.sh`, spec `spdd/specs/bench-runner.md`).

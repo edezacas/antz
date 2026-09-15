@@ -18,7 +18,7 @@
 # script (after a fresh render) makes the guard report exactly that script
 # out of sync.
 #
-# install.sh's CLI is the test affordance: a full render (--all, both
+# install.sh's CLI is the test affordance: a full render (--all, all three
 # clients) runs against an isolated temp HOME with the session's
 # XDG_CONFIG_HOME masked, so the libdir resolves inside the temp home and no
 # filesystem work ever touches the real ~/.claude, ~/.config, or ~/.config/
@@ -71,7 +71,7 @@ trap cleanup EXIT
 # ---- render affordance ------------------------------------------------------
 
 render_all() {
-  # Renders the full install (both clients, plus the libdir scripts) from the
+  # Renders the full install (all three clients, plus the libdir scripts) from the
   # working tree into the isolated HOME $1, logging stdout+stderr to $2.
   # Hermetic: XDG_CONFIG_HOME is masked so the resolved libdir lives inside
   # the temp home (testsuite-05's convention, applied here too).

@@ -60,6 +60,7 @@ agent_md() {
   case "$2" in
     claude) printf '%s/.claude/agents/antz-%s.md' "$1" "$3" ;;
     opencode) printf '%s/.config/opencode/agents/antz-%s.md' "$1" "$3" ;;
+    pi) printf '%s/.pi/agent/agents/antz-%s.md' "$1" "$3" ;;
   esac
 }
 
@@ -68,6 +69,7 @@ set_model_md() {
   case "$2" in
     claude) printf '%s/.claude/commands/antz-set-model.md' "$1" ;;
     opencode) printf '%s/.config/opencode/commands/antz-set-model.md' "$1" ;;
+    pi) printf '%s/.pi/agent/prompts/antz-set-model.md' "$1" ;;
   esac
 }
 
@@ -151,7 +153,7 @@ quoting_01() {
   ok=0
   for role in specifier coder verifier orchestrator; do
     raw=$(meta_desc "$role")
-    for client in claude opencode; do
+    for client in claude opencode pi; do
       f=$(agent_md "$WORK_HOME" "$client" "$role")
       [ -f "$f" ] || { echo "  missing rendered file: $f"; ok=1; continue; }
       line=$(desc_line "$f")
@@ -177,7 +179,7 @@ quoting_01() {
 # =============================================================================
 quoting_02() {
   ok=0
-  for client in claude opencode; do
+  for client in claude opencode pi; do
     f=$(set_model_md "$WORK_HOME" "$client")
     [ -f "$f" ] || { echo "  missing rendered file: $f"; ok=1; continue; }
     line=$(desc_line "$f")
@@ -221,7 +223,7 @@ quoting_03() {
     || { echo "  staged render failed"; return 1; }
   ok=0
   wantline="description: $rendered"
-  for client in claude opencode; do
+  for client in claude opencode pi; do
     for role in specifier coder verifier orchestrator; do
       line=$(desc_line "$(agent_md "$home" "$client" "$role")")
       [ "$line" = "$wantline" ] \
@@ -244,7 +246,7 @@ quoting_04() {
   ok=0
   for role in specifier coder verifier orchestrator; do
     raw=$(meta_desc "$role")
-    for client in claude opencode; do
+    for client in claude opencode pi; do
       line=$(desc_line "$(agent_md "$WORK_HOME" "$client" "$role")")
       got=$(unquote_desc_line "$line") \
         || { echo "  $client/$role: line is not a quoted scalar: $line"; ok=1; continue; }
@@ -252,7 +254,7 @@ quoting_04() {
         || { echo "  $client/$role: unquote(render) != agents/meta/$role.yaml"; ok=1; }
     done
   done
-  for client in claude opencode; do
+  for client in claude opencode pi; do
     want=$(expected_short_desc "$client") || return 1
     line=$(desc_line "$(set_model_md "$WORK_HOME" "$client")")
     got=$(unquote_desc_line "$line") \
@@ -270,7 +272,7 @@ quoting_04() {
     > "$tree/agents/meta/specifier.yaml"
   home=$(render_tree "$tree") \
     || { echo "  staged round-trip render failed"; return 1; }
-  for client in claude opencode; do
+  for client in claude opencode pi; do
     line=$(desc_line "$(agent_md "$home" "$client" specifier)")
     got=$(unquote_desc_line "$line") \
       || { echo "  round-trip $client: line is not a quoted scalar: $line"; ok=1; continue; }
@@ -282,12 +284,12 @@ quoting_04() {
 
 # ---- run --------------------------------------------------------------------
 
-run_test "quoting-01: all four agents' rendered descriptions are double-quoted YAML scalars on both clients, value byte-preserved from agents/meta" quoting_01
-run_test "quoting-02: both /antz-set-model renders carry a double-quoted description line (third quoting site)" quoting_02
+run_test "quoting-01: all four agents' rendered descriptions are double-quoted YAML scalars on all three clients, value byte-preserved from agents/meta" quoting_01
+run_test "quoting-02: all three /antz-set-model renders carry a double-quoted description line (third quoting site)" quoting_02
 run_test "quoting-03 (Says \"hi\"): embedded quotes escape to \" on all three sites, rendered line is exactly description: \"Says \\\"hi\\\"\"" quoting_03 'Says "hi"' '"Says \"hi\""'
 run_test "quoting-03 (back\\slash): embedded backslash escapes to \\\\ on all three sites, rendered line is exactly description: \"back\\\\slash\"" quoting_03 'back\slash' '"back\\slash"'
 run_test "quoting-03 (a \"b\" \\ c): mixed quotes+backslash escape per YAML rules on all three sites, rendered line is exactly description: \"a \\\"b\\\" \\\\ c\"" quoting_03 'a "b" \ c' '"a \"b\" \\ c"'
-run_test "quoting-04: unquoting every rendered description line reproduces its source byte-for-byte (all agents, both set-model renders, escape-heavy round-trip)" quoting_04
+run_test "quoting-04: unquoting every rendered description line reproduces its source byte-for-byte (all agents, all three set-model renders, escape-heavy round-trip)" quoting_04
 
 # =============================================================================
 # crosssuites-01 (change optimize-test-suite, sub-spec 04): quoting-05 is

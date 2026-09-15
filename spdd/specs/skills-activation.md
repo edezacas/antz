@@ -30,8 +30,11 @@ or files about to be written, modified, or judged — matched by description,
 never by a hardcoded skill name. Activation = reading the matched
 `SKILL.md` in full (paths, not summaries) before the covered work. The
 enablement is mechanical: install.sh's Claude `readwrite` mapping grants the
-`Skill` tool (03-render, merged into `spdd/specs/access-model.md`) and
-OpenCode agents get the client's native skill tool by default. Skill
+`Skill` tool (03-render, merged into `spdd/specs/access-model.md`), OpenCode
+agents get the client's native skill tool by default, and Pi's readwrite
+render carries `inheritSkills: true` so the child sees the client's
+discovered skills catalog (Pi's analogue of the `Skill` grant; without it
+the catalog is a silent no-op). Skill
 locations are the client's own concern: no prompt names a skills directory.
 Each role's own report states which skills were activated (by name) or that
 none matched — a transparency line only, never a routing input.

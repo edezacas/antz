@@ -6,10 +6,15 @@
   install-side rendering and detection logic in `install.sh`: the
   header-anchored marker detection, the quoted YAML description scalars,
   and the ANTZ_REF provenance-pinned source ref.
+- Extended by direct application (2026-09-15, owner override, outside the
+  flow): Pi joins as a third supported client — detection, `--pi`, the
+  `render_pi`/`render_pi_command` sites, and `~/.pi/agent/{agents,prompts}`
+  destinations. Recorded here by the same hand.
 
 ## Goal
-`install.sh` renders deterministic, correct agent and command files for both
-Claude Code and OpenCode. This domain covers three interrelated contracts:
+`install.sh` renders deterministic, correct agent and command files for
+Claude Code, OpenCode, and Pi. This domain covers three interrelated
+contracts:
 
 - **Header-anchored marker detection**: a file is antz-managed only when its
   content carries `# antz:generated ` as a line-start header comment. A
@@ -19,7 +24,7 @@ Claude Code and OpenCode. This domain covers three interrelated contracts:
 
 - **Quoted YAML description scalars**: every rendered `description:` value is
   a double-quoted single-line YAML scalar (embedded `"` and `\` escaped),
-  value-preserving, at `render_claude`, `render_opencode`, and
+  value-preserving, at `render_claude`, `render_opencode`, `render_pi`, and
   `render_set_model_command`. The `/antz` command renderers are out of scope.
 
 - **ANTZ_REF source-ref pinning**: `ANTZ_REF`, when set non-empty, names the
@@ -129,9 +134,9 @@ to the quoted descriptions.
       short description in render_set_model_command are unchanged -- only
       their rendered form gains quoting
 
-  # ADD - quoting-01: all four agents' descriptions are quoted on both clients
+  # ADD - quoting-01: all four agents' descriptions are quoted on every client
   Scenario: quoting-01
-    When install.sh renders all four agents for both clients
+    When install.sh renders all four agents for every client
     Then every rendered agent file's frontmatter description line matches
       `description: "` and ends with `"` with no characters after it
     And the quoted value is the meta file's description for that role,
@@ -246,9 +251,48 @@ to the quoted descriptions.
 - A `--ref` CLI flag or ref validation against the remote.
 - Automatic pruning, capping, or rotation of `.bak.<timestamp>` files.
 
+## Feature: Pi is a third rendered client
+
+  Background:
+    Given the antz checkout under test and an isolated HOME
+    And Pi's native surfaces: subagents at `~/.pi/agent/agents/<name>.md`
+      and slash commands (prompt templates) at `~/.pi/agent/prompts/<name>.md`
+
+  # ADD - pi-render-01: detection and flags
+  Scenario: pi-render-01
+    When install.sh runs with `--pi` (or `--all`)
+    Then it installs the four `antz-*` agents under `~/.pi/agent/agents/`
+      and the `/antz` and `/antz-set-model` prompt templates under
+      `~/.pi/agent/prompts/`
+    And a flag-less run detects Pi through `command -v pi` or an existing
+      `~/.pi/agent` directory
+    And every installed Pi file carries the unchanged `antz:generated`
+      line-start marker
+
+  # ADD - pi-render-02: the Pi agent frontmatter shape
+  Scenario: pi-render-02
+    When install.sh renders a role's meta for Pi
+    Then the frontmatter carries `name`, a quoted `description`, and the
+      lowercase tool allowlist for that access level (`read, grep, find, ls,
+      bash` for readonly; plus `edit, write` for readwrite; plus `subagent`
+      for orchestrateonly)
+    And it carries `inheritProjectContext: true`, `systemPromptMode: replace`,
+      and `defaultContext: fresh`
+    And `inheritSkills:` is `true` exactly for the readwrite roles and
+      `false` for readonly/orchestrateonly
+    And the body is the role prompt verbatim
+
+  # ADD - pi-render-03: the /antz prompt template
+  Scenario: pi-render-03
+    When install.sh renders the `/antz` prompt template for Pi
+    Then it carries a `description` and an `argument-hint`, and its body
+      delegates to the `antz-orchestrator` subagent via the pi-subagents
+      `subagent` tool with the single `$ARGUMENTS` injection point
+
 ## Relevant files
 - `install.sh` — `install_file`, `installed_version_of`, `yaml_quote_desc`,
-  `render_claude`, `render_opencode`, `render_set_model_command`, `fetch_file`,
+  `render_claude`, `render_opencode`, `render_pi`, `render_set_model_command`,
+  `pi_tools_for_access`, `pi_inherit_skills_for_access`, `fetch_file`,
   `RAW_BASE` construction, and the header comment.
 - `tests/header-marker_test.sh`, `tests/description-quoting_test.sh`,
   `tests/refpin_test.sh` — self-contained test suites tagging the scenario ids.

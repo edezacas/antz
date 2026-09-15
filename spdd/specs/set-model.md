@@ -29,14 +29,18 @@ what `install.sh`'s own agent-rendering logic installs or reports.
   the invoking session asks the USER which model to assign, via the
   client's native question mechanism (Claude Code: `AskUserQuestion` over
   an install-time-embedded alias vocabulary; OpenCode: models enumerated
-  at invocation time via `opencode models` plus the `question` tool), then
-  feeds the chosen value to the **same embedded script** as `--model`. The
-  explicit-flag forms remain the non-interactive bypass; the embedded
-  script's behavior and the verbatim-value contract are unchanged.
+  at invocation time via `opencode models` plus the `question` tool; Pi:
+  models enumerated via `pi --list-models`, asked through the session's
+  question tool when one exists and otherwise degrading to the explicit
+  `--model`/`--clear` re-invocation), then feeds the chosen value to the
+  **same embedded script** as `--model`. The explicit-flag forms remain the
+  non-interactive bypass; the embedded script's behavior and the
+  verbatim-value contract are unchanged.
 - **Two independent values, never one.** Claude Code's `model:` frontmatter
   takes a short alias (`sonnet`, `opus`, `haiku`, `inherit`); OpenCode's takes
-  a `provider/model-id` slug (e.g. `anthropic/claude-sonnet-4-5`). These are
-  never the same string. `/antz-set-model` doesn't need a `--claude`/
+  a `provider/model-id` slug (e.g. `anthropic/claude-sonnet-4-5`); Pi's takes a
+  bare model id or a `provider/model` slug (e.g. `nan/deepseek-v4-flash`), or
+  `inherit`. These are never the same string. `/antz-set-model` doesn't need a `--claude`/
   `--opencode` flag to pick which one applies — each installed copy of the
   command is permanently scoped to the client it was installed for (see
   Client binding below).
@@ -54,7 +58,9 @@ targets `~/.claude/agents/antz-<agent>.md` at Claude's frontmatter position
 (immediately after `description:`, immediately before `tools:`); the
 OpenCode copy only ever targets `~/.config/opencode/agents/antz-<agent>.md`
 at OpenCode's position (immediately after `description:`, immediately before
-`mode:`). The invoker never supplies a client flag or argument — which
+`mode:`); the Pi copy only ever targets `~/.pi/agent/agents/antz-<agent>.md`
+at Pi's position (immediately after `description:`, immediately before
+`tools:`). The invoker never supplies a client flag or argument — which
 client's copy of the command they ran already determines it.
 
 **Command argument contract** (the text typed after the slash command,
@@ -96,6 +102,7 @@ determinism, not dictated by either client):
 |---|---|
 | Claude Code | immediately after `description:`, immediately before `tools:` |
 | OpenCode | immediately after `description:`, immediately before `mode:` |
+| Pi | immediately after `description:`, immediately before `tools:` |
 
 **Target file / marker contract** (refined by change `hardening-installsh`,
 sub-spec 04-setmodel) — the target file (`~/.claude/agents/antz-<agent>.md`

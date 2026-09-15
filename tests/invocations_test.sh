@@ -156,7 +156,7 @@ install_at "$INV_HOME" "$INV_CO/install.sh" --all > "$INV_D/install.log" 2>&1 \
 INV_LIB="$INV_HOME/.config/antz/scripts"
 
 # ---- invocations-01 ----------------------------------------------------------
-# The invocation forms, observed on the rendered bodies for both clients:
+# The invocation forms, observed on the rendered bodies for all three clients:
 # discover/ensure/state/release run as one-line path invocations of the
 # resolved libdir (state still carrying the probe's path), no "save ... to a
 # temp file" instruction survives anywhere in the body, and no include marker
@@ -164,7 +164,7 @@ INV_LIB="$INV_HOME/.config/antz/scripts"
 
 invocations_01_invocation_forms() {
   ok=0
-  for client in .claude .config/opencode; do
+  for client in .claude .config/opencode .pi/agent; do
     f="$INV_HOME/$client/agents/antz-orchestrator.md"
     [ -f "$f" ] || { echo "  missing rendered file: $f"; ok=1; continue; }
     for form in \
@@ -216,7 +216,7 @@ invocations_02_mechanism_retired() {
 }
 
 # ---- invocations-03 ----------------------------------------------------------
-# The rendered bodies (isolated HOME, both clients): zero script content,
+# The rendered bodies (isolated HOME, all three clients): zero script content,
 # zero markers, zero unresolved placeholders; every invocation line carries
 # the concrete resolved libdir path; the body is exactly the source prompt
 # with the token replaced; frontmatter shapes unchanged with only the marker
@@ -229,7 +229,7 @@ invocations_03_render() {
   home="$INV_HOME"
   lib="$INV_LIB"
 
-  for client in .claude .config/opencode; do
+  for client in .claude .config/opencode .pi/agent; do
     f="$home/$client/agents/antz-orchestrator.md"
     [ -f "$f" ] || { echo "  missing rendered file: $f"; ok=1; continue; }
     # zero fenced or unfenced lines from any scripts/orchestration/ file
@@ -267,6 +267,16 @@ invocations_03_render() {
     grep -qxF "    antz-$role: allow" "$o" || {
       echo "  OpenCode task allowlist lost antz-$role: allow"; ok=1; }
   done
+  # Pi's own frontmatter shape: lowercase orchestrateonly allowlist with the
+  # nested-delegation tool named, the skills/context inheritance the role
+  # prompts depend on, and the current-version marker.
+  p="$home/.pi/agent/agents/antz-orchestrator.md"
+  grep -qxF 'tools: read, grep, find, ls, bash, subagent' "$p" || {
+    echo "  Pi frontmatter lost the orchestrateonly tools allowlist"; ok=1; }
+  grep -qxF 'inheritSkills: false' "$p" || {
+    echo "  Pi orchestrator frontmatter should not inherit the skills catalog"; ok=1; }
+  grep -qxF "$(marker_line "$CURRENT_VERSION")" "$p" || {
+    echo "  Pi frontmatter marker is not the current-version line"; ok=1; }
   return $ok
 }
 
@@ -279,7 +289,7 @@ invocations_03_xdg_concrete_path() {
   install_xdg "$home" "$xdg" "$co/install.sh" --all > "$d/install.log" 2>&1 \
     || { echo "  install with XDG_CONFIG_HOME set exited non-zero"; return 1; }
   lib="$xdg/antz/scripts"
-  for client in .claude .config/opencode; do
+  for client in .claude .config/opencode .pi/agent; do
     f="$home/$client/agents/antz-orchestrator.md"
     grep -qF "sh \"$lib/antz-flow.sh\" discover" "$f" || {
       echo "  $client body does not carry the XDG-resolved concrete path"; ok=1; }
@@ -305,7 +315,7 @@ invocations_04_no_rematerialization() {
   ok=0
   home="$INV_HOME"
   lib="$INV_LIB"
-  for client in .claude .config/opencode; do
+  for client in .claude .config/opencode .pi/agent; do
     f="$home/$client/agents/antz-orchestrator.md"
     # the body instructs no temp file at all, in any form
     if grep -qiE 'temp file|tempfile' "$f"; then
@@ -363,7 +373,7 @@ invocations_05_routing_surface() {
   ok=0
   home="$INV_HOME"
   lib="$INV_LIB"
-  for client in .claude .config/opencode; do
+  for client in .claude .config/opencode .pi/agent; do
     f="$home/$client/agents/antz-orchestrator.md"
     # the four table headers, byte-exact
     for hdr in \
@@ -409,13 +419,13 @@ invocations_05_routing_surface() {
 
 # ---- invocations-06 ----------------------------------------------------------
 # Structural pins of the de-embedded orchestrator body, observed on the
-# rendered bodies for both clients: fences drop from seven blocks (14 lines)
+# rendered bodies for all three clients: fences drop from seven blocks (14 lines)
 # to four (8), no ```sh fence remains, the four tables and the steps-ending
 # at 6 survive, and no new fenced block or include marker was added.
 
 invocations_06_structure() {
   ok=0
-  for client in .claude .config/opencode; do
+  for client in .claude .config/opencode .pi/agent; do
     f="$INV_HOME/$client/agents/antz-orchestrator.md"
     [ -f "$f" ] || { echo "  missing rendered file: $f"; ok=1; continue; }
     fl=$(grep -cE '^[[:space:]]*```' "$f")
@@ -446,7 +456,7 @@ invocations_06_structure() {
 }
 
 # ---- invocations-07 ----------------------------------------------------------
-# Stable prefix: rendering both clients twice with an unchanged VERSION into
+# Stable prefix: rendering all three clients twice with an unchanged VERSION into
 # fresh isolated HOMEs produces byte-identical trees (deterministic,
 # idempotent); the rendered body carries no per-session/per-run data (no
 # temp paths, no timestamps, no session state), the frontmatter marker line
@@ -491,7 +501,7 @@ invocations_07_stable_prefix() {
   # no per-session or per-run data in the rendered orchestrator bodies: no
   # timestamps anywhere, no temp paths, and VERSION appears ONLY on the
   # frontmatter marker line
-  for client in .claude .config/opencode; do
+  for client in .claude .config/opencode .pi/agent; do
     f="$home/$client/agents/antz-orchestrator.md"
     grep -qE '[0-9]{14}|[0-9]{4}-[0-9]{2}-[0-9]{2}' "$f" && {
       echo "  ($client) body carries a timestamp pattern"; ok=1; }
@@ -502,7 +512,7 @@ invocations_07_stable_prefix() {
 
   # no line of any scripts/orchestration/ file appears in ANY rendered agent body
   for agent in specifier coder verifier orchestrator; do
-    for client in .claude .config/opencode; do
+    for client in .claude .config/opencode .pi/agent; do
       assert_body_has_no_script_lines "$home/$client/agents/antz-$agent.md" || {
         echo "  ($client antz-$agent)"; ok=1; }
     done
@@ -632,7 +642,7 @@ invocationsfix_02_changelog_clause_deleted() {
 
 run_test "invocations-01: the rendered bodies run discover/ensure/state/release as one-line path invocations of the resolved libdir (state still carrying the probe's path), with no temp-file instruction and no include marker or unresolved placeholder surviving" invocations_01_invocation_forms
 run_test "invocations-02: inject_includes(), its orchestrator-keyed call site and the antz-skills.sh done-carve-out are gone from install.sh, which substitutes the once-resolved libdir for the placeholder at render time" invocations_02_mechanism_retired
-run_test "invocations-03: both rendered orchestrator bodies are exactly the source prompt with the concrete resolved path substituted -- zero script lines, zero markers, zero placeholders anywhere installed -- with the Claude and OpenCode frontmatter shapes intact" invocations_03_render
+run_test "invocations-03: all three rendered orchestrator bodies are exactly the source prompt with the concrete resolved path substituted -- zero script lines, zero markers, zero placeholders anywhere installed -- with the Claude, OpenCode, and Pi frontmatter shapes intact" invocations_03_render
 run_test "invocations-03: with XDG_CONFIG_HOME set the invocation lines carry that XDG-resolved concrete path (never the HOME fallback, never a trailing slash)" invocations_03_xdg_concrete_path
 run_test "invocations-04: the rendered body instructs zero re-materialization (no temp file anywhere; every installed-file run is a one-line sh call), the 'Never writes anything itself' Owns bullet holds, and every script-machine-line invocation is by path" invocations_04_no_rematerialization
 run_test "invocations-04: the scripts' machine-line vocabulary survives -- every pinned literal present in the scripts/orchestration/ product files, historical sh <tempfile> header wording included" invocations_04_machine_line_vocabulary

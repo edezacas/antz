@@ -61,7 +61,11 @@ The access values declared in `agents/meta/*.yaml` are the single input to
 install.sh's mapping functions; the meta scenarios and the render scenarios
 consume the same field identically (meta-01/02 are render-01/02's
 precondition). The corrected access-model statement is stated identically
-in AGENTS.md and CLAUDE.md (docs-02 pins the sync).
+in AGENTS.md and CLAUDE.md (docs-02 pins the sync). Each declared level maps
+to every client: `readwrite` also means `inheritSkills: true` on Pi (the
+analogue of the Claude `Skill` grant), and `orchestrateonly` also means the
+`subagent` tool named in Pi's strict allowlist (see
+`spdd/specs/install-render.md`'s Pi feature).
 
   ## Feature: agents/meta/specifier.yaml and agents/meta/verifier.yaml declare access: readwrite (extended by optimize-test-suite: render-03 removed, docs-01..04 removed, renderdedup-01..05 added)
 
@@ -121,12 +125,17 @@ in AGENTS.md and CLAUDE.md (docs-02 pins the sync).
 
   # MODIFY - render-01 (originally delivered by specifier-write-access; the
   # readwrite tools string was MODIFIED by change skills-activation, merged
-  # 2026-09-11 — the Claude readwrite grant gains the `Skill` tool): the
-  # corrected roles render on Claude Code with Edit, Write, and Skill
-  # granted.
+  # 2026-09-11 — the Claude readwrite grant gains the `Skill` tool; and by
+  # the 2026-09-15 Pi direct application — the same scenario now also covers
+  # Pi's lowercase allowlist): the corrected roles render on Claude Code with
+  # Edit, Write, and Skill granted, and on Pi with the lowercase readwrite
+  # allowlist plus `inheritSkills: true`.
   Scenario Outline: render-01
     When install.sh renders "agents/meta/<role>.yaml" for Claude Code
     Then the rendered frontmatter carries "tools: Read, Grep, Glob, Bash, Edit, Write, Skill"
+    When install.sh renders "agents/meta/<role>.yaml" for Pi
+    Then the rendered frontmatter carries "tools: read, grep, find, ls, bash, edit, write"
+    And it carries "inheritSkills: true"
 
     Examples:
       | role       |
@@ -150,10 +159,16 @@ in AGENTS.md and CLAUDE.md (docs-02 pins the sync).
   # ADD - render-04: the readonly mapping semantics are preserved in
   # install.sh even though no meta file declares readonly anymore -- the
   # mapping is a defined contract (kept verbatim), not dead-code bait.
+  # Extended by the 2026-09-15 Pi direct application: the Pi allowlist and
+  # skills-inheritance mapping levels are pinned the same way.
   Scenario: render-04
     When the reader reads install.sh's access-mapping functions
     Then "readonly" still maps to "Read, Grep, Glob, Bash" (no Edit/Write) on Claude Code
     And "readonly" still maps to "edit: deny" and "task: deny" on OpenCode
+    And "readonly" maps to "read, grep, find, ls, bash" on Pi (no edit/write/subagent)
+    And "orchestrateonly" maps to "read, grep, find, ls, bash, subagent" on Pi
+    And "inheritSkills" is "true" only for the readwrite level and "false"
+      for readonly/orchestrateonly
     And the mapping functions' behavior is unchanged from the pre-change install.sh
 
   ### Invariants

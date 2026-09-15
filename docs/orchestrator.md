@@ -128,6 +128,18 @@ committing to a design, not assumed from memory:
   case, so this was treated as implied rather than confirmed until
   checked against the actual behavior).
 
+- **Pi** (confirmed via the pi-subagents `docs/agents.md` frontmatter
+  reference and its child-tool-plan source): a custom Pi agent's `tools:`
+  list is a strict allowlist, and nested delegation is authorized either by
+  naming the extension's `subagent` tool in that allowlist or by setting
+  `allowNestedSubagents: true`. `antz-orchestrator`'s Pi render therefore
+  names `subagent` explicitly — the narrowest grant over the readonly set —
+  and relies on `orchestrator.prompt`'s "What you don't do" for the
+  three-roles-only boundary, the same prompt-level discipline Claude Code
+  needs. Pi core ships no question tool, so `/antz-set-model`'s Pi picker
+  asks only when the session exposes one and otherwise degrades to the
+  explicit `--model`/`--clear` path.
+
 ## Why `verifier` runs once per change, not once per sub-spec
 
 Caught during design review, not obvious from the original three prompts:

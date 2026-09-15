@@ -1,11 +1,11 @@
 #!/bin/sh
 # Installs the antz agents (antz-specifier, antz-coder, antz-verifier, and
 # antz-orchestrator) as native subagents for whichever of Claude Code /
-# OpenCode are detected on this machine, along with the /antz and
+# OpenCode / Pi are detected on this machine, along with the /antz and
 # /antz-set-model commands.
 #
 # Usage:
-#   ./install.sh [--claude] [--opencode] [--all] [--check]
+#   ./install.sh [--claude] [--opencode] [--pi] [--all] [--check]
 #   curl -fsSL https://raw.githubusercontent.com/edezacas/antz/master/install.sh | sh
 #   curl -fsSL https://raw.githubusercontent.com/edezacas/antz/v4.7.0/install.sh | ANTZ_REF=v4.7.0 sh
 #
@@ -77,11 +77,12 @@ resolve_libdir() {
 }
 
 usage() {
-  echo "Usage: $0 [--claude] [--opencode] [--all] [--check]" >&2
+  echo "Usage: $0 [--claude] [--opencode] [--pi] [--all] [--check]" >&2
 }
 
 want_claude=0
 want_opencode=0
+want_pi=0
 explicit=0
 check_only=0
 
@@ -89,7 +90,8 @@ for arg in "$@"; do
   case "$arg" in
     --claude) want_claude=1; explicit=1 ;;
     --opencode) want_opencode=1; explicit=1 ;;
-    --all) want_claude=1; want_opencode=1; explicit=1 ;;
+    --pi) want_pi=1; explicit=1 ;;
+    --all) want_claude=1; want_opencode=1; want_pi=1; explicit=1 ;;
     --check) check_only=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $arg" >&2; usage; exit 1 ;;
@@ -101,11 +103,13 @@ if [ "$explicit" -eq 0 ]; then
   [ -d "$HOME/.claude" ] && want_claude=1
   command -v opencode >/dev/null 2>&1 && want_opencode=1
   [ -d "$HOME/.config/opencode" ] && want_opencode=1
+  command -v pi >/dev/null 2>&1 && want_pi=1
+  [ -d "$HOME/.pi/agent" ] && want_pi=1
 fi
 
-if [ "$want_claude" -eq 0 ] && [ "$want_opencode" -eq 0 ]; then
-  echo "Neither Claude Code nor OpenCode detected. Nothing to install." >&2
-  echo "Pass --claude, --opencode, or --all to force installation for a specific client." >&2
+if [ "$want_claude" -eq 0 ] && [ "$want_opencode" -eq 0 ] && [ "$want_pi" -eq 0 ]; then
+  echo "Neither Claude Code, OpenCode, nor Pi detected. Nothing to install." >&2
+  echo "Pass --claude, --opencode, --pi, or --all to force installation for a specific client." >&2
   exit 1
 fi
 
@@ -195,6 +199,32 @@ opencode_task_perm_for_access() {
   esac
 }
 
+pi_tools_for_access() {
+  # Pi's builtin tool names are lowercase (read/grep/find/ls/bash/edit/write),
+  # not Claude Code's capitalized Glob/Grep. Nested delegation is authorized
+  # by naming the pi-subagents `subagent` tool in the strict allowlist (see
+  # pi-subagents docs/agents.md), so orchestrateonly gets exactly that one
+  # extra grant over readonly.
+  case "$1" in
+    readonly) printf 'read, grep, find, ls, bash' ;;
+    readwrite) printf 'read, grep, find, ls, bash, edit, write' ;;
+    orchestrateonly) printf 'read, grep, find, ls, bash, subagent' ;;
+    *) echo "Unknown access level: $1" >&2; exit 1 ;;
+  esac
+}
+
+pi_inherit_skills_for_access() {
+  # The Pi analogue of the Claude `Skill` grant: only the readwrite roles
+  # carry a `## Skills` section and must see Pi's discovered skills catalog.
+  # The orchestrator delegates skill discovery to those roles, so it mirrors
+  # the readonly level here.
+  case "$1" in
+    readwrite) printf 'true' ;;
+    readonly|orchestrateonly) printf 'false' ;;
+    *) echo "Unknown access level: $1" >&2; exit 1 ;;
+  esac
+}
+
 render_claude() {
   # $1 name, $2 description, $3 access, $4 body, $5 version
   tools=$(claude_tools_for_access "$3")
@@ -213,6 +243,22 @@ render_opencode() {
     "$MARKER" "$5" "$desc" "$mode" "$editperm" "$taskperm" "$4"
 }
 
+render_pi() {
+  # $1 name, $2 description, $3 access, $4 body, $5 version. Pi subagent
+  # frontmatter (pi-subagents): an explicit lowercase tool allowlist, plus
+  # the inheritance flags the roles' own prompts depend on --
+  # inheritSkills (without it the `## Skills` catalog is a silent no-op for
+  # the readwrite roles), inheritProjectContext (the target repo's
+  # AGENTS.md/CLAUDE.md), replace mode (the role prompt is the whole system
+  # prompt) and fresh context (no role may depend on the parent
+  # conversation; state comes from disk).
+  tools=$(pi_tools_for_access "$3")
+  inherit_skills=$(pi_inherit_skills_for_access "$3")
+  desc=$(yaml_quote_desc "$2")
+  printf -- '---\n# %s version=%s -- do not edit by hand; regenerate with install.sh\nname: %s\ndescription: %s\ntools: %s\ninheritProjectContext: true\ninheritSkills: %s\nsystemPromptMode: replace\ndefaultContext: fresh\n---\n\n%s\n' \
+    "$MARKER" "$5" "$1" "$desc" "$tools" "$inherit_skills" "$4"
+}
+
 render_claude_command() {
   # $1 version
   printf -- '---\n# %s version=%s -- do not edit by hand; regenerate with install.sh\ndescription: Recommended entry point for antz. Delegates to the antz-orchestrator subagent, which sequences specifier -> coder -> verifier for one change.\nargument-hint: [request]\n---\n\nDelegate the user'"'"'s request verbatim to the antz-orchestrator subagent via the Agent tool: $ARGUMENTS\n' \
@@ -222,6 +268,14 @@ render_claude_command() {
 render_opencode_command() {
   # $1 version
   printf -- '---\n# %s version=%s -- do not edit by hand; regenerate with install.sh\ndescription: Recommended entry point for antz. Runs the antz-orchestrator agent, which sequences specifier -> coder -> verifier for one change.\nagent: antz-orchestrator\n---\n\n$ARGUMENTS\n' \
+    "$MARKER" "$1"
+}
+
+render_pi_command() {
+  # $1 version. Pi prompt templates (docs/prompt-templates.md) take an
+  # optional description and argument-hint; the body runs in the invoking
+  # main session, which delegates through the pi-subagents `subagent` tool.
+  printf -- '---\n# %s version=%s -- do not edit by hand; regenerate with install.sh\ndescription: Recommended entry point for antz. Delegates to the antz-orchestrator subagent, which sequences specifier -> coder -> verifier for one change.\nargument-hint: [request]\n---\n\nDelegate the user'"'"'s request verbatim to the antz-orchestrator subagent via the subagent tool: $ARGUMENTS\n' \
     "$MARKER" "$1"
 }
 
@@ -251,9 +305,9 @@ usage() {
 }
 
 # The first positional argument names the client this invocation serves --
-# claude or opencode. It selects the agents directory the editor works in
-# and the client name the messages print. A missing or unknown client is a
-# usage error naming both valid values, and nothing is written.
+# claude, opencode, or pi. It selects the agents directory the editor works
+# in and the client name the messages print. A missing or unknown client is
+# a usage error naming all valid values, and nothing is written.
 case "${1:-}" in
   claude)
     CLIENT=claude
@@ -263,8 +317,12 @@ case "${1:-}" in
     CLIENT=opencode
     AGENTS_DIR="$HOME/.config/opencode/agents"
     ;;
+  pi)
+    CLIENT=pi
+    AGENTS_DIR="$HOME/.pi/agent/agents"
+    ;;
   *)
-    echo "Error: the first argument must be the client: claude or opencode." >&2
+    echo "Error: the first argument must be the client: claude, opencode, or pi." >&2
     usage
     exit 1
     ;;
@@ -504,6 +562,19 @@ render_set_model_command() {
       # enumeration fails or returns nothing.
       picker=$(emit_picker_opencode)
       ;;
+    pi)
+      short_desc='Configure or clear an installed antz agent'"'"'s model in Pi. Omitting --model/--clear opens an interactive model picker; the explicit flags edit the target file directly in this session; never delegates to a subagent.'
+      intro='Configure or clear the model: line in an already-installed Pi antz agent file'"'"'s frontmatter (`~/.pi/agent/agents/antz-<agent>.md`).'
+      extra_frontmatter='argument-hint: --agent <specifier|coder|verifier|orchestrator> [--model <value>|--clear]
+'
+      agents_path='$HOME/.pi/agent/agents'
+      # The option source is enumerated at invocation time via `pi
+      # --list-models`; no catalog is embedded. Pi core ships no question
+      # tool, so the picker asks through one only when the session actually
+      # exposes one and otherwise degrades to printing the enumerated ids
+      # and naming the explicit-flag re-invocation.
+      picker=$(emit_picker_pi)
+      ;;
     *) echo "Unknown client: $client" >&2; exit 1 ;;
   esac
 
@@ -548,6 +619,16 @@ emit_picker_opencode() {
 Step 4 -- Ask the user which model to assign to antz-<agent>, via the session's `question` tool. First, enumerate the available models at invocation time: run `opencode models` via the Bash tool; its output lists `provider/model` ids (for example `anthropic/claude-opus-4-5`). No model catalog is embedded in this command. Offer the enumerated `provider/model` ids as the question options; when the catalog is too large to present in one question, you may filter, group, or paginate the presentation sensibly (for example, the current session provider's models first) -- but the free-form option and the revert-to-default (clear) option must always remain offered, so no value is unreachable. If `opencode models` fails or returns no model ids, degrade instead of failing: still ask the question, with the question text stating that no models could be enumerated, offering only the free-form option and the revert-to-default (clear) option.
 
 Alongside any enumerated ids, ALWAYS offer an explicit `Type another value` free-form option (the `question` tool has no built-in free-text row) and the `Revert to default (clear)` option (choosing it runs the script with `--clear`). The question text must state the current state from Step 3 -- either "the currently configured model is <value>" or "no model is currently configured" -- and, when the current value exactly equals one of the offered options' value strings, that option is marked as the current one; otherwise no option is marked. A free-form answer is passed to the script verbatim, never validated or translated.
+PICKER
+}
+
+emit_picker_pi() {
+  cat <<'PICKER'
+Step 4 -- Enumerate the available models at invocation time: run `pi --list-models` via the Bash tool; its output lists `provider/model` ids (for example `nan/deepseek-v4-flash`). No model catalog is embedded in this command.
+
+Then ask the user which model to assign to antz-<agent> through the session's own question tool, WHEN the session exposes one (some Pi installations provide an `ask_user_question` tool; check whether it is available in this session). Offer the enumerated `provider/model` ids as the question options; when the catalog is too large to present in one question, you may filter, group, or paginate the presentation sensibly (for example, the current session provider's models first) -- but a free-form entry and the `Revert to default (clear)` option must always remain offered, so no value is unreachable. The question text must state the current state from Step 3 -- either "the currently configured model is <value>" or "no model is currently configured" -- and, when the current value exactly equals one of the offered options' value strings, that option is marked as the current one; otherwise no option is marked. A free-form answer is passed to the script verbatim, never validated or translated; `Revert to default (clear)` runs the script with `--clear`.
+
+When the session exposes no question tool, or `pi --list-models` fails or returns no model ids, degrade instead of failing or guessing: print the enumerated model ids (or state that none could be enumerated), state that this session cannot ask interactively, and ask the user to re-invoke the command with `--model <value>` or `--clear`. Write nothing in that path.
 PICKER
 }
 
@@ -712,6 +793,7 @@ changelog_shown=0
 
 [ "$want_claude" -eq 1 ] && report_version "Claude Code" "$HOME/.claude/agents/$specifier_name.md" "$version" "$changelog"
 [ "$want_opencode" -eq 1 ] && report_version "OpenCode" "$HOME/.config/opencode/agents/$specifier_name.md" "$version" "$changelog"
+[ "$want_pi" -eq 1 ] && report_version "Pi" "$HOME/.pi/agent/agents/$specifier_name.md" "$version" "$changelog"
 
 # The same three outcomes for each installed script artifact, keyed off its
 # own marker version, after the per-client report lines (libdirinstall-04).
@@ -755,6 +837,12 @@ for agent in $AGENTS; do
     content=$(render_opencode "$name" "$description" "$access" "$body" "$version")
     install_file "$HOME/.config/opencode/agents/$name.md" "$content"
   fi
+
+  if [ "$want_pi" -eq 1 ]; then
+    mkdir -p "$HOME/.pi/agent/agents"
+    content=$(render_pi "$name" "$description" "$access" "$body" "$version")
+    install_file "$HOME/.pi/agent/agents/$name.md" "$content"
+  fi
 done
 
 if [ "$want_claude" -eq 1 ]; then
@@ -767,6 +855,12 @@ if [ "$want_opencode" -eq 1 ]; then
   mkdir -p "$HOME/.config/opencode/commands"
   install_file "$HOME/.config/opencode/commands/antz.md" "$(render_opencode_command "$version")"
   install_file "$HOME/.config/opencode/commands/antz-set-model.md" "$(render_set_model_command opencode "$version")"
+fi
+
+if [ "$want_pi" -eq 1 ]; then
+  mkdir -p "$HOME/.pi/agent/prompts"
+  install_file "$HOME/.pi/agent/prompts/antz.md" "$(render_pi_command "$version")"
+  install_file "$HOME/.pi/agent/prompts/antz-set-model.md" "$(render_set_model_command pi "$version")"
 fi
 
 # The three orchestration scripts install in the same pass (libdirinstall-01/06).

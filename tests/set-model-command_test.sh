@@ -125,6 +125,31 @@ write_opencode_fixture() {
   } > "$dest"
 }
 
+write_pi_fixture() {
+  # $1 = dest path, $2 = agent name, $3 = model value (optional; omit for none).
+  # Mirrors render_pi's frontmatter shape (marker/version comment, then
+  # name/description/tools and the inheritance fields, a blank line, then the
+  # prompt body) closely enough to exercise the script's position/marker
+  # logic realistically.
+  dest="$1"; agent="$2"; model="${3:-}"
+  mkdir -p "$(dirname "$dest")"
+  {
+    echo '---'
+    echo '# antz:generated version=1.2.3 -- do not edit by hand; regenerate with install.sh'
+    echo "name: antz-$agent"
+    echo "description: Test description for $agent."
+    [ -n "$model" ] && echo "model: $model"
+    echo 'tools: read, grep, find, ls, bash, edit, write'
+    echo 'inheritProjectContext: true'
+    echo 'inheritSkills: true'
+    echo 'systemPromptMode: replace'
+    echo 'defaultContext: fresh'
+    echo '---'
+    echo ''
+    echo "Body text for $agent."
+  } > "$dest"
+}
+
 write_unmanaged_fixture() {
   # A same-named file that does NOT carry the antz:generated marker.
   dest="$1"; agent="$2"
@@ -217,14 +242,14 @@ test_command_install_01() {
 }
 
 # =============================================================================
-# command-install-02: same for OpenCode, at OpenCode's own paths -- and,
-# unlike /antz, with no "agent:" frontmatter field.
+# command-install-02: same for OpenCode and Pi, at each client's own paths --
+# and, unlike /antz, with no "agent:" frontmatter field.
 # =============================================================================
 test_command_install_02() {
   home=$(new_home)
   ok=0
 
-  ( cd "$SCRIPT_DIR" && HOME="$home" "$INSTALL_SH" --opencode >/dev/null 2>&1 )
+  ( cd "$SCRIPT_DIR" && HOME="$home" "$INSTALL_SH" --opencode --pi >/dev/null 2>&1 )
   dest="$home/.config/opencode/commands/antz-set-model.md"
 
   [ -f "$dest" ] || { echo "  $dest was not created"; ok=1; }
@@ -233,6 +258,18 @@ test_command_install_02() {
   grep -q '^agent:' "$dest" && { echo "  unexpected agent: field present"; ok=1; }
   grep -qi 'claude code' "$dest" && { echo "  body/frontmatter references Claude Code"; ok=1; }
   grep -qF '.claude/agents' "$dest" && { echo "  body references Claude Code's agent directory"; ok=1; }
+
+  # The Pi copy is a prompt template under ~/.pi/agent/prompts, scoped to Pi
+  # only, with the Pi path and the Pi enumeration command in its body.
+  pi_dest="$home/.pi/agent/prompts/antz-set-model.md"
+  [ -f "$pi_dest" ] || { echo "  $pi_dest was not created"; ok=1; }
+  grep -q 'antz:generated version=' "$pi_dest" || { echo "  pi copy missing the antz:generated marker"; ok=1; }
+  grep -q '^description:' "$pi_dest" || { echo "  pi copy missing description: field"; ok=1; }
+  grep -q '^agent:' "$pi_dest" && { echo "  pi copy carries an unexpected agent: field"; ok=1; }
+  grep -qF '.pi/agent/agents' "$pi_dest" || { echo "  pi copy body does not name Pi's agent directory"; ok=1; }
+  grep -qF 'pi --list-models' "$pi_dest" || { echo "  pi copy body does not instruct running 'pi --list-models'"; ok=1; }
+  grep -qF 'antz-set-model.sh" pi' "$pi_dest" || { echo "  pi copy body does not invoke the installed script with the pi client first"; ok=1; }
+  grep -qi 'opencode' "$pi_dest" && { echo "  pi copy body/frontmatter references OpenCode"; ok=1; }
 
   rm -rf "$home"
   return $ok
@@ -318,7 +355,7 @@ test_command_install_06() {
 
   ( cd "$SCRIPT_DIR" && HOME="$home" "$INSTALL_SH" --all >/dev/null 2>&1 )
 
-  for dest in "$home/.claude/commands/antz-set-model.md" "$home/.config/opencode/commands/antz-set-model.md"; do
+  for dest in "$home/.claude/commands/antz-set-model.md" "$home/.config/opencode/commands/antz-set-model.md" "$home/.pi/agent/prompts/antz-set-model.md"; do
     if grep -qE '\$[0-9]' "$dest"; then
       echo "  $dest contains a dollar-digit token the client would substitute at invocation time:"
       grep -nE '\$[0-9]' "$dest" | head -n5
@@ -368,7 +405,7 @@ test_picker_render_02() {
   home=$(new_home)
   ok=0
 
-  ( cd "$SCRIPT_DIR" && HOME="$home" "$INSTALL_SH" --opencode >/dev/null 2>&1 )
+  ( cd "$SCRIPT_DIR" && HOME="$home" "$INSTALL_SH" --opencode --pi >/dev/null 2>&1 )
   dest="$home/.config/opencode/commands/antz-set-model.md"
 
   grep -qF 'opencode models' "$dest" || { echo "  body does not instruct running 'opencode models'"; ok=1; }
@@ -377,6 +414,18 @@ test_picker_render_02() {
   # No embedded, hardcoded model list: none of the Claude Code vocabulary may leak in.
   for alias in 'fable' 'opusplan' 'sonnet[1m]' 'haiku'; do
     if grep -qF "$alias" "$dest"; then echo "  body embeds hardcoded model vocabulary: $alias"; ok=1; fi
+  done
+
+  # The Pi copy enumerates through `pi --list-models`, embeds no catalog, and
+  # names the degradation path for a session with no question tool.
+  pi_dest="$home/.pi/agent/prompts/antz-set-model.md"
+  grep -qF 'pi --list-models' "$pi_dest" || { echo "  pi body does not instruct running 'pi --list-models'"; ok=1; }
+  grep -qF 'Bash tool' "$pi_dest" || { echo "  pi body does not run the enumeration via the Bash tool"; ok=1; }
+  grep -qF 'provider/model' "$pi_dest" || { echo "  pi body does not describe the enumerated provider/model ids"; ok=1; }
+  grep -qF 'exposes no question tool' "$pi_dest" || { echo "  pi body lacks the no-question-tool degradation path"; ok=1; }
+  grep -qF 're-invoke the command with `--model <value>`' "$pi_dest" || { echo "  pi degradation does not name the explicit-flag re-invocation"; ok=1; }
+  for alias in 'fable' 'opusplan' 'sonnet[1m]' 'haiku'; do
+    if grep -qF "$alias" "$pi_dest"; then echo "  pi body embeds hardcoded model vocabulary: $alias"; ok=1; fi
   done
 
   rm -rf "$home"
@@ -394,11 +443,17 @@ test_picker_render_03() {
   ( cd "$SCRIPT_DIR" && HOME="$home" "$INSTALL_SH" --all >/dev/null 2>&1 )
   claude_dest="$home/.claude/commands/antz-set-model.md"
   opencode_dest="$home/.config/opencode/commands/antz-set-model.md"
+  pi_dest="$home/.pi/agent/prompts/antz-set-model.md"
 
   grep -qF 'AskUserQuestion' "$claude_dest" || { echo "  claude body does not instruct asking via AskUserQuestion"; ok=1; }
   grep -qF 'in this session' "$claude_dest" || { echo "  claude body does not ask in this session"; ok=1; }
   grep -qF '`question` tool' "$opencode_dest" || { echo "  opencode body does not instruct asking via the session's question tool"; ok=1; }
-  for dest in "$claude_dest" "$opencode_dest"; do
+  # Pi core ships no question tool, so its body must ask only WHILE the
+  # session exposes one and otherwise degrade to the explicit-flag path.
+  grep -qF "session's own question tool" "$pi_dest" || { echo "  pi body does not instruct asking via the session's own question tool"; ok=1; }
+  grep -qF 'WHEN the session exposes one' "$pi_dest" || { echo "  pi body does not gate the question on tool availability"; ok=1; }
+  grep -qF 'degrade instead of failing or guessing' "$pi_dest" || { echo "  pi body lacks the degradation rule"; ok=1; }
+  for dest in "$claude_dest" "$opencode_dest" "$pi_dest"; do
     grep -qF 'does not delegate to any of the four antz-* subagents' "$dest" \
       || { echo "  $dest lost the never-delegate rule"; ok=1; }
   done
@@ -459,7 +514,7 @@ test_picker_render_05() {
 
   ( cd "$SCRIPT_DIR" && HOME="$home" "$INSTALL_SH" --all >/dev/null 2>&1 )
 
-  for dest in "$home/.claude/commands/antz-set-model.md" "$home/.config/opencode/commands/antz-set-model.md"; do
+  for dest in "$home/.claude/commands/antz-set-model.md" "$home/.config/opencode/commands/antz-set-model.md" "$home/.pi/agent/prompts/antz-set-model.md"; do
     grep -qF 'before asking any question' "$dest" || { echo "  $dest missing the before-asking ordering"; ok=1; }
     grep -qF 'usage error' "$dest" || { echo "  $dest missing the argument validation list"; ok=1; }
     grep -qF 'unknown options' "$dest" || { echo "  $dest missing unknown options among the usage errors"; ok=1; }
@@ -529,6 +584,22 @@ model: anthropic/claude-opus-4-5" "$dest.orig" > "$expected"
 
   case "$out" in *antz-verifier*) ;; *) echo "  reply does not mention antz-verifier: $out"; ok=1 ;; esac
   case "$out" in *"model: anthropic/claude-opus-4-5"*) ;; *) echo "  reply does not confirm the model value: $out"; ok=1 ;; esac
+
+  # Pi: same insert-after-description position, before the tools line.
+  pi_dest="$home/.pi/agent/agents/antz-verifier.md"
+  write_pi_fixture "$pi_dest" verifier
+  cp "$pi_dest" "$pi_dest.orig"
+  pi_out=$(HOME="$home" sh "$SET_MODEL" pi --agent verifier --model nan/deepseek-v4-flash 2>&1)
+  pi_status=$?
+  [ "$pi_status" -eq 0 ] || { echo "  pi expected exit 0, got $pi_status ($pi_out)"; ok=1; }
+  grep -qxF 'model: nan/deepseek-v4-flash' "$pi_dest" || { echo "  pi missing the model line"; ok=1; }
+  pi_desc_line=$(grep -n '^description:' "$pi_dest" | head -n1 | cut -d: -f1)
+  pi_expected=$(mktemp)
+  sed "${pi_desc_line}a\\
+model: nan/deepseek-v4-flash" "$pi_dest.orig" > "$pi_expected"
+  cmp -s "$pi_expected" "$pi_dest" || { echo "  pi file differs from expected (insert after description, before tools)"; ok=1; }
+  rm -f "$pi_expected"
+  case "$pi_out" in *"(pi)"*) ;; *) echo "  pi reply does not name the pi client: $pi_out"; ok=1 ;; esac
 
   rm -rf "$home"
   return $ok
@@ -731,9 +802,12 @@ test_set_model_cmd_10() {
   home=$(new_home)
   claude_dest="$home/.claude/agents/antz-coder.md"
   opencode_dest="$home/.config/opencode/agents/antz-coder.md"
+  pi_dest="$home/.pi/agent/agents/antz-coder.md"
   write_claude_fixture "$claude_dest" coder
   write_opencode_fixture "$opencode_dest" coder
+  write_pi_fixture "$pi_dest" coder
   cp "$opencode_dest" "$opencode_dest.orig"
+  cp "$pi_dest" "$pi_dest.orig"
   ok=0
 
   out=$(HOME="$home" sh "$SET_MODEL" claude --agent coder --model opus 2>&1)
@@ -742,6 +816,7 @@ test_set_model_cmd_10() {
   [ "$status" -eq 0 ] || { echo "  expected exit 0, got $status ($out)"; ok=1; }
   grep -qxF 'model: opus' "$claude_dest" || { echo "  claude file did not gain 'model: opus'"; ok=1; }
   cmp -s "$opencode_dest.orig" "$opencode_dest" || { echo "  opencode file for the same agent was touched"; ok=1; }
+  cmp -s "$pi_dest.orig" "$pi_dest" || { echo "  pi file for the same agent was touched"; ok=1; }
 
   rm -rf "$home"
   return $ok
@@ -942,7 +1017,7 @@ test_setmodel_04() {
 
   ( cd "$SCRIPT_DIR" && env -u XDG_CONFIG_HOME HOME="$home" "$INSTALL_SH" --all >/dev/null 2>&1 )
 
-  for cmd_file in "$home/.claude/commands/antz-set-model.md" "$home/.config/opencode/commands/antz-set-model.md"; do
+  for cmd_file in "$home/.claude/commands/antz-set-model.md" "$home/.config/opencode/commands/antz-set-model.md" "$home/.pi/agent/prompts/antz-set-model.md"; do
     [ -f "$cmd_file" ] || { echo "  $cmd_file missing"; ok=1; continue; }
     grep -q '^```sh$' "$cmd_file" && { echo "  $cmd_file still embeds a script fence"; ok=1; }
     arg_lines=$(grep -cF '$ARGUMENTS' "$cmd_file")
@@ -977,20 +1052,20 @@ test_setmodel_04() {
 setup_installed_script
 
 run_test "command-install-01: installs the Claude Code copy with expected frontmatter (optional --model/--clear group, picker body), scoped to claude only" test_command_install_01
-run_test "command-install-02: installs the OpenCode copy with no agent: field, scoped to opencode only" test_command_install_02
+run_test "command-install-02: installs the OpenCode and Pi copies with no agent: field, each scoped to its own client's paths" test_command_install_02
 run_test "command-install-03: re-running install.sh --claude is idempotent (no backup file)" test_command_install_03
 run_test "command-install-04: a pre-existing non-antz-managed file at the same path is backed up" test_command_install_04
 run_test "command-install-05: flag-less install.sh installs only for the detected client" test_command_install_05
 run_test "command-install-06: emitted bodies carry no client-substitutable dollar-digit tokens; ARGUMENTS placeholder appears exactly once, as the injection point" test_command_install_06
 
 run_test "picker-render-01: claude body embeds the full documented alias vocabulary, refreshed only by re-running install.sh" test_picker_render_01
-run_test "picker-render-02: opencode body enumerates via 'opencode models' through the Bash tool, with no embedded catalog" test_picker_render_02
-run_test "picker-render-03: each body instructs its own native question mechanism; never-delegate rule preserved in both" test_picker_render_03
+run_test "picker-render-02: opencode and pi bodies enumerate via their client's own model listing, with no embedded catalog, and pi names the no-question-tool degradation" test_picker_render_02
+run_test "picker-render-03: each body instructs its own native question mechanism; never-delegate rule preserved in all three" test_picker_render_03
 run_test "picker-render-04: installed script's exactly-one contract unchanged; body invokes the script only with --model or --clear" test_picker_render_04
-run_test "picker-render-05: both bodies state the fail-fast ordering (validate, marker pre-flight, read current model) before any question" test_picker_render_05
+run_test "picker-render-05: all three bodies state the fail-fast ordering (validate, marker pre-flight, read current model) before any question" test_picker_render_05
 
 run_test "set-model-cmd-01: adds model: line after description, before tools (Claude Code, no existing model)" test_set_model_cmd_01
-run_test "set-model-cmd-02: adds model: line after description, before mode (OpenCode, no existing model)" test_set_model_cmd_02
+run_test "set-model-cmd-02: adds model: line after description, before mode/tools (OpenCode and Pi, no existing model)" test_set_model_cmd_02
 run_test "set-model-cmd-03: replaces an already-configured model: line in place" test_set_model_cmd_03
 run_test "set-model-cmd-04: --clear removes an existing model: line entirely" test_set_model_cmd_04
 run_test "set-model-cmd-05: --clear with no existing model: line is a no-op" test_set_model_cmd_05
@@ -999,7 +1074,7 @@ run_test "set-model-cmd-07: refuses to touch a same-named file without the antz:
 run_test "set-model-cmd-08: rejects an unknown agent name, naming the four valid agents, before touching any file" test_set_model_cmd_08
 run_test "set-model-cmd-09: usage error when neither --model nor --clear is given (extra-args=\"\")" test_set_model_cmd_09_neither
 run_test "set-model-cmd-09: usage error when both --model and --clear are given (extra-args=\"--model opus --clear\")" test_set_model_cmd_09_both
-run_test "set-model-cmd-10: invoking the claude copy never touches the opencode file for the same agent" test_set_model_cmd_10
+run_test "set-model-cmd-10: invoking the claude copy never touches the opencode or pi file for the same agent" test_set_model_cmd_10
 run_test "set-model-cmd-11: invoking for one agent never touches another agent's file" test_set_model_cmd_11
 run_test "set-model-cmd-12: the supplied model value is written verbatim, unvalidated" test_set_model_cmd_12
 

@@ -74,6 +74,7 @@ agent_md() {
   case "$2" in
     claude) printf '%s/.claude/agents/antz-%s.md' "$1" "$3" ;;
     opencode) printf '%s/.config/opencode/agents/antz-%s.md' "$1" "$3" ;;
+    pi) printf '%s/.pi/agent/agents/antz-%s.md' "$1" "$3" ;;
   esac
 }
 
@@ -184,6 +185,14 @@ test_render_01() {
   [ -f "$f" ] || { echo "  missing rendered file: $f"; return 1; }
   [ "$(tools_line "$f")" = "Read, Grep, Glob, Bash, Edit, Write, Skill" ] \
     || { echo "  tools line is: $(tools_line "$f")"; return 1; }
+  # Pi carries the same readwrite grant in its own lowercase vocabulary,
+  # plus the skills-catalog inheritance the roles' ## Skills sections need.
+  pf=$(agent_md "$WORK_HOME" pi "$t1_role")
+  [ -f "$pf" ] || { echo "  missing rendered Pi file: $pf"; return 1; }
+  [ "$(tools_line "$pf")" = "read, grep, find, ls, bash, edit, write" ] \
+    || { echo "  Pi tools line is: $(tools_line "$pf")"; return 1; }
+  grep -qxF 'inheritSkills: true' "$pf" \
+    || { echo "  Pi render lost inheritSkills: true"; return 1; }
   return 0
 }
 
@@ -215,6 +224,8 @@ test_render_04() {
   cf=$(agent_md "$READONLY_HOME" claude specifier)
   of=$(agent_md "$READONLY_HOME" opencode specifier)
   oc=$(agent_md "$ORCH_HOME" claude orchestrator)
+  pf_ro=$(agent_md "$READONLY_HOME" pi specifier)
+  pf_oo=$(agent_md "$ORCH_HOME" pi orchestrator)
   [ "$(tools_line "$cf")" = "Read, Grep, Glob, Bash" ] \
     || { echo "  readonly tools line is: $(tools_line "$cf")"; ok=1; }
   case "$(tools_line "$cf")" in
@@ -228,7 +239,23 @@ test_render_04() {
   case "$(tools_line "$oc")" in
     *Skill*) echo "  orchestrateonly tools line grants Skill: $(tools_line "$oc")"; ok=1 ;;
   esac
-  for f in "$cf" "$of" "$oc"; do
+  # Pi mapping levels, forced renders: readonly grants no edit/write, and
+  # orchestrateonly adds exactly the delegation tool over readonly.
+  [ "$(tools_line "$pf_ro")" = "read, grep, find, ls, bash" ] \
+    || { echo "  Pi readonly tools line is: $(tools_line "$pf_ro")"; ok=1; }
+  case "$(tools_line "$pf_ro")" in
+    *edit*|*write*|*subagent*) echo "  Pi readonly tools line grants a writer or delegator: $(tools_line "$pf_ro")"; ok=1 ;;
+  esac
+  [ "$(tools_line "$pf_oo")" = "read, grep, find, ls, bash, subagent" ] \
+    || { echo "  Pi orchestrateonly tools line is: $(tools_line "$pf_oo")"; ok=1; }
+  case "$(tools_line "$pf_oo")" in
+    *edit*|*write*) echo "  Pi orchestrateonly tools line grants a writer: $(tools_line "$pf_oo")"; ok=1 ;;
+  esac
+  # The Pi skills-catalog inheritance mirrors the Claude Skill grant: only
+  # the readwrite roles see it.
+  grep -qxF 'inheritSkills: false' "$pf_ro" || { echo "  Pi readonly render inherits the skills catalog"; ok=1; }
+  grep -qxF 'inheritSkills: false' "$pf_oo" || { echo "  Pi orchestrateonly render inherits the skills catalog"; ok=1; }
+  for f in "$cf" "$of" "$oc" "$pf_ro" "$pf_oo"; do
     grep -qF -- "$MARKER_LINE_PREFIX" "$f" || { echo "  marker version prefix missing in $f"; ok=1; }
     grep -qF -- "$MARKER_LINE_SUFFIX" "$f" || { echo "  marker suffix missing in $f"; ok=1; }
   done

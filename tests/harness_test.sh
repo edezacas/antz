@@ -299,9 +299,10 @@ test_harness_01_sourced_suite_defines_no_helpers() {
   return 0
 }
 
-# The 16 files a full install.sh --all render produces (the documented
-# install surface: 4 agents + 2 commands per client, 4 libdir scripts) --
-# the literal completeness set for "returns the complete installed tree".
+# The 21 files a full install.sh --all render produces (the documented
+# install surface: 4 agents + 2 commands per client, across 3 clients, plus
+# 3 libdir scripts) -- the literal completeness set for "returns the
+# complete installed tree".
 INSTALLED_TREE_FILES='
 .claude/agents/antz-coder.md
 .claude/agents/antz-orchestrator.md
@@ -318,6 +319,12 @@ INSTALLED_TREE_FILES='
 .config/opencode/agents/antz-verifier.md
 .config/opencode/commands/antz.md
 .config/opencode/commands/antz-set-model.md
+.pi/agent/agents/antz-coder.md
+.pi/agent/agents/antz-orchestrator.md
+.pi/agent/agents/antz-specifier.md
+.pi/agent/agents/antz-verifier.md
+.pi/agent/prompts/antz.md
+.pi/agent/prompts/antz-set-model.md
 '
 
 fx_assert_complete_tree() {
@@ -327,7 +334,7 @@ fx_assert_complete_tree() {
     [ -f "$home/$f" ] || { echo "  installed tree missing $f"; return 1; }
   done
   n=$(find "$home" -type f | wc -l | tr -d ' ')
-  [ "$n" -eq 15 ] || { echo "  installed tree has $n files, expected the 15 contract files"; return 1; }
+  [ "$n" -eq 21 ] || { echo "  installed tree has $n files, expected the 21 contract files"; return 1; }
   return 0
 }
 
@@ -421,8 +428,8 @@ test_harness_02_render_runs_with_sandbox_home_and_cleared_xdg() {
 test_harness_02_no_helper_writes_to_real_user_config() {
   # The user-facing half of the hermeticity guarantee: with the real HOME
   # ambient (as every suite runs), the render helpers must touch neither
-  # "~/.claude" nor "~/.config/opencode" -- the install can only land in
-  # its sandbox.
+  # "~/.claude" nor "~/.config/opencode" nor "~/.pi/agent" -- the install
+  # can only land in its sandbox.
   d=$(new_tmp_dir)
   marker="$d/marker"; : > "$marker"
   env TMPDIR="$d" bash -c '
@@ -431,7 +438,7 @@ test_harness_02_no_helper_writes_to_real_user_config() {
     stage_checkout "$t" || exit 2
     render_tree "$t" >/dev/null || exit 3
   ' _ "$HARNESS_LIB" >/dev/null 2>&1 || { echo "  render fixture failed"; return 1; }
-  for real in "$HOME/.claude" "$HOME/.config/opencode" "$HOME/.config/antz"; do
+  for real in "$HOME/.claude" "$HOME/.config/opencode" "$HOME/.config/antz" "$HOME/.pi/agent"; do
     [ -e "$real" ] || continue
     [ -z "$(find "$real" -newer "$marker" -print -quit)" ] \
       || { echo "  helper wrote into the real config: $real"; return 1; }
@@ -498,6 +505,13 @@ test_harness_03_render_of_a_different_staged_tree_performs_its_own_render() {
     && { echo "  B rendered the readwrite tools despite the flipped meta"; return 1; }
   require "$homeA/.claude/agents/antz-coder.md" "Edit, Write, Skill" \
     || { echo "  A render lost the readwrite mapping"; return 1; }
+  # The same flipped meta reaches Pi's tools allowlist (readonly -> no edit).
+  require "$homeB/.pi/agent/agents/antz-coder.md" "tools: read, grep, find, ls, bash" \
+    || { echo "  B Pi render did not carry B's staged meta"; return 1; }
+  refuse "$homeB/.pi/agent/agents/antz-coder.md" "edit, write" \
+    || { echo "  B rendered the readwrite tools for Pi despite the flipped meta"; return 1; }
+  require "$homeA/.pi/agent/agents/antz-coder.md" "tools: read, grep, find, ls, bash, edit, write" \
+    || { echo "  A Pi render lost the readwrite mapping"; return 1; }
   ! cmp -s "$homeA/.claude/agents/antz-coder.md" "$homeB/.claude/agents/antz-coder.md" \
     || { echo "  A and B rendered identical agents from different trees"; return 1; }
   return 0

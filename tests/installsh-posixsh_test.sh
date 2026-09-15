@@ -165,15 +165,15 @@ posixsh_03_execute() {
   home=$(new_tmp_dir)/home
   mkdir -p "$home"
   err=$(new_tmp_dir)/err.txt
-  # A sanitized PATH: no claude/opencode CLI, and HOME with neither client
-  # config directory -- so neither client is detected and the no-flag run
-  # must refuse. The refusal happens after full-file parse (the script only
-  # reaches its argument/detection logic having parsed the whole file).
+  # A sanitized PATH: no claude/opencode/pi CLI, and HOME with none of the
+  # client config directories -- so no client is detected and the no-flag
+  # run must refuse. The refusal happens after full-file parse (the script
+  # only reaches its argument/detection logic having parsed the whole file).
   rc=0
   env -i HOME="$home" PATH="/usr/bin:/bin" sh "$INSTALL_SH" > /dev/null 2>"$err" || rc=$?
   [ "$rc" -ne 0 ] || { echo "expected a failure exit, got 0"; return 1; }
   [ "$rc" -lt 2 ] || { echo "expected a shell-refusal-free exit (parse/usage failure), got $rc: $(cat "$err")"; return 1; }
-  grep -q "Neither Claude Code nor OpenCode detected" "$err" || {
+  grep -q "Neither Claude Code, OpenCode, nor Pi detected" "$err" || {
     echo "refusal message missing from stderr: $(cat "$err")"
     return 1
   }
@@ -218,21 +218,28 @@ posixsh_04() {
   cat > "$exp" <<'INVENTORY'
 Claude Code: fresh install of antz @VERSION@
 OpenCode: fresh install of antz @VERSION@
+Pi: fresh install of antz @VERSION@
 antz-flow.sh: fresh install of antz @VERSION@
 antz-probe.sh: fresh install of antz @VERSION@
 antz-set-model.sh: fresh install of antz @VERSION@
 Installed /.claude/agents/antz-specifier.md
 Installed /.config/opencode/agents/antz-specifier.md
+Installed /.pi/agent/agents/antz-specifier.md
 Installed /.claude/agents/antz-coder.md
 Installed /.config/opencode/agents/antz-coder.md
+Installed /.pi/agent/agents/antz-coder.md
 Installed /.claude/agents/antz-verifier.md
 Installed /.config/opencode/agents/antz-verifier.md
+Installed /.pi/agent/agents/antz-verifier.md
 Installed /.claude/agents/antz-orchestrator.md
 Installed /.config/opencode/agents/antz-orchestrator.md
+Installed /.pi/agent/agents/antz-orchestrator.md
 Installed /.claude/commands/antz.md
 Installed /.claude/commands/antz-set-model.md
 Installed /.config/opencode/commands/antz.md
 Installed /.config/opencode/commands/antz-set-model.md
+Installed /.pi/agent/prompts/antz.md
+Installed /.pi/agent/prompts/antz-set-model.md
 Installed /.config/antz/scripts/antz-flow.sh
 Installed /.config/antz/scripts/antz-probe.sh
 Installed /.config/antz/scripts/antz-set-model.sh
@@ -309,9 +316,11 @@ posixshfix_01() {
   # The documented inventory and its order are embedded in the clause.
   require "$b4" 'Claude Code: fresh install of antz @VERSION@' || ok=1
   require "$b4" 'OpenCode: fresh install of antz @VERSION@' || ok=1
+  require "$b4" 'Pi: fresh install of antz @VERSION@' || ok=1
   require "$b4" 'antz-set-model.sh: fresh install of antz @VERSION@' || ok=1
   require "$b4" 'Installed /.claude/agents/antz-specifier.md' || ok=1
   require "$b4" 'Installed /.config/opencode/commands/antz-set-model.md' || ok=1
+  require "$b4" 'Installed /.pi/agent/prompts/antz-set-model.md' || ok=1
   require "$b4" 'Installed /.config/antz/scripts/antz-set-model.sh' || ok=1
   # Order is asserted by the whole-report cmp, never by a counted view.
   require "$b4" 'cmp -s' || ok=1

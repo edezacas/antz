@@ -54,17 +54,18 @@ Using antz turns "chat with an agent until something works" into a repeatable pi
 Currently compatible with:
 - Claude Code
 - OpenCode
+- Pi
 
 ## Requirements
 
 - **`git`** — required to run `/antz`. Every flow is marked by its own branch `antz/<slug>`, so the orchestrator needs `git` on `PATH` and to be run inside a git repository with at least one commit. It fails closed (never falls back to an unbranched mode) if either is missing — install `git` and/or run `git init` plus an initial commit yourself first.
 - **POSIX `sh`** — `install.sh` and the scripts the orchestrator runs (git flow, status probe, skills derivation — source files under `scripts/orchestration/`, injected into the rendered orchestrator) are plain `sh`, no bash-only syntax; any POSIX-compliant shell works.
 - **`curl`** — only needed to install without a local checkout (`curl | sh`, and `install.sh --check` run the same way); a local checkout installs from disk instead.
-- Claude Code and/or OpenCode installed, for `install.sh` to detect and target.
+- Claude Code, OpenCode, and/or Pi installed, for `install.sh` to detect and target.
 
 # Install
 
-Renders the agent definitions under `agents/prompts/` + `agents/meta/` into native subagent files for whichever of Claude Code / OpenCode are detected, and installs them into that client's global agents directory (`~/.claude/agents/`, `~/.config/opencode/agents/`).
+Renders the agent definitions under `agents/prompts/` + `agents/meta/` into native subagent files for whichever of Claude Code / OpenCode / Pi are detected, and installs them into that client's global agents directory (`~/.claude/agents/`, `~/.config/opencode/agents/`, `~/.pi/agent/agents/`).
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/edezacas/antz/master/install.sh | sh
@@ -84,14 +85,15 @@ Or, from a local checkout:
 ./install.sh            # auto-detect installed clients
 ./install.sh --claude    # force Claude Code only
 ./install.sh --opencode  # force OpenCode only
-./install.sh --all       # force both
+./install.sh --pi        # force Pi only
+./install.sh --all       # force all three
 ```
 
 Re-running is safe: files this script generated are marked and get overwritten in place; a pre-existing, unrelated agent file with the same name is backed up (`<file>.bak.<timestamp>`) instead of being silently overwritten.
 
 ## Usage
 
-Run `/antz <your request>` in Claude Code or OpenCode after installing. It delegates to `antz-orchestrator`, which sequences `specifier -> coder -> verifier` for one change, picking up correctly even if interrupted and resumed later. Every change gets its own marker branch `antz/<slug>`, while all work stays uncommitted in your checkout; the underlying roles are also directly invokable for manual/expert use outside any flow.
+Run `/antz <your request>` in Claude Code, OpenCode, or Pi after installing. It delegates to `antz-orchestrator`, which sequences `specifier -> coder -> verifier` for one change, picking up correctly even if interrupted and resumed later. Every change gets its own marker branch `antz/<slug>`, while all work stays uncommitted in your checkout; the underlying roles are also directly invokable for manual/expert use outside any flow.
 
 `/antz-set-model` configures or clears the `model:` frontmatter line of one installed antz agent file, per agent and per client (`--agent` is one of `specifier|coder|verifier|orchestrator`). It edits the file directly in the invoking session and never delegates to any `antz-*` subagent:
 
@@ -101,7 +103,7 @@ Run `/antz <your request>` in Claude Code or OpenCode after installing. It deleg
 /antz-set-model --agent coder --clear                            # remove the model: line (client's default model)
 ```
 
-Omitting `--model`/`--clear` opens the interactive picker: on OpenCode it enumerates models at invocation time via `opencode models`; on Claude Code it offers the documented alias vocabulary (`sonnet`, `opus`, `haiku`, ...). Both pickers always offer a free-form entry and a revert-to-default option, and argument/install-state validation happens before any question is asked.
+Omitting `--model`/`--clear` opens the interactive picker: on OpenCode it enumerates models at invocation time via `opencode models`; on Pi it enumerates them via `pi --list-models` and asks through the session's question tool when one is available, degrading to the explicit-flag re-invocation when it is not; on Claude Code it offers the documented alias vocabulary (`sonnet`, `opus`, `haiku`, ...). Every picker always offers a free-form entry and a revert-to-default option, and argument/install-state validation happens before any question is asked.
 
 ## Updating
 
