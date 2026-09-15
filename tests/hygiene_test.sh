@@ -19,6 +19,12 @@
 #     "hygiene:working-root-exception-begin" / "...-end"; the marker pair
 #     names no other suite.
 #
+#   hygiene-04: the scans are pure source scans -- they read no
+#     spdd/changes/ content, query no git state, and invoke no install.sh.
+#     Purity is what makes them era-independent: the identical scans answer
+#     the same way whether the change is in flight, committed, or archived,
+#     so no era-specific test is needed.
+#
 # Discovery contract (shared): a suite is any "<scan root>/*_test.sh" file;
 # tests/bash32-sh.sh and tests/harness.sh are helpers, not suites.
 #
@@ -80,6 +86,8 @@ function has_tool(line) {
   return line ~ /(^|[^A-Za-z0-9_$.])(grep|awk|sed|cmp|diff|cat|head|tail|sort|xargs|find|require|refuse|extract_section|extract_bullet_line|extract_bullet|extract_line|extract_fn)([^A-Za-z0-9_$]|$)/ || line ~ /(^|[ \t;&|(`$])[ \t]*(sh|bash|source|eval)([ \t]|$)/ || line ~ /(^|[ \t;&|(`$])[ \t]+\.[ \t]+["'$]/
 }
 AWK
+
+printf '%s\n' '{ print lex_strip($0) }' > "$HYG_AWK/strip.awk"
 
 cat > "$HYG_AWK/scan_suite_coupling.awk" <<'AWK'
 # laws 1+2. -v siblings=<newline-joined existing basenames>. One process over
@@ -509,6 +517,61 @@ test_hygiene_03_planted_violations_are_named() {
   return 0
 }
 
+# The scan drivers that must stay pure source reads: no git query, no
+# spdd/changes/ content, no install.sh invocation. Purity is what makes the
+# scans era-independent without an era-specific test.
+PURITY_FNS="discover_suites fixture_copy_root scan_suite_coupling scan_head_compare scan_prose_pin"
+
+purity_violations() {
+  # $1 = suite file to scan. Prints one line per violation, naming the driver.
+  # Comments are stripped first (a comment that merely mentions git is prose,
+  # not a call), so the git pattern can be the honest one: a git word in
+  # command position -- bare, inside $( ), after a pipe, or in backticks.
+  src="$1"
+  for fn in $PURITY_FNS; do
+    body="$(new_tmp_dir)/body"
+    clean="$body.clean"
+    awk -v fn="$fn() {" 'index($0, fn) == 1 { flag = 1 } flag { print } flag && $0 == "}" { exit }' \
+        "$src" > "$body"
+    [ -s "$body" ] || { printf '%s: driver %s is missing\n' "$src" "$fn"; continue; }
+    # stripper.awk is a function library, not a filter: it prints nothing on
+    # its own, so the call needs an explicit action (silently-empty output
+    # here would make every check below vacuous).
+    awk -f "$HYG_AWK/stripper.awk" -f "$HYG_AWK/strip.awk" "$body" > "$clean"
+    grep -E '(^|[^A-Za-z0-9_])git([ \t]|$)' "$clean" | sed "s|^|$fn: runs git: |"
+    grep 'spdd/chan' "$clean" | sed "s|^|$fn: reads spdd/changes content: |"
+    grep 'install\.sh' "$clean" | sed "s|^|$fn: invokes install.sh: |"
+  done
+  # the three matchers' own awk bodies carry the git patterns by design, so
+  # what is checked there is only the change-dir read.
+  for p in scan_suite_coupling scan_head_compare scan_prose_pin; do
+    grep 'spdd/chan' "$HYG_AWK/$p.awk" | sed "s|^|$p.awk: reads spdd/changes content: |"
+  done
+}
+
+test_hygiene_04_scans_are_pure_source_scans() {
+  v=$(purity_violations "$SCRIPT_DIR/tests/$HYGIENE_SELF")
+  [ -z "$v" ] || { printf '  a scan driver is not a pure source read:\n%s\n' "$v"; return 1; }
+  return 0
+}
+
+test_hygiene_04_planted_violation_is_named() {
+  # no vacuous pass: a git call planted inside a driver must be named
+  d="$(new_tmp_dir)"
+  awk '{ print; if ($0 == "discover_suites() {") print "  planted=$(git rev-parse HEAD)" }' \
+    "$SCRIPT_DIR/tests/$HYGIENE_SELF" > "$d/hygiene_test.sh"
+  v=$(purity_violations "$d/hygiene_test.sh")
+  printf '%s\n' "$v" | grep -q 'discover_suites: runs git:' \
+    || { echo "  a planted git call inside discover_suites was not named"; return 1; }
+  # ... and a planted change-dir read must be named too
+  awk '{ print; if ($0 == "discover_suites() {") print "  planted=$(cat spdd/changes/x/README.md)" }' \
+    "$SCRIPT_DIR/tests/$HYGIENE_SELF" > "$d/hygiene_test.sh"
+  v=$(purity_violations "$d/hygiene_test.sh")
+  printf '%s\n' "$v" | grep -q 'discover_suites: reads spdd/changes content:' \
+    || { echo "  a planted change-dir read was not named"; return 1; }
+  return 0
+}
+
 # ---- run everything -------------------------------------------------------------
 
 run_test "hygiene-01: no suite executes another suite or asserts another existing suite's source content or output (the real tests/ scans clean, the discovery contract holds, self-reads and nonexistent fixture names carve out)" test_hygiene_01_no_suite_reads_another_suite
@@ -517,5 +580,7 @@ run_test "hygiene-02: no suite compares the real tree against git HEAD and none 
 run_test "hygiene-02: planted merge-base, show HEAD:, diff --quiet HEAD, show \$base:, and own-file HEAD byte-pin are each named with file and line (no vacuous pass)" test_hygiene_02_planted_violations_are_named
 run_test "hygiene-03: no suite pins an exact prose phrase of a prompt or doc; the Working-Root triplication check in roles_test.sh is the sole exception and the only marker carrier" test_hygiene_03_no_suite_pins_prompt_or_doc_prose
 run_test "hygiene-03: planted prose greps, derived-extract pins, and prose-vs-embedded byte-compares are named, while live-vs-live comparisons, quoted needles, and comment lines are not (no vacuous pass)" test_hygiene_03_planted_violations_are_named
+run_test "hygiene-04: the scans are pure source scans -- no git query of the working tree, no spdd/changes/ read, no install.sh invocation -- which is what makes them era-independent" test_hygiene_04_scans_are_pure_source_scans
+run_test "hygiene-04: a planted git call and a planted change-dir read inside a scan driver are each named (no vacuous pass)" test_hygiene_04_planted_violation_is_named
 
 finish_suite
