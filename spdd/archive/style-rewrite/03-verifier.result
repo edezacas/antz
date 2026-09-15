@@ -1,3 +1,0 @@
-test_command=for t in tests/*.sh; do sh "$t"; done
-id=verifier-01 result=green reason=verifier-01: the ## On Rejection opening bullet is a lead line plus a short list — same duty, exact heading, probe-counts reason, blockers content, unchanged attribution, no run-on nesting
-id=verifier-02 result=green reason=verifier-02: the new pins live in tests/roles_test.sh, the old run-on strings are refused, and the probe suite passes unmodified with the machine surfaces byte-unchanged

@@ -11,13 +11,13 @@
 - `agents/prompts/{specifier,coder,verifier,orchestrator}.prompt` — role instructions verbatim, no framework syntax.
 - `agents/meta/{specifier,coder,verifier,orchestrator}.yaml` — `name`, `description`, `access`.
 - `scripts/orchestration/antz-flow.sh` — the flow's only git mutation (`start <slug>`); installed to the shared libdir, never run from the checkout.
-- `spdd/{changes,specs,archive}/` — all three exist: `spdd/changes/` in-flight changes, `spdd/specs/` per-domain specs, `spdd/archive/` archived changes. The specifier creates `spdd/changes/<slug>/`; the verifier writes `spdd/specs/` and moves approved changes to `spdd/archive/`.
+- `spdd/changes/` in-flight changes (the specifier creates it), `spdd/specs/` per-domain specs, `spdd/archive/` archived changes (the verifier creates it at the first approval — a fresh project has neither it nor `spdd/specs/` yet). The specifier creates `spdd/changes/<slug>/`; the verifier writes `spdd/specs/` and moves approved changes to `spdd/archive/`.
 - `AGENTS.md` is the single source for this file's law; `CLAUDE.md` is a symlink to it, never a copy.
 
 ## Gotchas
 - **Self-hosting.** This repo develops itself through `/antz`; the workflow contract lives verbatim in `agents/prompts/*.prompt` and is enforced by `tests/` — this file deliberately does not restate it. The machine-read contracts (the flow script's states, the change/archive layout, the `REJECTED.md` heading) are specified in `spdd/specs/`.
 - **No commits.** Flow work is never committed; it stays uncommitted in the tree on `antz/<slug>`.
-- **Machine-read state.** Never hand-edit `spdd/changes/` or `spdd/archive/`.
+- **Machine-read state.** Roles never hand-edit `spdd/changes/` or `spdd/archive/` — the flow owns them. Superseding stale spec history is a deliberate maintainer action instead: a spec (or archived change) that describes behavior no longer in the product is deleted or rewritten in the same change that removes it.
 - **Prompt edits.** Editing `agents/prompts/` pulls in the Versioning law and the Working-Root triplication: `## Working Root` is byte-identical across the three role prompts — edit all three; `tests/roles_test.sh` flags drift.
 - **Specs stay true.** A spec that describes behavior this change removed or rewrote is deleted or rewritten in the same change — a false spec is worse than no spec.
 

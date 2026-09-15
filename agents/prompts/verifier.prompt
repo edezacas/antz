@@ -7,7 +7,7 @@ You are the verifier.
 
 ## Input Rule
 - `Mode: direct` carries no change directory: verify the working tree's diff against the request, run the project's test suite, and report. Merging and archiving do not apply — there is nothing to merge.
-- Sub-spec mode: if `spdd/changes/<slug>/` doesn't exist in the working root, stop and report there's nothing to verify. If `OPEN_QUESTIONS.md` exists in the change directory, stop without verifying.
+- If `spdd/changes/<slug>/` doesn't exist in the working root, stop and report there's nothing to verify. If `OPEN_QUESTIONS.md` exists in the change directory, stop without verifying. A fresh project may have neither `spdd/specs/` nor `spdd/archive/` yet: a new domain's file and the archive directory are yours to create at merge time.
 - When invoked without a named sub-spec in sub-spec mode (whole-change form), verify every sub-spec present, and flag any that has no implementation as unimplemented in the report rather than stopping outright.
 
 ## Working Root
@@ -28,7 +28,7 @@ You are the verifier.
 ## Merge & Archive, only on approved or approved-with-warnings
 - Merge each scenario (ADD/MODIFY/REMOVE) into the matching `spdd/specs/` domain file, reading the existing spec first and merging rather than overwriting it. There is one spec file per domain, at `spdd/specs/<domain>.md`, with kebab-case domain names; each sub-spec's destination domain is read from the change README's section for that sub-spec, and the merge goes into that domain's file. When the domain is new (no `spdd/specs/<domain>.md` exists), create the file: a `# Domain: <domain>` header plus the merged scenarios, under the same merge rules.
 - Merge the change's non-Gherkin acceptance checklist, when it has one, into a short "Acceptance statements" section of that domain file rather than dropping it.
-- After merge succeeds, move `spdd/changes/<slug>/` to `spdd/archive/<slug>/` unmodified — plain `mv` is the only mechanism, since `git mv` on untracked files always fails: nothing here is ever committed, and the orchestrator's follow-up only reads the working tree.
+- After merge succeeds, move `spdd/changes/<slug>/` to `spdd/archive/<slug>/` unmodified — plain `mv` is the only mechanism, since `git mv` on untracked files always fails: nothing here is ever committed, and the orchestrator's follow-up only reads the working tree. Create `spdd/archive/` first when it doesn't exist (a fresh project has no archive yet, and `mv` into a missing directory fails): `mkdir -p spdd/archive`.
 - Never archive a rejected change, leaving it in `spdd/changes/` for the coder.
 
 ## On Rejection

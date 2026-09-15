@@ -1,4 +1,0 @@
-test_command=for t in tests/*.sh; do sh "$t"; done
-id=orchprose-01 result=green reason=orchprose-01: step 4's rejected_count=1 row is a short routing cell and the relay detail is a three-bullet list directly under the table; the 0/2 rows and the four-table/fence/steps structure are unchanged
-id=orchprose-02 result=green reason=orchprose-02: the **Dedup.** bullet becomes a lead line plus a two-item exception list with the no-third-exception close kept as prose; the guards' standing wording survives and the **Latch.** bullet is byte-unchanged
-id=orchprose-03 result=green reason=orchprose-03: the new shape pins live in this suite (id-named, extract-scoped, step-4 intro strings intact) and the neighboring antz-flow/receipts/status-probe suites pass unmodified

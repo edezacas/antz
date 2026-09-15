@@ -1,5 +1,0 @@
-test_command=for t in tests/*.sh; do sh "$t"; done
-id=coder-01 result=green reason=coder-01: the two orphan bullets fold into ## Receipt -- ## Output keeps exactly the two surviving bullets, the receipt-naming bullet keeps its content, and the closing-block bullet becomes a short list carrying every pinned string
-id=coder-02 result=green reason=coder-02: the ## Receipt final bullet still states the classification-authority duty, and the mirror clause's variant restatements are gone from the whole prompt
-id=coder-03 result=green reason=coder-03: the mirror clause strings each occur exactly once in coder.prompt and the single occurrence lives in the folded closing-block list under ## Receipt
-id=coder-04 result=green reason=coder-04: closingblock_test.sh keys the coder's report extract on Receipt with the same required strings and the other three extracts unchanged, and tests/receipts_test.sh passes unmodified (both suites exit 0)

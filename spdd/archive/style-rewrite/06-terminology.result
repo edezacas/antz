@@ -1,4 +1,0 @@
-test_command=for t in tests/*.sh; do sh "$t"; done
-id=terminology-01 result=green reason=terminology-01: change-slug is gone from all four prompts, the seven sites read <slug>, the machine-line formats are byte-untouched, and the closingblock/rolechecks pins follow in the same change
-id=terminology-02 result=green reason=terminology-02: the four prompts carry one form per concept (no sub spec/subspecs variants, no framework-where-client-is-meant, <slug> everywhere prose names it) and the declared machine-format/byte-pinned exemptions hold
-id=terminology-03 result=green reason=terminology-03: the three role prompts' ## Working Root sections are byte-identical, AGENTS.md and CLAUDE.md carry one identical gotcha bullet stating the triplication editing rule, and the existing docs bullets pass their suites

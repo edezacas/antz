@@ -1,3 +1,0 @@
-test_command=for t in tests/*.sh; do sh "$t"; done
-id=specifier-01 result=green reason=specifier-01: the two table bullets become the plan's two-line rewrite with the triple negation gone and the semantics intact
-id=specifier-02 result=green reason=specifier-02: the re-scoped suite exits 0 with both scenario ids and the legacy pins registered and green, and the neighboring specifier suites pass unmodified

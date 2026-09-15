@@ -549,6 +549,8 @@ test_hygiene_04_committed_and_archived_era_scans_green_unchanged() {
   era_dir=era-fixture
   mkdir -p "$stage/spdd/changes/$era_dir"
   : > "$stage/spdd/changes/$era_dir/README.md"
+  # the verifier creates the archive directory when the project has none
+  mkdir -p "$stage/spdd/archive"
   rm -rf "$stage/spdd/archive/$era_dir"
   mv "$stage/spdd/changes/$era_dir" "$stage/spdd/archive/$era_dir"
   git -C "$stage" init -q >/dev/null 2>&1 || { echo "  fixture git init failed"; return 1; }

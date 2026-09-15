@@ -9,6 +9,15 @@ changes to the workflow contract (directory layout, access model, etc).
 
 This branch (`master`) carries the branch-marked, no-commit variant of antz.
 
+## [6.2.0] - 2026-09-15
+
+### Fixed
+- **The verifier's archive step fails in any project without an existing `spdd/archive/`.** `mv spdd/changes/<slug> spdd/archive/<slug>` exits with `No such file or directory` when the parent directory doesn't exist — which is every fresh host project, and, from this change, this repo itself. The verifier now creates it (`mkdir -p spdd/archive`) before the move, and its Input Rule states that a fresh project may have neither `spdd/specs/` nor `spdd/archive/` yet, so both are the verifier's to create at merge time. The bug predates 6.0.0: it was invisible here only because this repo kept a committed `spdd/archive/`. `tests/hygiene_test.sh`'s era fixture now models the fresh-project case.
+
+### Removed
+- **`spdd/archive/` is deleted (82 archived feature files, 17 changes, 1.1 MB).** Every one described behavior that 6.0.0 removed or rewrote — the result receipts, the status probe, the classification state machine, the four flow subcommands, `bench/`, `/antz-set-model` — so the archive was the same class of artifact as the stale `spdd/specs/` corpus replaced in that release. `CHANGELOG.md` remains the durable per-release record, and any archived file is recoverable from history (`git show v5.2.0:spdd/archive/<change>/<file>`). `AGENTS.md` now states that superseding stale spec history is a deliberate maintainer action rather than a role's, so the "never hand-edit `spdd/archive/`" rule and this deletion no longer read as a contradiction.
+- Graded **minor**: the verifier's rendered behavior changes (it creates the archive directory), which is more than a wording-only patch. No machine line, marker, access level, client render shape, or spec changes. The `v6.2.0` tag is created on this bump commit.
+
 ## [6.1.0] - 2026-09-15
 
 ### Changed
