@@ -124,6 +124,76 @@ Or just fetch the current published version number:
 curl -fsSL https://raw.githubusercontent.com/edezacas/antz/master/VERSION
 ```
 
+## Benchmark & telemetry
+
+`bench/` measures the antz flow itself, so you can see how it is doing and compare runs, clients, and versions. It runs the full `specifier -> coder -> verifier` flow against a small checked-in fixture and records one telemetry row per repetition: wall-clock time, tokens (input / output / reasoning / cache), cost, turns, tool calls, subagent delegations, and the flow's outcome (`approved`, `rejected`, `blocked`, `open-question`, `timeout`, `error`). It then aggregates the rows into a report.
+
+It is **client-agnostic**: `bench/` launches Claude Code, OpenCode, or the offline dry-run client as a subprocess behind one adapter contract, normalizes each client's telemetry into a single schema (`null`, never a silent zero, where a client cannot report a field), and pins the model so a comparison isn't confounded. Each repetition gets a fresh git repo materialized from the fixture and a fresh sandbox: the measured flow is rendered from the checkout under test, and your real config is never touched. Nothing is ever committed.
+
+Run it from the repository root:
+
+```sh
+# offline smoke run: no client, no network, no cost
+sh bench/antz-bench.sh --client dryrun --repetitions 3
+
+# a real measurement: auto-detect installed clients and run each once
+sh bench/antz-bench.sh
+
+# force a client, repeat it, and pin the model
+sh bench/antz-bench.sh --client opencode --repetitions 5 --model <provider/model>
+
+# aggregate a results file, optionally against a baseline
+sh bench/antz-bench.sh report --jsonl bench/results/bench-<stamp>.jsonl --baseline baseline.jsonl
+```
+
+Each run appends JSONL records to `bench/results/bench-<UTC>.jsonl` (git-ignored) and prints a report. Outcomes are data, not failures: exit 0 means every repetition produced a record. `--timeout <seconds>` bounds each repetition (default 1800). Full flag list with `sh bench/antz-bench.sh --help`.
+
+Example (dry-run, 3 repetitions):
+
+```
+antz-bench report: total records: 3
+client dryrun: records=3 models=null
+  outcomes: approved=3
+  wall_clock_ms: n=3 mean=33.666667 median=33 min=32 max=36 p95=36
+  client_duration_ms: n=3 mean=800 median=800 min=400 max=1200 p95=1200
+  tokens_input: n=3 mean=200 median=200 min=100 max=300 p95=300
+  tokens_output: n=3 mean=100 median=100 min=50 max=150 p95=150
+  tokens_reasoning: n=0 mean=null median=null min=null max=null p95=null
+  tokens_cache_read: n=3 mean=20 median=20 min=10 max=30 p95=30
+  tokens_cache_write: n=0 mean=null median=null min=null max=null p95=null
+  cost_usd: n=3 mean=0.025 median=0.025 min=0.0125 max=0.0375 p95=0.0375
+  turns: n=3 mean=6 median=6 min=3 max=9 p95=9
+  tool_calls: n=3 mean=12 median=12 min=6 max=18 p95=18
+  subagent_delegations: n=3 mean=4 median=4 min=2 max=6 p95=6
+```
+
+Real-client numbers are the point: run `--client claude` / `--client opencode` with a pinned model, repeat enough for a distribution, and keep the JSONL as a baseline. The dry-run client scripts its outcome deterministically, so it is also the way to exercise the harness without spending anything (the hermetic `tests/bench-harness_test.sh` uses it; the real bench never runs inside `tests/run_all.sh`).
+
+### Saving baselines
+
+`bench/results/` is generated output and git-ignored; the baselines you want to keep live in `bench/baselines/`, which is committed. Create each baseline **once** by pointing `--jsonl` at that directory — the raw audit dirs still land under `bench/results/runs/`, so the baseline file itself stays clean:
+
+```sh
+# baseline for Claude Code, pinned model, 5 repetitions
+sh bench/antz-bench.sh --client claude --repetitions 5 \
+  --model sonnet --jsonl bench/baselines/claude-sonnet.jsonl
+
+# baseline for OpenCode, pinned model, 5 repetitions
+sh bench/antz-bench.sh --client opencode --repetitions 5 \
+  --model nan/deepseek-v4-flash --jsonl bench/baselines/deepseek-v4.jsonl
+```
+
+`--model` is forwarded to the client verbatim: Claude Code takes an alias or a full model name (`sonnet`, `opus`, `claude-...`); OpenCode takes `provider/model` (e.g. `nan/deepseek-v4-flash`).
+
+Then, for **every later measurement**, let the runner write its own fresh timestamped file (the `--jsonl` default) and compare it against the frozen baseline with `--baseline`:
+
+```sh
+sh bench/antz-bench.sh --client opencode --repetitions 5 --model nan/deepseek-v4-flash \
+  --baseline bench/baselines/deepseek-v4.jsonl
+```
+
+Records are **appended, never overwritten**: `--jsonl` adds to whatever the file already holds, while the default path is a new timestamped file each run. So keep a baseline as one clean run and don't measure into it again — a re-run against the same `--jsonl` would pool every execution into one file and blur the comparison. For a new baseline, use a new name (or `rm` the old file first).
+
 ## License
 
 Code in this repository is licensed under [Apache-2.0](LICENSE)

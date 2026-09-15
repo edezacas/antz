@@ -1,0 +1,57 @@
+# Result: 04-clients (telemetry-benchmark)
+
+test_command=sh tests/bench-harness_test.sh
+id=clients-01 result=green reason=test_clients_01 (bench_sandbox_create makes the fresh HOME / .claude / .config / .local/share / tmp tree and refuses a reused non-empty root; a sandboxed recorder dumps its own environment: the key set equals the suite's pinned allowlist copy (PATH, HOME, TMPDIR, CLAUDE_CONFIG_DIR, XDG_CONFIG_HOME, XDG_DATA_HOME, BENCH_MODEL -- shell-self-set PWD/SHLVL/_ filtered), the values point inside the sandbox, BENCH_MODEL arrives only because pinned, and exported ANTHROPIC_API_KEY / CLAUDE_CODE_* / OPENCODE_AUTH_CONTENT / BENCH_SANDBOX never cross; the client's writes land under the sandbox tree only -- the before/after find-diff adds nothing outside ./sbx/ and the canary beside the root is byte-identical)
+id=clients-02 result=green reason=test_clients_02 (bench_sandbox_install runs the STAGED checkout's own install.sh --claude / --opencode inside the sandbox environment: antz-specifier.md and the whole agent set render under the sandbox HOME's client agents dir carrying "# antz:generated version=<checkout VERSION>" (VERSION read dynamically), the orchestrator body references the sandbox libdir ($sbx/home/.config/antz/scripts -- where bench_sandbox_env's XDG_CONFIG_HOME points, so install.sh's resolve_libdir relocation is exercised end to end) with no __ANTZ_SCRIPTS_DIR__ surviving, the four libdir scripts exist, and the forced flag renders ONLY that client; unknown client and non-checkout dir are refused with non-zero)
+id=clients-03 result=green reason=test_clients_03 (bench_sandbox_copy_credentials <src> <dst> reports copied, dst byte-equals src, dst mode carries no write bit, and the original keeps its bytes, its location and its own permissions; the OpenCode auth.json path works the same way; an absent source prints skipped with exit 0, creates NOTHING at the destination (never fabricated), and the sandboxed run still proceeds -- a credential-requiring stub exits 77 on its own and bench_outcome_classify over the untouched materialization returns error)
+id=clients-04 result=green reason=test_clients_04 (bench_source_adapter claude + bench_invoke against the PATH-first recording stub with canned artifacts: exactly two invocations (claude --version then the run); run argv[1] = -p, byte-exact request-file content present as an argv word (cmp against request.txt -- the multi-line prompt survives the sandbox eval intact), "--agent antz-orchestrator" and "--output-format json" pairs, --dangerously-skip-permissions present, and no --model/-m while unpinned; stub env is the clients-01 allowlist (CLAUDE_CONFIG_DIR relocated, leak var absent); stub cwd = the fixture repo; run dir holds client.stdout byte-equal to the canned result, client.stderr carrying the stub's noise, client.exit=0, client.version=9.9.9-stub, and transcript.jsonl pulled out of $CLAUDE_CONFIG_DIR/projects/**/<session_id>.jsonl; canary outside the sandbox unchanged)
+id=clients-05 result=green reason=test_clients_05 (bench_collect over canned result + canned transcript prints the 13 pinned keys in order with primary+sidechain attribution: tokens_input=1420 (1000+400+20), tokens_output=360, tokens_cache_read=5065, tokens_cache_write=230, cost_usd=1.875 (1.25+0.5+0.125), tool_calls=4 across primary+sidechain tool_use blocks, subagent_delegations=2 (distinct sidechain agentIds), turns=9, client_duration_ms=4567, session_id and models_used from the result's modelUsage keys, tokens_reasoning=null; a transcript whose sidechain usage carries no costUSD nulls cost_usd while the token adds hold (never undercount); with no transcript tool_calls/subagent_delegations are null and the totals are result-only; a completely empty run dir still prints 13/13 null without crashing)
+id=clients-06 result=green reason=test_clients_06 (bench_source_adapter opencode + bench_invoke against the recording stub: run argv starts with the run subcommand and carries "--agent antz-orchestrator", "--format json", --auto, the byte-exact request text as an argv word, no --model/-m while unpinned; stub env is the allowlist (OPENCODE_AUTH_CONTENT and BENCH_SANDBOX absent, XDG_CONFIG_HOME/XDG_DATA_HOME relocated); stub cwd = fixture repo; client.stdout byte-equals the canned events, client.stderr carries the noise, client.exit=0, client.version recorded)
+id=clients-07 result=green reason=test_clients_07 (bench_collect fetches the parent export for the event's sessionID through the sandbox, discovers ses_child_a (sessionID) and ses_child_b (sessionId) from the parent's task parts' state.metadata, fetches both children and saves export.parent.json + export.ses_child_*.json in the run dir for audit; full coverage sums tokens 1150/240/45/311/22 and cost 1.875 and tool_calls 6 over parent+children, client_duration_ms=4500 from the parent's time.updated-time.created, subagent_delegations=2 from the parent's task parts, models_used=anthropic/stub-model-x,openai/stub-model-y distinct in first-seen order, session_id from the events, turns=null; with child B's export unavailable every summed total (tokens, cost, tool_calls) is null -- never a partial sum -- while subagent_delegations still reports 2, models_used keeps the succeeded exports, duration/session survive, and the failed fetch leaves no partial artifact behind)
+id=clients-08 result=green reason=test_clients_08 (BENCH_MODEL pinned: the claude stub receives "--model stub/claude-pin" as an argv pair and BENCH_MODEL in its environment, opencode receives "--model anthropic/stub-pin"; the emitted record carries "model_pinned":"stub/claude-pin" beside "models_used":"stub-model-one,stub-model-two" (the client-reported side); unpinned: no --model/-m in either adapter's argv, BENCH_MODEL absent from the stub environment, the record reads "model_pinned":null; a canned result with no modelUsage collects models_used=null and the record carries "models_used":null exactly then)
+
+Notes for later sub-specs (contract surfaces this receipt pins):
+- bench/lib.sh Clients section: bench_sandbox_create <root> (fresh-or-empty
+  root, refuses reuse; prints the root); bench_sandbox_env <root> (the
+  allowlist as KEY=VALUE lines; BENCH_MODEL only when non-empty);
+  bench_sandbox_run <root> <cmd> [args...] (env -i + exactly the allowlist;
+  argv survives newlines/tabs byte-exact via the shquote + single-eval
+  string); bench_sandbox_install <root> <claude|opencode> <checkout>;
+  bench_sandbox_copy_credentials <src> <dst>. Runner->adapter env contract:
+  BENCH_SANDBOX (prepared root; both adapters REFUSE invoke -- and opencode
+  refuses collect -- without it) and BENCH_MODEL (pinned model, empty/unset
+  = unpinned).
+- The sandbox layout is deliberately CLAUDE_CONFIG_DIR=$root/home/.claude
+  and XDG_CONFIG_HOME=$root/home/.config: install.sh resolves its write
+  targets from HOME and resolve_libdir from XDG_CONFIG_HOME, so the render
+  and the client's reads coincide without touching install.sh.
+- JSON/number readers now in lib.sh (reusable by the runner/report):
+  bench_json_get <file> <dotted.path> (string-aware scanner, arrays
+  transparent, first match in document order), bench_num_add/bench_num_sub,
+  bench_claude_result_num/_str/_models, bench_claude_transcript_kv (the
+  sidechain scanner), bench_opencode_export_kv (info.* scalars, tool-parts/
+  task-parts counts, child= lines). The adapter-01 scan forbids the awk
+  "function" KEYWORD anywhere in bench/adapter-*.sh text -- keep such awk
+  inside lib.sh helpers (the 04 adapters define nothing but their three).
+- Attribution resolution (README open point, settled mechanically; re-check
+  live at benchqa-05): Claude's result JSON is treated as PRIMARY-only usage
+  and the isolated transcript's sidechain entries ADD to it; a sidechain
+  usage line without costUSD nulls cost_usd rather than undercounting; no
+  transcript -> transcript-only fields null, result fields stand. OpenCode
+  parent exports exclude child sessions, so the adapter exports each named
+  child; any missing/incomplete export nulls the SUMMED totals while the
+  parent's own observations (duration, task-part delegations, partial
+  models) survive; turns is null for both OpenCode sides and tokens_reasoning
+  is null for Claude (null beats a guess).
+- Extra run-dir artifacts (fixed names, per the client.request precedent --
+  bench_run_artifacts itself unchanged): both adapters write
+  client.version; Claude writes transcript.jsonl; OpenCode's collect writes
+  export.parent.json and export.<child>.json.
+- HERMETISM for later suites touching clients: stubs MUST be first on PATH
+  for every sandboxed call -- including opencode collect's export fetches --
+  the real claude/opencode binaries live on this machine's PATH and would be
+  exec'd otherwise; a client env-dump can never be compared as an exact
+  `env` snapshot (the POSIX shell itself sets PWD/SHLVL/_), only as the
+  pinned key set minus those; comm/find inventories need LC_ALL=C on both
+  sides.
+- Full suite green: 18/18, 48s; bench suite alone 31 tests, ~10s.

@@ -1,0 +1,19 @@
+# Result: 01-fixture (telemetry-benchmark)
+
+test_command=sh tests/bench-harness_test.sh
+id=fixture-01 result=green reason=test_fixture_01 (bench-harness_test.sh: scenario.txt exists and is non-empty, names the toy project toysize and README.md; repo/ carries README.md + toysize.sh; mechanical find over bench/fixture/ finds no .git file or directory)
+id=fixture-02 result=green reason=test_fixture_02 (bench-harness_test.sh: two bench_materialize_repo runs are each git repos whose tree is diff -r -x .git-identical to bench/fixture/repo/ plus nothing else; rev-list --count HEAD is 1; status --porcelain clean; no spdd/; no antz/* branch; committing a mutation into repo-a leaves repo-b at one commit and clean with no MUTATED.txt; dests under temp space; fixture source pristine after both runs)
+id=fixture-03 result=green reason=test_fixture_03 (bench-harness_test.sh: bench_request_file resolves to bench/fixture/scenario.txt; bench_record_request lands request.txt in each run dir and cmp proves the recorded bytes equal the fixture's verbatim and equal across two repetitions)
+
+Notes for later sub-specs (contract surfaces this receipt pins):
+- bench/lib.sh requires BENCH_DIR (the bench/ directory) set by the sourcing
+  runner before the fixture helpers are called.
+- Run-dir artifact name for the recorded request is "request.txt" -- the
+  bytes the adapter's invoke passes to the client as its prompt
+  (bench-adapter/bench-runner should consume this, not re-read the fixture).
+- Materialization runs git with GIT_CONFIG_GLOBAL/GIT_CONFIG_SYSTEM pinned
+  to /dev/null and identity via -c flags (bench_git_in in bench/lib.sh).
+- Full suite (sh tests/run_all.sh) green: 18/18 suites, 41s (first run on a
+  cold machine compiles the bash-3.2.57 parser fixture in
+  installsh-posixsh_test.sh once; cached afterwards under
+  $TMPDIR/antz-bash32-3.2.57).
