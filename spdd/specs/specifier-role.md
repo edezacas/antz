@@ -42,6 +42,13 @@
   pins by gating (ADD `conventions-04`). The change's scenarios and
   end-to-end QA are preserved for history in
   `spdd/archive/precision-gaps/`, not reproduced here.
+- Extended by direct application `role-prompt-efficiency` (2026-09-15, owner
+  override, outside the flow): bounds the specifier's spec reading and code
+  investigation, defaults to one sub-spec with the coder's split thresholds
+  as the split trigger, adds the proportionality rule, bounds the e2e QA
+  suite to the change's own workflows, adds the relevant-files anti-padding
+  rule, and re-forms the tag convention as a pattern block (ADD/MODIFY
+  `efficiency-01..06`), recorded here by the same hand.
 
 ## Goal
 `agents/prompts/specifier.prompt`'s `## Output` section documents an
@@ -384,6 +391,76 @@ invocation produced, read back.
     And the suite exits 0
     And tests/readmefile_test.sh and tests/conventions_test.sh pass
       unmodified
+
+## Feature: the specifier's process and output bounds favor session efficiency (from direct application `role-prompt-efficiency`)
+
+  Background:
+    Given "agents/prompts/specifier.prompt" whose Process, Specification
+      Rules, End-To-End QA Suite, and Output sections carried unbounded
+      reading, splitting, and listing instructions
+    And the observed defect: specifier sessions on small tasks spent most of
+      their budget re-reading whole domain spec files, splitting small
+      changes by layer by default, and hunting relevant-files pointers the
+      scenarios already pinned
+
+  # MODIFY - efficiency-01: the spec read is bounded.
+  Scenario: efficiency-01
+    When the reader reads the first Process bullet
+    Then it bounds the read to the destination domain file(s) and only the
+      feature sections the change touches (located by header or scenario
+      id), never a full domain re-read, and bounds real-code investigation
+      to what the specs don't cover, what the change touches, or suspected
+      drift — never a re-audit
+
+  # MODIFY - efficiency-02: one sub-spec is the default.
+  Scenario: efficiency-02
+    When the reader reads the splitting bullet
+    Then it defaults to one sub-spec and splits by layer only when one
+      sub-spec would exceed a focused session — over 8 implementation steps
+      or over 1 shared-contract change, the coder's split thresholds — and
+      every sub-spec stays implementable and verifiable alone
+
+  # MODIFY - efficiency-03: the relevant-files bullet gains an anti-padding rule.
+  Scenario: efficiency-03
+    When the reader reads the Output bullet on relevant files
+    Then it keeps the pinned properties (one section per sub-spec, pointers
+      only rather than a code walkthrough, declared destination domain in
+      kebab-case) and adds: pointers only for files the implementation
+      actually touches, and a one-line statement when none exist beyond what
+      the scenarios pin — never padding
+
+  # ADD - efficiency-04: proportionality is a specification rule.
+  Scenario: efficiency-04
+    When the reader reads the first Specification Rules bullet
+    Then it states: add no scenario the change doesn't require — every
+      scenario traces to the declared goal, contract, or invariants
+
+  # MODIFY - efficiency-05: the e2e QA suite is proportional to the change.
+  Scenario: efficiency-05
+    When the reader reads the End-To-End QA Suite bullet on user-visible
+      workflows
+    Then it bounds the suite to this change's own user-visible workflows,
+      inputs, outputs, and observable states — not regression breadth — and
+      the exactly-one-"e2e-qa.feature"-per-change rule is untouched
+
+  # MODIFY - efficiency-06: the tag convention is re-formed as a pattern.
+  Scenario: efficiency-06
+    When the reader reads the tag-convention bullet in Specification Rules
+    Then it shows the exact tag shape
+      "# ADD|MODIFY|REMOVE - <feature>-<index>: <description>" with short
+      sub-rules carrying every prior fact: Gherkin format, the feature stem
+      rule (one word, letters/digits/underscores only), the two-digit
+      zero-padded sequential index from 01, the wrappable description, and
+      the never-put-another-scenario's-id-in-a-tag rule with the probe's
+      first-line-only reading as the reason
+
+### Invariants
+- Every fact of the pre-change conventions survives: the tag shape and its
+  parts, the ADD/MODIFY/REMOVE tagging against `spdd/specs/`, the kebab-case
+  domains, the fixed `README.md` and `e2e-qa.feature` names, and the table
+  rules — only bounds, defaults, and prose shape changed.
+- Provenance: applied directly by owner override on 2026-09-15 (change
+  `role-prompt-efficiency`), outside the flow, recorded by the same hand.
 
 ## Out of scope
 - Any change to `coder.prompt`, `verifier.prompt`, or `orchestrator.prompt`.

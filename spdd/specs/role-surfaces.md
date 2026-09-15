@@ -23,6 +23,12 @@
   enforced by the hygiene suite. The change's scenarios and end-to-end QA
   are preserved for history in `spdd/archive/optimize-test-suite/`, not
   reproduced here.
+- Extended by direct application `role-prompt-efficiency` (2026-09-15, owner
+  override, outside the flow): bounds the coder's suite-run cadence (twice
+  per slice, never per scenario), collapses example-table coverage to one
+  parameterized test per scenario, bounds investigation to the specifier's
+  pointers, and adds the spec-read bound to the Input Rule ownership bullet
+  (MODIFY `rolesdecouple-06..09`), recorded here by the same hand.
 
 ## Goal
 The coder's directory ownership is stated by write surface, not read surface,
@@ -316,6 +322,56 @@ its reason stated in the prompt.
 - The access model is unchanged by this domain; it lives in
   `spdd/specs/access-model.md`. The `access: readwrite` values for coder,
   specifier, and verifier are already correct.
+
+## Feature: the coder's session-efficiency bounds (from direct application `role-prompt-efficiency`)
+
+  Background:
+    Given "agents/prompts/coder.prompt" whose Process bullets left the
+      test-suite run cadence, the example-table coverage shape, and the
+      investigation scope unbounded, and whose Input Rule ownership bullet
+      carried no read-scope bound
+    And the observed defect: coder sessions regularly exceeded 30 minutes per
+      sub-spec, dominated by per-scenario suite runs and open-ended
+      exploration
+
+  # MODIFY - rolesdecouple-06: the suite runs twice per slice, never per scenario.
+  Scenario: rolesdecouple-06
+    When the reader reads the TDD bullet
+    Then it keeps per-slice TDD with every test name carrying its scenario's
+      "<feature>-<index>" id, and adds the run cadence: the suite runs twice
+      per slice (red, then green) with the slice's scenarios batched into
+      those runs, a mid-slice rerun only when a failure forces a narrower
+      loop, and never per scenario
+
+  # MODIFY - rolesdecouple-07: one parameterized test per scenario covers every row.
+  Scenario: rolesdecouple-07
+    When the reader reads the coverage bullet
+    Then one parameterized test per scenario covers every example-table row
+      (rows as cases, scenario id in the test name), and a scenario that
+      shouldn't be automated still gets an explicit skip/pending stub —
+      never a silent omission
+
+  # MODIFY - rolesdecouple-08: investigation is bounded to the pointers.
+  Scenario: rolesdecouple-08
+    When the reader reads the investigation bullet
+    Then it bounds investigation to the code behind the specifier's
+      pointers, stepping outside only for a convention implementation
+      requires, never exploring beyond this sub-spec's needs
+
+  # MODIFY - rolesdecouple-09: the ownership bullet bounds the spec read too.
+  Scenario: rolesdecouple-09
+    When the reader reads the Input Rule's directory-ownership bullet
+    Then it keeps the exact pinned phrase "stated by write surface, not read
+      surface" and the write/read surfaces as before, and adds the read
+      bound: only the domain sections this sub-spec touches
+
+### Invariants
+- The pinned strings survive byte-identically: "stated by write surface, not
+  read surface", the receipt duty, the plan thresholds ("more than 8
+  implementation steps", "more than 1 shared contract"), and the
+  Working-Root sections (untouched by this application).
+- Provenance: applied directly by owner override on 2026-09-15 (change
+  `role-prompt-efficiency`), outside the flow, recorded by the same hand.
 
 ## Out of scope
 - The receipt grammar (test_command=, per-id lines) — the receipts domain.

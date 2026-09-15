@@ -24,6 +24,12 @@
   test convention) records the discovered command and per-scenario outcomes at
   session end, and the unit suite is run by the orchestrator in exactly one
   situation: the doubtful-receipt exception.
+- Extended by direct application `role-prompt-efficiency` (2026-09-15, owner
+  override): re-forms the coder prompt's `## Receipt` section into pattern +
+  outcome table with byte-identical grammar strings and an untouched
+  closing-block list (ADD `receipts-12`). Applied outside the flow — the
+  flow's own specifier/coder session performance was the defect being fixed
+  — and recorded here by the same hand, marked as such.
 
 ## Goal
 The coder writes `spdd/changes/<slug>/NN-<feature>.result` at the end of each
@@ -284,6 +290,42 @@ wherever both exist.
       heading instead of "Output"
     And tests/receipts_test.sh passes unmodified
     And both suites exit 0
+
+## Feature: the coder prompt's Receipt section is re-formed as pattern + outcome table (from direct application `role-prompt-efficiency`)
+
+  Background:
+    Given "agents/prompts/coder.prompt" whose "## Receipt" section carried the
+      grammar and outcome vocabulary as long prose bullets
+    And hygiene-03's law that no suite fixes any prompt prose, so no suite
+      constrains the section's inner wording
+
+  # ADD - receipts-12: the re-form changes the prose shape, not the duty.
+  Scenario: receipts-12
+    When the reader reads the coder prompt's "## Receipt" section
+    Then it states the receipt file name and in-place rewrite rule as before
+    And it shows the grammar as a pattern: the first line
+      "test_command=<the unit-suite run command you discovered and used for
+      this sub-spec>" with the none-sentinel rule, then one
+      "id=<feature>-<index> result=<green|skip|blocked> reason=<text>" line
+      per declared scenario id, in scenario order, each exactly once
+    And an outcome table carries the three result lines (green / ordinary
+      skip / blocked) with the same values the prose vocabulary carried
+    And the no-silent-omission rule, the planning-refusal rule, the
+      name-the-receipt rule — now also stating the disk receipt as the
+      classification authority the orchestrator reads instead of the
+      conversational report — and the closing-block list are all preserved,
+      the closing-block list byte-unchanged
+
+### Invariants
+- The receipt grammar strings are byte-identical to before (`test_command=`,
+  `id=<feature>-<index> result=<green|skip|blocked> reason=<text>`, the
+  `none` sentinel, `BLOCKED: `); only the section's prose shape changed.
+- The closing-block list under "## Receipt" is byte-unchanged, so the
+  coder-03 exactly-once pins keep holding.
+- Provenance: applied directly by owner override on 2026-09-15 (change
+  `role-prompt-efficiency`), skipping the antz flow because the flow's own
+  specifier/coder session performance was the defect being fixed; this spec
+  entry is written by the same hand and marked as such, not verifier-merged.
 
 ## Out of scope
 - A formalized Result Contract beyond the receipt grammar and the closing

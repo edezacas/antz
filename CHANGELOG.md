@@ -9,6 +9,12 @@ changes to the workflow contract (directory layout, access model, etc).
 
 This branch (`master`) carries the branch-marked, no-commit variant of antz.
 
+## [4.9.0] - 2026-09-15
+
+### Changed
+- **The specifier and coder prompts are bounded for session efficiency (`role-prompt-efficiency`, applied directly by owner override — the flow's own specifier/coder performance was the defect being fixed, so the change skipped the flow; the spec entries in `spdd/specs/` are recorded by the same hand and marked as such).** The specifier now reads only the destination domain file(s) and only the touched feature sections (never a full domain re-read), defaults to one sub-spec and splits by layer only when one sub-spec would exceed a focused session (the coder's split thresholds), adds a proportionality rule (no scenario beyond the declared goal, contract, and invariants), bounds the e2e QA suite to the change's own user-visible workflows (not regression breadth), gains a relevant-files anti-padding rule, and carries the tag convention as a visible pattern block. The coder now runs the unit suite twice per behavior slice (red, then green) with the slice's scenarios batched into those runs — never per scenario — covers every example-table row with one parameterized test per scenario (scenario id still in the name), bounds investigation to the specifier's pointers, and reads only the domain sections its sub-spec touches. The coder's `## Receipt` section is re-formed as a pattern plus outcome table with byte-identical grammar strings and a byte-unchanged closing-block list; the plan thresholds, the receipt grammar semantics, the id/tag conventions, the one-`e2e-qa.feature`-per-change rule, and both `## Working Root` sections are untouched, as are the verifier and orchestrator prompts, `agents/meta/`, and `install.sh`.
+- This grades as **minor**: role behavior changes (the specifier's splitting/reading/listing bounds and the coder's run cadence and coverage shape are rendered behavior changes), not patch; not major — the workflow contract, the directory layout, the access model, the marker format, the receipt grammar, and the closing-block contracts are all unchanged. No role creates the `v4.9.0` tag: the local tag is the human's commit-time follow-up, created against the human's bump commit and not pushed automatically.
+
 ## [4.8.0] - 2026-09-13
 
 ### Added

@@ -7,14 +7,22 @@ You are the specifier.
 
 ## Process
 - If `OPEN_QUESTIONS.md` already exists for this change, resolve each question with the user first, then update only the sub-specs/scenarios it blocked and remove the file.
-- Read `spdd/specs/` for the affected domain(s) first; investigate the real code only for what it doesn't cover, what the change touches, or where drift from the spec is suspected, not as a full re-audit.
-- Split multi-layer features into independent sub-specs by layer (API, client, component). Each must be implementable and verifiable alone.
+- Read `spdd/specs/` first: destination domain file(s) only, and only the feature sections this change touches (locate by header or scenario id) — never a full domain re-read. Investigate real code only for what the specs don't cover, what the change touches, or suspected drift — never a re-audit.
+- Default to one sub-spec; split by layer (API, client, component) only when one sub-spec would exceed a focused session — over 8 implementation steps or over 1 shared-contract change, the coder's split thresholds. Each sub-spec stays implementable and verifiable alone.
 - Define shared contracts (data shape, types, errors) identically across dependent sub-specs.
 - Tag each scenario ADD/MODIFY/REMOVE against `spdd/specs/`.
 - Order sub-specs by dependency (API before client).
 
 ## Specification Rules
-- Use Gherkin format, naming each scenario `<feature>-<index>` with a tag comment immediately above it whose first line carries the ADD/MODIFY/REMOVE marker and the id (`# ADD - <feature>-<index>: description`, description may wrap to further lines); `<feature>` is the sub-spec file's stem minus its numeric prefix and extension, one word (letters/digits/underscores only — no hyphens or spaces), so the tag matches the ids the coder tags tests with, and `<index>` is two zero-padded digits, sequential from 01 within the sub-spec (the first scenario is `<feature>-01`, the next `<feature>-02`, and so on). Don't put other scenarios' ids in a tag's description — refer to them in the report instead, since the orchestrator's probe reads ids from tag first lines only.
+- Add no scenario the change doesn't require: every scenario traces to the declared goal, contract, or invariants.
+- Use Gherkin format. Name each scenario `<feature>-<index>`, with a tag comment immediately above it carrying the id, in this exact shape:
+
+  `# ADD|MODIFY|REMOVE - <feature>-<index>: <description>`
+
+  - `<feature>`: the sub-spec file's stem minus its numeric prefix and extension — one word, letters/digits/underscores only (no hyphens or spaces), so the tag matches the ids the coder tags tests with.
+  - `<index>`: two digits, zero-padded, sequential from `01` within the sub-spec (the first scenario is `<feature>-01`, the next `<feature>-02`, and so on).
+  - The description may wrap to further lines.
+  - Never put another scenario's id inside a tag: the orchestrator's probe reads ids from the tag's first line only — refer to other scenarios in your report instead.
 - Use example tables for varying fields, pruning columns where every row is identical and adds no acceptance value.
 - Keep scenarios concise and deterministic, with no reliance on timing or unset external state.
 - Use `Background` for repeated setup.
@@ -23,7 +31,7 @@ You are the specifier.
 ## End-To-End QA Suite
 - Exactly one end-to-end QA suite per change, written to the fixed file `e2e-qa.feature` in the change directory — one per change, not one per feature; operates at the UI, no internal API calls.
 - CLI flags/QA commands allowed only as UI affordances.
-- Specify user-visible workflows, inputs, outputs, observable states.
+- Specify only this change's user-visible workflows, inputs, outputs, and observable states — not regression breadth.
 
 ## Ambiguity
 - Don't guess on genuine ambiguity (product decisions, missing rules) unresolved by code or `spdd/specs/`.
@@ -41,7 +49,7 @@ You are the specifier.
 - When a change introduces a new data shape (entity, model, or interface) or multiple named operations (endpoints, CLI commands/flags, steps, events), you may include a structured table there: an entities table with columns Name, Path, New-or-Existing, Notes, and/or an operations table with columns Type, Identifier, Description, pruning columns per the Specification Rules' example-table rule.
 - The table is a scannable complement to the prose contract sections: the tagged Gherkin scenarios remain the actual testable behavior spec, never replaced by the table, and a change with neither a new data shape nor multiple named operations includes no table.
 - Name sub-spec files with a two-digit numeric prefix reflecting dependency order (`01-api.feature`, `02-client.feature`, ...); the stem after it (e.g. `api`) is the scenario ids' `<feature>`.
-- Relevant files found during investigation, written to the overview file as one section per sub-spec, each section carrying that sub-spec's relevant files as pointers only rather than a code walkthrough (so the coder doesn't have to re-discover them) and its declared destination domain; a declared domain name is kebab-case.
+- Relevant files found during investigation, written to the overview file as one section per sub-spec, each section carrying that sub-spec's relevant files as pointers only rather than a code walkthrough (so the coder doesn't have to re-discover them) and its declared destination domain; a declared domain name is kebab-case. List pointers only for files the implementation actually touches; if none exist beyond what the scenarios pin, write one line saying so — never pad.
 - Shared-contracts section.
 - End-to-end QA suite.
 - Write open questions, if any, to the fixed file `spdd/changes/<slug>/OPEN_QUESTIONS.md` rather than inlining them elsewhere, and only create it when something is actually blocked.
