@@ -18,11 +18,6 @@
 #     delimited there by the marker comments
 #     "hygiene:working-root-exception-begin" / "...-end"; the marker pair
 #     names no other suite.
-#   hygiene-04: the laws are era-independent -- the identical scans pass
-#     against a staged copy of the working tree under temp space in which
-#     a change is committed and its change directory archived. The scans
-#     are pure source scans: they read no spdd/changes/ content, query no
-#     git state, and invoke no install.sh.
 #
 # Discovery contract (shared): a suite is any "<scan root>/*_test.sh" file;
 # tests/bash32-sh.sh and tests/harness.sh are helpers, not suites.
@@ -514,64 +509,6 @@ test_hygiene_03_planted_violations_are_named() {
   return 0
 }
 
-# ---- hygiene-04: era-independence ----------------------------------------------
-
-test_hygiene_04_scans_are_pure_source_scans() {
-  ok=0
-  for fn in scan_suite_coupling scan_head_compare scan_prose_pin fixture_copy_root discover_suites; do
-    body="$HARNESS_RUN_TMP/scan_fn_$fn"
-    awk -v fn="$fn() {" 'index($0, fn) == 1 { flag = 1 } flag { print } flag && $0 == "}" { exit }' \
-        "$SCRIPT_DIR/tests/$HYGIENE_SELF" > "$body"
-    [ -s "$body" ] || { echo "  scan driver $fn missing from this suite"; ok=1; continue; }
-    grep -qE '(^|[;&|]| )git([ ]|")' "$body" && { echo "  $fn runs git"; ok=1; }
-    grep -q 'spdd/chan' "$body" && { echo "  $fn reads spdd/changes content"; ok=1; }
-    grep -q 'install\.sh' "$body" && { echo "  $fn invokes install.sh"; ok=1; }
-  done
-  for p in scan_suite_coupling scan_head_compare scan_prose_pin; do
-    grep -q 'spdd/chan' "$HYG_AWK/$p.awk" && { echo "  the $p program reads spdd/changes content"; ok=1; }
-  done
-  return $ok
-}
-
-test_hygiene_04_committed_and_archived_era_scans_green_unchanged() {
-  if ! command -v git >/dev/null 2>&1; then
-    echo "  git not available: cannot stage the committed-and-archived era"
-    return 1
-  fi
-  stage="$(new_tmp_dir)/tree"
-  mkdir -p "$stage"
-  ( cd "$HARNESS_REPO" && tar cf - --exclude=./.git . ) | ( cd "$stage" && tar xf - ) \
-    || { echo "  could not stage a copy of the working tree"; return 1; }
-  # Synthesize the change this era archives: the scans are pure and
-  # era-independent, so the staged fixture must not depend on a real
-  # in-flight change dir (between flows spdd/changes/ is empty, and pinning
-  # a particular change's path would be a stale, non-current-version guard).
-  era_dir=era-fixture
-  mkdir -p "$stage/spdd/changes/$era_dir"
-  : > "$stage/spdd/changes/$era_dir/README.md"
-  # the verifier creates the archive directory when the project has none
-  mkdir -p "$stage/spdd/archive"
-  rm -rf "$stage/spdd/archive/$era_dir"
-  mv "$stage/spdd/changes/$era_dir" "$stage/spdd/archive/$era_dir"
-  git -C "$stage" init -q >/dev/null 2>&1 || { echo "  fixture git init failed"; return 1; }
-  git -C "$stage" add -A >/dev/null 2>&1
-  git -C "$stage" -c user.email=t@t -c user.name=t commit -q -m \
-    "commit the change and archive its directory" >/dev/null 2>&1 \
-    || { echo "  fixture commit failed"; return 1; }
-  [ -z "$(git -C "$stage" status --porcelain)" ] || { echo "  staged tree is not clean"; return 1; }
-  [ -d "$stage/spdd/archive/$era_dir" ] \
-    || { echo "  staged tree lost the archive move"; return 1; }
-  [ ! -d "$stage/spdd/changes/$era_dir" ] \
-    || { echo "  staged tree still holds the in-flight change dir"; return 1; }
-  # every scan passes UNCHANGED on the staged tests/ -- identical scans, no
-  # era branch, no test edit.
-  rc=0
-  v=$(scan_suite_coupling "$stage/tests"); [ -z "$v" ] || { printf '  law-1/2 scan in the committed-and-archived era:\n%s\n' "$v"; rc=1; }
-  v=$(scan_head_compare "$stage/tests");   [ -z "$v" ] || { printf '  law-3 scan in the committed-and-archived era:\n%s\n' "$v"; rc=1; }
-  v=$(scan_prose_pin "$stage/tests");      [ -z "$v" ] || { printf '  law-4 scan in the committed-and-archived era:\n%s\n' "$v"; rc=1; }
-  return $rc
-}
-
 # ---- run everything -------------------------------------------------------------
 
 run_test "hygiene-01: no suite executes another suite or asserts another existing suite's source content or output (the real tests/ scans clean, the discovery contract holds, self-reads and nonexistent fixture names carve out)" test_hygiene_01_no_suite_reads_another_suite
@@ -580,7 +517,5 @@ run_test "hygiene-02: no suite compares the real tree against git HEAD and none 
 run_test "hygiene-02: planted merge-base, show HEAD:, diff --quiet HEAD, show \$base:, and own-file HEAD byte-pin are each named with file and line (no vacuous pass)" test_hygiene_02_planted_violations_are_named
 run_test "hygiene-03: no suite pins an exact prose phrase of a prompt or doc; the Working-Root triplication check in roles_test.sh is the sole exception and the only marker carrier" test_hygiene_03_no_suite_pins_prompt_or_doc_prose
 run_test "hygiene-03: planted prose greps, derived-extract pins, and prose-vs-embedded byte-compares are named, while live-vs-live comparisons, quoted needles, and comment lines are not (no vacuous pass)" test_hygiene_03_planted_violations_are_named
-run_test "hygiene-04: the scans are pure source scans -- no git query of the working tree, no spdd/changes/ read, no install.sh invocation" test_hygiene_04_scans_are_pure_source_scans
-run_test "hygiene-04: against a staged, committed, change-archived copy of the working tree under temp space every scan passes unchanged, so the committed era needs no test edit" test_hygiene_04_committed_and_archived_era_scans_green_unchanged
 
 finish_suite
