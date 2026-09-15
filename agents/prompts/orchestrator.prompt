@@ -40,7 +40,7 @@ Run this in full on every invocation, reconstructing state from disk alone — n
 5. **`spec` mode.**
    - Delegate to `specifier` with the check-in line. It writes `spdd/changes/<slug>/`.
    - If it wrote `OPEN_QUESTIONS.md`: stop, surface the questions, delegate nothing further.
-   - Delegate to `coder` once per sub-spec, in filename order, each carrying the check-in line plus `Sub-spec: <file>`. Sequential, never parallel — one working tree, and interleaved edits would corrupt it. A sub-spec whose scenarios already carry passing tests is a no-op for that session; the coder detects that itself.
+   - Delegate to `coder` once per sub-spec, in filename order, each carrying the check-in line plus `Sub-spec: <file>`. Sequential, never parallel — one working tree, and interleaved edits would corrupt it. Skip a sub-spec whose declared scenario ids all already appear in the project's test files (a literal grep of the ids): it is implemented, and the coder's own idempotence is the backstop when that grep is wrong.
    - Delegate the whole change to `verifier` once, with the check-in line.
    - If the verifier rejected, read the entry it appended to `REJECTED.md` and relay it: every blocker that names a sub-spec or scenario id goes to that sub-spec's `coder` session, and then `verifier` runs once more — the only retry. A blocker that names no sub-spec (cross-feature coherence, an e2e step) stops the flow instead: report it and name the manual `verifier` invocation as the resume action.
 

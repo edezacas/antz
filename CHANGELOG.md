@@ -9,6 +9,16 @@ changes to the workflow contract (directory layout, access model, etc).
 
 This branch (`master`) carries the branch-marked, no-commit variant of antz.
 
+## [6.1.0] - 2026-09-15
+
+### Changed
+- **The `spec`-mode resume costs one session per pending sub-spec instead of one per sub-spec.** The orchestrator now skips a sub-spec whose declared scenario ids all already appear in the project's test files (a literal grep of the ids) — the id convention already carried that signal, so no new protocol was needed — and the coder's own id-grep remains the backstop when the grep is wrong. This closes the regression the previous entry introduced: without the receipt probe, a resumed seven-sub-spec change re-delegated all seven.
+- **`## Working Root` is 629 → 455 bytes in all three role prompts, still byte-identical.** The triplication and the drift check are unchanged; only the prose is tighter. The shorter form keeps the two facts that matter — the absolute root a delegation carries, and the re-`cd` after a client resets the shell's cwd.
+- **`## Skills` is four bullets instead of five in every role prompt**, with the same obligation stated once: discover through the session's own capability, match on each skill's own `description`, activate by reading the full `SKILL.md` before acting on covered code, and say so when nothing matches. The absolute ordering phrases ("before reading `spdd/specs/` or investigating code") are gone — they forced the same wording into three prompts without changing behavior.
+- **The specifier's scenario-id convention is stated once instead of as four sub-bullets**, and the coder prompt uses the same `<feature>-NN` notation the tag actually carries. The id, its position on the tag's first line, and the two-digit sequential index are unchanged: they are what the coder's test names and the verifier's blocker reports reference.
+- **Role-prompt prose is down from 22,574 to 21,789 bytes** (from 46,106 at 5.2.0), with `install.sh`, `agents/meta/`, the flow script, and every spec unchanged.
+- Graded **minor**: role behavior changes (which sessions a resume runs) and the role prompts' wording, with no workflow contract, machine line, marker, render shape, or access level touched. The `v6.1.0` tag is created on this bump commit.
+
 ## [6.0.0] - 2026-09-15
 
 ### Removed

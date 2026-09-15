@@ -40,9 +40,10 @@ working tree, at no protocol cost:
 - `spdd/changes/<slug>/OPEN_QUESTIONS.md` — stop, the human resolves it;
 - `spdd/changes/<slug>/REJECTED.md` — count `## Rejection <n>` headings, the
   retry bound (1 = relay and retry once, 2 = stop for good);
-- the tests already on disk — the coder greps its scenario ids and treats a
-  sub-spec with passing tests as a no-op, so a re-invocation is idempotent by
-  construction rather than by classification.
+- the tests already on disk — a sub-spec whose declared scenario ids all
+  appear in the project's test files is skipped outright by the orchestrator,
+  and the coder's own id-grep is the backstop, so a re-invocation is
+  idempotent by construction rather than by classification.
 
 Reading the disk stays mandatory: a role's conversational claim is never the
 input to a routing decision.
