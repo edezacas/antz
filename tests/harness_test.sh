@@ -312,7 +312,6 @@ INSTALLED_TREE_FILES='
 .config/antz/scripts/antz-flow.sh
 .config/antz/scripts/antz-probe.sh
 .config/antz/scripts/antz-set-model.sh
-.config/antz/scripts/antz-skills.sh
 .config/opencode/agents/antz-coder.md
 .config/opencode/agents/antz-orchestrator.md
 .config/opencode/agents/antz-specifier.md
@@ -328,7 +327,7 @@ fx_assert_complete_tree() {
     [ -f "$home/$f" ] || { echo "  installed tree missing $f"; return 1; }
   done
   n=$(find "$home" -type f | wc -l | tr -d ' ')
-  [ "$n" -eq 16 ] || { echo "  installed tree has $n files, expected the 16 contract files"; return 1; }
+  [ "$n" -eq 15 ] || { echo "  installed tree has $n files, expected the 15 contract files"; return 1; }
   return 0
 }
 
@@ -519,8 +518,7 @@ test_harness_06_stage_checkout_copies_current_working_tree_products() {
            agents/prompts/specifier.prompt agents/prompts/verifier.prompt \
            agents/meta/coder.yaml agents/meta/orchestrator.yaml \
            agents/meta/specifier.yaml agents/meta/verifier.yaml \
-           scripts/orchestration/antz-flow.sh scripts/orchestration/antz-probe.sh \
-           scripts/orchestration/antz-skills.sh; do
+           scripts/orchestration/antz-flow.sh scripts/orchestration/antz-probe.sh; do
     [ -f "$dest/$f" ] || { echo "  staged tree missing $f"; return 1; }
   done
 

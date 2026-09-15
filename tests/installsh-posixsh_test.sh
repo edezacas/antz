@@ -220,7 +220,6 @@ Claude Code: fresh install of antz @VERSION@
 OpenCode: fresh install of antz @VERSION@
 antz-flow.sh: fresh install of antz @VERSION@
 antz-probe.sh: fresh install of antz @VERSION@
-antz-skills.sh: fresh install of antz @VERSION@
 antz-set-model.sh: fresh install of antz @VERSION@
 Installed /.claude/agents/antz-specifier.md
 Installed /.config/opencode/agents/antz-specifier.md
@@ -236,7 +235,6 @@ Installed /.config/opencode/commands/antz.md
 Installed /.config/opencode/commands/antz-set-model.md
 Installed /.config/antz/scripts/antz-flow.sh
 Installed /.config/antz/scripts/antz-probe.sh
-Installed /.config/antz/scripts/antz-skills.sh
 Installed /.config/antz/scripts/antz-set-model.sh
 INVENTORY
   if ! cmp -s "$exp" "$norm"; then

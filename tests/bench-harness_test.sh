@@ -1824,7 +1824,7 @@ test_clients_02() {
     && { echo "  the __ANTZ_SCRIPTS_DIR__ placeholder survived the render"; return 1; }
   grep -qF "$sbx/home/.config/antz/scripts" "$ag/antz-orchestrator.md" \
     || { echo "  the orchestrator body does not reference the sandbox libdir"; return 1; }
-  for s in antz-flow.sh antz-probe.sh antz-skills.sh antz-set-model.sh; do
+  for s in antz-flow.sh antz-probe.sh antz-set-model.sh; do
     [ -f "$sbx/home/.config/antz/scripts/$s" ] || { echo "  sandbox libdir lacks $s"; return 1; }
   done
   # the forced flag renders ONLY that client

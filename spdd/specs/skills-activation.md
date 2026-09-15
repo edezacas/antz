@@ -30,24 +30,26 @@ or files about to be written, modified, or judged — matched by description,
 never by a hardcoded skill name. Activation = reading the matched
 `SKILL.md` in full (paths, not summaries) before the covered work. The
 enablement is mechanical: install.sh's Claude `readwrite` mapping grants the
-`Skill` tool (03-render, merged into `spdd/specs/access-model.md`), OpenCode
-agents get the client's native skill tool by default, and on a client
-without a skill tool the fallback is a directory listing of the standard
-skills directories. Orchestrated (via `/antz`) delegations carry a
-pre-resolved `## Skills to load before work` block derived statelessly at
-delegation time from the standard skills directories; each role's own report
-states which skills were activated (by name) or that none matched —
-a transparency line only, never a routing input.
+`Skill` tool (03-render, merged into `spdd/specs/access-model.md`) and
+OpenCode agents get the client's native skill tool by default. Skill
+locations are the client's own concern: no prompt names a skills directory.
+Each role's own report states which skills were activated (by name) or that
+none matched — a transparency line only, never a routing input.
+**The orchestrator-side detection — the `## Skills to load before work`
+delegation block and `scripts/orchestration/antz-skills.sh` — was retired by
+change `retire-skills-detection` (v5.0.0, 2026-09-15). The features below
+that describe it are historical; the retirement record at the end of this
+file is the current contract.**
 
 ## Shared contracts
-The discovery/activation duty is stated once per role prompt
-(`## Skills` sections of `coder.prompt` and `verifier.prompt`) and restated
-without contradiction by the docs gotcha (byte-identical twin across
-AGENTS.md and CLAUDE.md). The delegation block's shape is produced by the
-orchestrator prompt (the `antz-skills.sh` temp-file snippet) and consumed
-identically by both role prompts' pre-resolved-paths bullet and the docs
-gotcha. The specifier prompt stays byte-for-byte unchanged; `agents/meta/*`
-stay byte-for-byte unchanged.
+The discovery/activation duty is stated once per role prompt (`## Skills`
+sections of `specifier.prompt`, `coder.prompt`, and `verifier.prompt`), is
+tool-based (no directory enumeration), and is restated without contradiction
+by `docs/law-notes.md`. `agents/meta/*` stay byte-for-byte unchanged.
+**Superseded**: the pre-change contract had the orchestrator prompt produce
+a `## Skills to load before work` block (the `antz-skills.sh` snippet) that
+both role prompts consumed; that block is gone (change
+`retire-skills-detection`, v5.0.0).
 
 ## Feature: coder and verifier discover and activate matching skills before working (prompts)
 
@@ -160,6 +162,11 @@ stay byte-for-byte unchanged.
 
 ## Feature: orchestrated delegations carry pre-resolved skill paths (orchestrator)
 
+> **RETIRED by change `retire-skills-detection` (v5.0.0, 2026-09-15).** The
+> `scripts/orchestration/antz-skills.sh` script and the `## Skills to load
+> before work` delegation block no longer exist. Kept for history; not a
+> current contract. See the retirement record at the end of this file.
+
   Background:
     Given "agents/prompts/orchestrator.prompt"'s "Every delegation prefixes
       it:" preamble block carrying "Working root: <repo root absolute path>"
@@ -243,6 +250,10 @@ stay byte-for-byte unchanged.
     orchestrateonly mapping stays unchanged).
 
 ## Feature: matching is keyed to the description field only, with block-scalar support (descmatch)
+
+> **RETIRED by change `retire-skills-detection` (v5.0.0, 2026-09-15).**
+> `antz-skills.sh` and its description-keyed matcher were deleted whole.
+> Kept for history; not a current contract.
 
   Background:
     Given the embedded antz-skills.sh snippet inside
@@ -708,7 +719,11 @@ SKILL.md exists and reads in full at ~/.agents/skills/); their live-session
   beyond the readwrite `Skill` grant (that MODIFY lives in
   "spdd/specs/access-model.md" render-01); the "worktree" branch variant
   and its historical docs.
-- The specifier prompt body (byte-for-byte guard, prompts-05).
+- The specifier prompt body. **Partially superseded**: the byte-for-byte
+  guard (prompts-05) was lifted for the one additive closing-block bullet
+  by `orchestrator-fast-path` (closingblock-05), and lifted again for the
+  specifier's `## Skills` section and mandatory activated-skills report
+  line by `skills-advisory` (advisory-02).
 
 ## Relevant files
 - "agents/prompts/coder.prompt", "agents/prompts/verifier.prompt" — the
@@ -737,6 +752,14 @@ SKILL.md exists and reads in full at ~/.agents/skills/); their live-session
   for history.
 - "spdd/archive/skills-desc-match/" — the delivering change of the
   descmatch layer and the 4.2.1 bump, preserved for history.
+- This change (`skills-advisory`, direct edit):
+  "agents/prompts/{specifier,coder,verifier,orchestrator}.prompt" (the
+  advisory block rule and the specifier's `## Skills` section plus report
+  line), this spec file, and the 4.10.0 `VERSION`/`CHANGELOG.md` bump.
+  **Superseded in part by `retire-skills-detection` (v5.0.0):** the advisory
+  block rules were removed with the block itself; the specifier's `## Skills`
+  section and the directory-free wording survive, and the libdir script set
+  drops `scripts/orchestration/antz-skills.sh` (deleted).
 
 ## Feature: each skills-mandate line is mandatory-reporting only; the mirror principle is stated once per prompt (from 04-skillsline.feature, change `style-rewrite`)
 
@@ -820,3 +843,199 @@ SKILL.md exists and reads in full at ~/.agents/skills/); their live-session
   requirement in its report section); no existing bullet reworded or removed;
   enforced by the additive-shape guard in `tests/skills-activation-prompts_test.sh`
   with the retirement-note convention.
+- **Superseded again by `skills-advisory`**: the specifier prompt gains its
+  `## Skills` section and its mandatory activated-skills report line
+  (advisory-02), so the historical byte-for-byte clause no longer holds for
+  the skills duty either.
+
+## Feature: the pre-resolved block is a hint, never a suppression — a derivation miss never disables a role's own discovery (change `skills-advisory`, direct edit 2026-09-15)
+
+> **advisory-01..03 RETIRED by change `retire-skills-detection` (v5.0.0,
+> 2026-09-15)** with the block they qualify. advisory-04 (no prompt names a
+> skills directory) survives and is strengthened below.
+
+  Background:
+    Given the four role prompts ("specifier", "coder", "verifier",
+      "orchestrator")
+    And the orchestrator's `## Skills to load before work` block, still
+      derived per delegation by the installed
+      `scripts/orchestration/antz-skills.sh`
+    And the reported defect: the keyword-keyed derivation has a wide miss
+      margin (the orchestrator invents the keywords), so a false
+      `Skills: none matched` propagated into a skipped activation — the roles
+      read a present block as authoritative and never ran their own discovery,
+      and the specifier carried no discovery duty at all
+
+  # MODIFY - advisory-01: the block is advisory; own discovery runs always.
+  Scenario: advisory-01
+    When the reader reads the "## Skills" section of
+      "agents/prompts/coder.prompt" and "agents/prompts/verifier.prompt"
+    Then a delegation block listing `SKILL.md` paths is still read first
+    And the block is stated as a hint, never a substitute for the role's own
+      discovery
+    And the role runs its own discovery on every session — a direct
+      invocation and a delegated one, with either block form, alike
+    And a `Skills: none matched` block is stated never to excuse skipping
+      that discovery, so a keyword miss upstream cannot become a skipped
+      activation
+
+  # ADD - advisory-02: the specifier carries the same duty.
+  Scenario: advisory-02
+    When the reader reads "agents/prompts/specifier.prompt"
+    Then it carries a "## Skills" section with the same tool-when-present and
+      directory-fallback wording, its activation duty keyed to each skill's
+      own description, and activation defined as reading the full `SKILL.md`
+    And its report section requires the mandatory activated-skills line
+    And its delegation-block bullet states the same advisory rule (read the
+      listed paths first, then still run its own discovery)
+
+  # MODIFY - advisory-03: the orchestrator states the block is a hint.
+  Scenario: advisory-03
+    When the reader reads the orchestrator's delegation-block bullets
+    Then the block is described as a hint, never a substitute for the role's
+      own discovery, and a derivation miss never blocks an activation
+    And the explicit `Skills: none matched` line survives, never silently
+      omitted
+    And the derivation stays description-keyed, capped at five with the
+      alphabetical tie-break, invoked as the installed script by its
+      resolved path, and stateless — the output contract itself is unchanged
+
+  # MODIFY - advisory-04: no prompt names a skills directory.
+  Scenario: advisory-04
+    When the reader reads the "## Skills" section of the specifier, coder,
+      and verifier prompts
+    Then none of them names a skills directory (no `.agents/skills`,
+      `.claude/skills`, `.opencode/skills`, or a home-relative variant)
+    And discovery is stated as the session's own skill-listing capability,
+      because the client already resolves its skills locations
+    And the orchestrator prompt names no skills list at all: it states that
+      skill discovery stays with the delegated role, and it carries no
+      `## Skills to load before work` block
+
+  ### Invariants
+  - The derivation output contract is unchanged: `skill=`/`path=`/`matched=`
+    lines, `Skills: none matched` at exit 0, cap of five, alphabetical
+    tie-break, case-insensitive description matching, no registry, nothing
+    written to disk, and the orchestrator never reading or following a
+    SKILL.md itself.
+  - The block's shape is unchanged: `## Skills to load before work` plus
+    either the matched-path lines or the single none-matched line, and the
+    machine-pinned strings (`paths, not summaries`, the invocation one-liner,
+    `never a temp-file copy`, the installed-command clause, the never-read
+    clause) stay byte-unchanged.
+  - Skills-facing text is written in short imperative sentences, one rule per
+    bullet, and names no skills directory: discovery is the client's own
+    skill-listing capability. The enumeration lives in the installed
+    `antz-skills.sh` only.
+  - `agents/meta/*` are byte-for-byte unchanged; no new tool grant, no
+    client-specific syntax, and no new CLI, hook, or plugin is introduced.
+
+## Supersession record — change `skills-advisory` (direct, 2026-09-15)
+
+- **prompts-07 superseded**: its "Only when the delegation carries no such
+  block (a direct, non-orchestrated invocation) do you run your own
+  discovery" rule is superseded by advisory-01. A delegation block — present
+  with paths or reading `Skills: none matched` — never suppresses the role's
+  own discovery; the block pre-resolves, the role still discovers.
+- **orchestrator-03 refined**: the explicit `Skills: none matched` line
+  survives byte-unchanged and is still never silently omitted; it is now
+  stated to be the derivation's result and never a substitute for the role's
+  own discovery, which runs regardless.
+- **prompts-05's specifier clause lifted** (see advisory-02): the specifier
+  prompt gains its `## Skills` section and its mandatory activated-skills
+  report line. The earlier lift for the closing-block bullet was
+  closingblock-05.
+- **prompts-01's directory fallback superseded** (see advisory-04): the
+  prompts no longer enumerate skills directories or describe a "when no skill
+  tool exists" fallback. Discovery is the session's skill-listing capability;
+  the installed `antz-skills.sh` keeps its own enumeration but no longer
+  restates it in prose.
+- **No test edit**: the repo's hygiene law forbids suites from pinning a
+  role prompt's prose, and the derivation script's output contract is
+  unchanged, so no suite changes with this change.
+- **Legibility pass (same change)**: the four prompts' skills-facing text was
+  rewritten as short imperative bullets — one rule per bullet, hedged and
+  duplicated clauses removed, and the directory enumeration dropped from the
+  prose — with the machine-pinned strings kept byte-identical so the
+  rendered-output suite stays green.
+
+## Feature: orchestrator-side skill detection retired — discovery is the delegated role's own (change `retire-skills-detection`, v5.0.0, direct 2026-09-15)
+
+  Background:
+    Given the four role prompts, the surviving per-role `## Skills` duty, and
+      the delegation message's two header lines (`Working root`,
+      `Change slug`)
+    And the reported concern: the orchestrator's keyword-keyed derivation was
+      a second, weaker discovery channel for a role that already has a
+      native skill-listing capability and the full task context, and its
+      recall was correlated against its usefulness — a keyword miss fired
+      exactly when a nudge would have helped
+
+  # ADD - retire-01: the script and the delegation block are gone.
+  Scenario: retire-01
+    When the repository is inspected
+    Then `scripts/orchestration/antz-skills.sh` does not exist
+    And `install.sh`'s libdir install set is `antz-flow.sh`, `antz-probe.sh`,
+      and `antz-set-model.sh`, with no `antz-skills.sh` fetch, install call,
+      or `--check` line
+    And `agents/prompts/orchestrator.prompt` carries no
+      `## Skills to load before work` block, no matched-path sample, and no
+      `Skills: none matched` line, and its delegation message is exactly the
+      `Working root` and `Change slug` lines plus the task
+
+  # ADD - retire-02: discovery belongs to the role.
+  Scenario: retire-02
+    When the reader reads the `## Skills` section of the specifier, coder,
+      and verifier prompts
+    Then each states discovery through the session's skill-listing
+      capability, matching by each skill's own description, activation by
+      reading the full `SKILL.md`, and the mandatory activated-skills report
+      line
+    And none names a skills directory and none references a delegation
+      skills block
+    And the orchestrator prompt states that skill discovery stays with the
+      delegated role and never derives or passes a skills list
+
+  # ADD - retire-03: the removed contract is accounted for.
+  Scenario: retire-03
+    When the reader reads this domain's supersession records
+    Then orchestrator-01..04, descmatch-01..05, advisory-01..03, prompts-07,
+      and the docs-01..04 block clauses are marked retired with their
+      replacement behavior named
+    And the surviving behavior — per-role native discovery, description
+      matching, full-`SKILL.md` activation, and the mandatory report line —
+      is stated as the current contract
+
+  ### Invariants
+  - The delegated role is the only actor that discovers or activates skills.
+    No orchestrator-side enumeration, keyword derivation, ranking, cap, or
+    delegation block exists.
+  - `agents/meta/*` are byte-for-byte unchanged; no new tool grant, no
+    client-specific syntax, and no new CLI, hook, or plugin is introduced.
+  - The `Skill` readwrite grant in `install.sh` is unchanged: it is what makes
+    the role's own discovery possible.
+
+## Supersession record — change `retire-skills-detection` (v5.0.0, direct, 2026-09-15)
+
+- **orchestrator-01..04 retired**: the `## Skills to load before work`
+  delegation block, its absolute-path listing, its match-reason lines, its
+  none-matched line, and the `antz-skills.sh` invocation contract are gone.
+  Skill discovery is the role's own.
+- **descmatch-01..05 retired**: the description-keyed matcher, block-scalar
+  handling, cap of five, alphabetical tie-break, and output contract were
+  deleted with `scripts/orchestration/antz-skills.sh`.
+- **advisory-01..03 retired**: they qualified a block that no longer exists.
+  advisory-04 survives: no prompt names a skills directory, and now the
+  orchestrator passes no skills list either.
+- **prompts-07 retired**: there is no delegation block to read first. The
+  surviving prompts-01 duty is tool-based discovery; the directory-fallback
+  enumeration had already been removed by advisory-04.
+- **docs-01..04 block clauses retired**: the docs no longer describe a
+  pre-resolved delegation block; `docs/law-notes.md`'s skills section now
+  states that discovery belongs to the client.
+- **`install.sh`'s libdir set shrinks to three files**, and every file-count
+  pin in the suites moves with it.
+- **Grade: major (5.0.0)** — the orchestrator's delegation-message contract
+  changes and an installed artifact is removed. Not minor: a consumer that
+  expected the block, or the installed `antz-skills.sh`, breaks.
+

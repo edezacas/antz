@@ -9,6 +9,16 @@ changes to the workflow contract (directory layout, access model, etc).
 
 This branch (`master`) carries the branch-marked, no-commit variant of antz.
 
+## [5.0.0] - 2026-09-15
+
+### Removed
+- **The orchestrator's skill-detection system is retired: `scripts/orchestration/antz-skills.sh` and the `## Skills to load before work` delegation block are gone.** The block was a second, weaker discovery channel for a role that already has a native skill-listing capability and the full task context — its match keywords were invented by the orchestrator, so a missed match fired exactly when a nudge would have helped, and the guidance had already been demoted to a non-binding hint to contain the false negatives. `install.sh`'s libdir install set drops to `antz-flow.sh`, `antz-probe.sh`, and `antz-set-model.sh` (no fetch, no install call, and no `--check` line for the removed script), and the orchestrator's delegation message is now exactly the `Working root` and `Change slug` lines plus the task.
+
+### Changed
+- **Skill discovery and activation belong to the delegated role alone.** The specifier, coder, and verifier `## Skills` sections keep the duty — discover through the session's own skill-listing capability, match on each skill's own `description`, activate by reading the full `SKILL.md`, and report the activated names — and drop every reference to the delegation block. **The specifier gains that section**: it previously received the delegation block but no prompt section told it to discover anything. The role prompts name no skills directory, and the orchestrator prompt states that discovery stays with the delegated role and that it never derives or passes a skills list.
+- **Skill-discovery locations are no longer enumerated anywhere in agent-facing text.** The client already resolves its own skills locations, so a hand-maintained directory list only invited invented paths and duplicated client behavior. `docs/law-notes.md`'s skills section now states that discovery belongs to the client and that antz adds no skill mechanism of its own.
+- This grades as **major**: the orchestrator's delegation-message contract changes and an installed artifact is removed, so a consumer that expected the block, or the installed `antz-skills.sh`, breaks — not minor, which reserves itself for added or reworded role behavior. `agents/meta/` is byte-unchanged and the readwrite `Skill` grant in `install.sh` is untouched: it is what makes the role's own discovery possible. No role creates the `v5.0.0` tag — the local tag is the human's commit-time follow-up, created against the human's bump commit and not pushed automatically.
+
 ## [4.9.0] - 2026-09-15
 
 ### Changed

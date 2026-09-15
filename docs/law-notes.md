@@ -2,18 +2,9 @@
 
 Supplementary detail for `AGENTS.md` / `CLAUDE.md`. The policy docs state the law; this file holds the exact enumerations and the design reasoning that would otherwise bloat them. Where the reasoning is already owned by a spec, a prompt, or the changelog, this file points there instead of restating it.
 
-## Skills directories (fallback enumeration)
+## Skills discovery
 
-When a client has no skill tool, the coder and verifier enumerate the working root's and the user's standard skills directories and read the matched `SKILL.md` in full:
-
-- `.agents/skills/`
-- `~/.agents/skills/`
-- `.claude/skills/`
-- `~/.claude/skills/`
-- `.opencode/skills/`
-- `~/.config/opencode/skills/`
-
-Matching is always by description, never by name. A delegation's `## Skills to load before work` block is derived mechanically from those directories at delegation time (best match first, alphabetical tie-break, at most five entries), with an explicit `Skills: none matched` line when nothing matches. No registry file is kept and no refresh hook, plugin, or CLI is introduced — freshness comes from per-delegation derivation, and `install.sh` never mutates user configuration for this.
+Discovery belongs to the client: the specifier, coder, and verifier use their session's skill-listing capability, so neither the prompts nor the orchestrator keep a skills path list. Matching is always by each skill's own description, never by name, and activation means reading the matched `SKILL.md` in full. antz adds no skill mechanism of its own — no delegation block, no enumeration script, no registry file, no refresh hook, plugin, or CLI — and `install.sh` never mutates user configuration for this.
 
 ## `/antz` client mechanism
 

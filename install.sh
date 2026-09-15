@@ -65,7 +65,7 @@ MARKER="antz:generated"
 # clients (one libdir, not a per-client subdirectory). An empty
 # XDG_CONFIG_HOME falls back exactly like an unset one.
 LIBDIR_SUBPATH="antz/scripts"
-SCRIPTS="antz-flow.sh antz-probe.sh antz-skills.sh antz-set-model.sh"
+SCRIPTS="antz-flow.sh antz-probe.sh antz-set-model.sh"
 
 resolve_libdir() {
   # Echoes the resolved absolute libdir, with no trailing slash. $HOME is
@@ -225,7 +225,7 @@ render_opencode_command() {
     "$MARKER" "$1"
 }
 
-# Emits the COMPLETE bytes of the installed antz-set-model.sh (the fourth
+# Emits the COMPLETE bytes of the installed antz-set-model.sh (the third
 # libdir file): the "#!/bin/sh" shebang, then the antz:generated marker as a
 # line-start header comment immediately after it (the marker-in-scripts
 # contract, carrying install.sh's own $MARKER and $version), then the script
@@ -615,7 +615,7 @@ install_libdir_script() {
 }
 
 read_script_sources() {
-  # libdirinstall-05 (one atomic pass): read or fetch the three on-disk
+  # libdirinstall-05 (one atomic pass): read or fetch the two on-disk
   # script sources into variables BEFORE any destination file is written, so
   # a failing source aborts the whole install loudly (fetch_file's own error
   # names the unreadable file; a remote fetch honors ANTZ_REF through
@@ -631,17 +631,15 @@ read_script_sources() {
   src_flow=${src_flow%x}
   src_probe=$(fetch_file "scripts/orchestration/antz-probe.sh"; printf x)
   src_probe=${src_probe%x}
-  src_skills=$(fetch_file "scripts/orchestration/antz-skills.sh"; printf x)
-  src_skills=${src_skills%x}
 }
 
 install_libdir_scripts() {
-  # The four libdir files (libdirinstall-01/06): written in the same single
+  # The three libdir files (libdirinstall-01/06): written in the same single
   # pass as the client files (one invocation, no post-install step), into the
   # one shared client-independent libdir resolved once by resolve_libdir;
   # every invocation of an installed script is `sh "<resolved path>"
   # <arguments>` -- no exec bit installed or required, nothing added to
-  # PATH, no hook or plugin. The three on-disk sources were all read or
+  # PATH, no hook or plugin. The two on-disk sources were both read or
   # fetched before this runs (read_script_sources; libdirinstall-05). The
   # set-model script goes through the same backup-if-unmanaged rule and
   # "Installed" message as every other file, but its text is redirected
@@ -650,7 +648,6 @@ install_libdir_scripts() {
   mkdir -p "$ANTZ_SCRIPTS_DIR"
   install_libdir_script antz-flow.sh "$src_flow"
   install_libdir_script antz-probe.sh "$src_probe"
-  install_libdir_script antz-skills.sh "$src_skills"
   dest="$ANTZ_SCRIPTS_DIR/antz-set-model.sh"
   backup_if_unmanaged "$dest"
   emit_set_model_script > "$dest"
@@ -772,5 +769,5 @@ if [ "$want_opencode" -eq 1 ]; then
   install_file "$HOME/.config/opencode/commands/antz-set-model.md" "$(render_set_model_command opencode "$version")"
 fi
 
-# The four orchestration scripts install in the same pass (libdirinstall-01/06).
+# The three orchestration scripts install in the same pass (libdirinstall-01/06).
 install_libdir_scripts

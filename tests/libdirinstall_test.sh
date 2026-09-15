@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Unit tests for install.sh's libdir script installation, covering every
 # scenario in spdd/changes/deembed-orchestration-scripts/01-libdirinstall.feature
-# (libdirinstall-01..07). The change: the three orchestration scripts
-# (scripts/orchestration/antz-flow.sh, antz-probe.sh, antz-skills.sh) plus the
+# (libdirinstall-01..07). The change: the two orchestration scripts
+# (scripts/orchestration/antz-flow.sh, antz-probe.sh) plus the
 # set-model script (emitted today by install.sh's emit_set_model_script)
-# install as four marked files in one shared, resolved library directory
+# install as three marked files in one shared, resolved library directory
 # "${XDG_CONFIG_HOME:-$HOME/.config}/antz/scripts" (change decisions 1 and 7),
 # with the same marker / backup / --check policy every other installed file
 # carries. The repo sources under scripts/orchestration/ stay byte-unchanged;
@@ -34,7 +34,7 @@ INSTALL_SH="$SCRIPT_DIR/install.sh"
 
 CURRENT_VERSION=$(tr -d ' \t\r\n' < "$SCRIPT_DIR/VERSION")
 
-LIB_SCRIPTS="antz-flow.sh antz-probe.sh antz-skills.sh antz-set-model.sh"
+LIB_SCRIPTS="antz-flow.sh antz-probe.sh antz-set-model.sh"
 
 pass_count=0
 fail_count=0
@@ -164,7 +164,7 @@ emitted_set_model_source() {
 }
 
 behaviour_dump() {
-  # $1 = script path, $2 = script kind (flow|probe|skills|setmodel),
+  # $1 = script path, $2 = script kind (flow|probe|setmodel),
   # $3 = scratch dir. Runs the script with a deterministic probe invocation
   # whose combined stdout+stderr carries no path of its own, and dumps
   # "rc=<n>" plus the output to stdout. Same probes for installed copies and
@@ -174,7 +174,6 @@ behaviour_dump() {
   case "$kind" in
     flow)     env -u CHANGE_DIR sh "$f" ;;
     probe)    env CHANGE_DIR="$f/../no-such-change-dir" sh "$f" ;;
-    skills)   env -u CHANGE_DIR sh "$f" ;;
     setmodel) env HOME=/nonexistent-isolated-home sh "$f" --agent coder --model opus ;;
   esac > "$3/out" 2>&1
   printf 'rc=%s\n' "$?" >> "$3/out"
@@ -182,7 +181,7 @@ behaviour_dump() {
 }
 
 # ---- libdirinstall-01 ---------------------------------------------------------
-# The four scripts install as marked files in the libdir; the three
+# The three scripts install as marked files in the libdir; the two
 # orchestration scripts are byte-faithful copies of their sources plus one
 # inserted marker line, the repo sources stay byte-unchanged, and running
 # each installed file via `sh <path>` behaves exactly like running its source.
@@ -214,9 +213,9 @@ libdirinstall_01() {
       echo "  $f: line 2 is not the '# antz:generated version=$CURRENT_VERSION ...' marker: $(sed -n '2p' "$lib/$f")"; ok=1; }
   done
 
-  # byte-faithfulness of the three orchestration files: installed minus the
+  # byte-faithfulness of the two orchestration files: installed minus the
   # single inserted line 2 is its source byte-for-byte
-  for s in antz-flow antz-probe antz-skills; do
+  for s in antz-flow antz-probe; do
     sed '2d' "$lib/$s.sh" | cmp -s - "$co/scripts/orchestration/$s.sh" || {
       echo "  $s.sh: installed copy is not the source plus one marker line"; ok=1; }
   done
@@ -232,7 +231,6 @@ libdirinstall_01() {
   emitted_set_model_source "$co/install.sh" > "$d/set-model.source.sh"
   for pair in "flow $lib/antz-flow.sh $co/scripts/orchestration/antz-flow.sh" \
               "probe $lib/antz-probe.sh $co/scripts/orchestration/antz-probe.sh" \
-              "skills $lib/antz-skills.sh $co/scripts/orchestration/antz-skills.sh" \
               "setmodel $lib/antz-set-model.sh $d/set-model.source.sh"; do
     set -- $pair
     mkdir -p "$d/pa" "$d/pb"
@@ -433,11 +431,11 @@ libdirinstall_04_fresh_and_check() {
   done
   # each line is keyed off the script's own marker: restamp one to 4.5.6
   restamped="$d/restamped"
-  { sed '2d' "$home/.config/antz/scripts/antz-skills.sh"; } > "$restamped"
-  { sed -n '1p' "$home/.config/antz/scripts/antz-skills.sh"; marker_line 4.5.6; echo; sed -n '3,$p' "$restamped"; } \
-    > "$home/.config/antz/scripts/antz-skills.sh"
+  { sed '2d' "$home/.config/antz/scripts/antz-flow.sh"; } > "$restamped"
+  { sed -n '1p' "$home/.config/antz/scripts/antz-flow.sh"; marker_line 4.5.6; echo; sed -n '3,$p' "$restamped"; } \
+    > "$home/.config/antz/scripts/antz-flow.sh"
   install_at "$home" "$co/install.sh" --claude --check > "$d/check3.log" 2>&1 || { echo "  third --check failed"; ok=1; }
-  grep -q "^antz-skills.sh: antz 4\.5\.6 -> $CURRENT_VERSION\$" "$d/check3.log" || {
+  grep -q "^antz-flow.sh: antz 4\.5\.6 -> $CURRENT_VERSION\$" "$d/check3.log" || {
     echo "  the restamped script's drift line is missing (marker version not honored per script)"; ok=1; }
   grep -q "^antz-probe.sh: already up to date" "$d/check3.log" || {
     echo "  a sibling script stopped reporting up to date after the restamp"; ok=1; }
@@ -576,7 +574,7 @@ libdirinstall_06() {
   install_at "$home" "$co/install.sh" --claude > "$d/run1.log" 2>&1 \
     || { echo "  --claude install exited non-zero"; return 1; }
   n=$(find "$home" -type f | wc -l | tr -d ' ')
-  [ "$n" -eq 10 ] || { echo "  single-client install wrote $n files (expected 6 Claude + 4 shared libdir)"; ok=1; }
+  [ "$n" -eq 9 ] || { echo "  single-client install wrote $n files (expected 6 Claude + 3 shared libdir)"; ok=1; }
   [ -d "$home/.config/opencode" ] && { echo "  an OpenCode tree appeared for a Claude-only install"; ok=1; }
   for f in $LIB_SCRIPTS; do
     [ -f "$home/.config/antz/scripts/$f" ] || { echo "  libdir script missing after --claude: $f"; ok=1; }
@@ -587,7 +585,7 @@ libdirinstall_06() {
   install_at "$home" "$co/install.sh" --opencode > "$d/run2.log" 2>&1 \
     || { echo "  --opencode install exited non-zero"; ok=1; }
   n=$(find "$home" -type f | wc -l | tr -d ' ')
-  [ "$n" -eq 16 ] || { echo "  second client install grew the tree to $n files (expected 16, no second libdir)"; ok=1; }
+  [ "$n" -eq 15 ] || { echo "  second client install grew the tree to $n files (expected 15, no second libdir)"; ok=1; }
   n=$(find "$home" -type d -name scripts -path '*antz*' | wc -l | tr -d ' ')
   [ "$n" -eq 1 ] || { echo "  expected exactly one antz scripts libdir directory, found $n"; ok=1; }
   [ -z "$(find "$home" -name '*.bak.*' -print -quit)" ] || { echo "  the libdir reuse created a backup"; ok=1; }
@@ -602,9 +600,9 @@ libdirinstall_06() {
     p="$home/.config/antz/scripts/$f"
     [ -x "$p" ] && { echo "  $f carries an exec bit (the contract requires none)"; ok=1; }
   done
-  usage_line=$(sh "$home/.config/antz/scripts/antz-skills.sh" 2>&1; echo "rc=$?")
+  usage_line=$(sh "$home/.config/antz/scripts/antz-flow.sh" 2>&1; echo "rc=$?")
   case "$usage_line" in
-    *"usage: antz-skills.sh <working-root> <keyword>..."*rc=1) ;;
+    *"usage: sh <tempfile> discover"*rc=1) ;;
     *) echo "  non-executable libdir file does not run via \"sh <path>\": $usage_line"; ok=1 ;;
   esac
   ex=$(grep -v '^[[:space:]]*#' "$INSTALL_SH" | grep -cE '(^|[[:space:]])PATH=')
@@ -614,7 +612,7 @@ libdirinstall_06() {
 
 # ---- libdirinstall-07 ---------------------------------------------------------
 # The fetch architecture survives with its subject changed to script
-# installation: each of the three on-disk script sources is fetched through
+# installation: each of the two on-disk script sources is fetched through
 # the one fetch_file helper, the set-model source is install.sh's own emitter
 # text (read, never fetched from outside -- since change
 # deembed-orchestration-scripts sub-spec 03 that text is redirected straight
@@ -625,7 +623,7 @@ libdirinstall_06() {
 
 libdirinstall_07() {
   d=$(new_tmp_dir); ok=0
-  for rel in scripts/orchestration/antz-flow.sh scripts/orchestration/antz-probe.sh scripts/orchestration/antz-skills.sh; do
+  for rel in scripts/orchestration/antz-flow.sh scripts/orchestration/antz-probe.sh; do
     grep -qF "fetch_file \"$rel\"" "$INSTALL_SH" || {
       echo "  the script install does not fetch $rel through fetch_file"; ok=1; }
   done

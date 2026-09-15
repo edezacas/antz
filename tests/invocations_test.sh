@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Unit tests for the orchestrator invocation contract, covering every
 # scenario in spdd/changes/deembed-orchestration-scripts/02-invocations.feature
-# (invocations-01..08). The change: agents/prompts/orchestrator.prompt's three
+# (invocations-01..07). The change: agents/prompts/orchestrator.prompt's three
 # "# antz-include:" script fences become one-line invocations of the installed
 # libdir files (sub-spec 01) at the placeholder token "__ANTZ_SCRIPTS_DIR__",
 # which install.sh substitutes with the concrete resolved libdir at render
@@ -24,7 +24,7 @@
 # tests/libdirinstall_test.sh. Run directly:
 #   ./tests/invocations_test.sh
 #
-# Each reported test name embeds its scenario id (invocations-01..08) from
+# Each reported test name embeds its scenario id (invocations-01..07) from
 # the feature file above, so a failure maps straight back to the scenario it
 # covers. Every filesystem-touching run uses an isolated HOME (a fresh temp
 # dir per test, XDG_CONFIG_HOME removed or set explicitly) -- never the real
@@ -124,7 +124,7 @@ assert_body_has_no_script_lines() {
   f="$1"
   trims=$(mktemp)
   sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$f" > "$trims"
-  for s in antz-flow antz-probe antz-skills; do
+  for s in antz-flow antz-probe; do
     src="$SCRIPT_DIR/scripts/orchestration/$s.sh"
     while IFS= read -r line || [ -n "$line" ]; do
         line=${line#"${line%%[![:space:]]*}"}   # ltrim
@@ -157,10 +157,10 @@ INV_LIB="$INV_HOME/.config/antz/scripts"
 
 # ---- invocations-01 ----------------------------------------------------------
 # The invocation forms, observed on the rendered bodies for both clients:
-# discover/ensure/state/release and the skills derivation run as one-line
-# path invocations of the resolved libdir (state still carrying the probe's
-# path), no "save ... to a temp file" instruction survives anywhere in the
-# body, and no include marker or unresolved placeholder token survives.
+# discover/ensure/state/release run as one-line path invocations of the
+# resolved libdir (state still carrying the probe's path), no "save ... to a
+# temp file" instruction survives anywhere in the body, and no include marker
+# or unresolved placeholder token survives.
 
 invocations_01_invocation_forms() {
   ok=0
@@ -171,8 +171,7 @@ invocations_01_invocation_forms() {
       "sh \"$INV_LIB/antz-flow.sh\" discover" \
       "sh \"$INV_LIB/antz-flow.sh\" ensure <slug>" \
       "sh \"$INV_LIB/antz-flow.sh\" state <slug> \"$INV_LIB/antz-probe.sh\"" \
-      "sh \"$INV_LIB/antz-flow.sh\" release <slug>" \
-      "sh \"$INV_LIB/antz-skills.sh\" <working-root> <match keyword> ..."
+      "sh \"$INV_LIB/antz-flow.sh\" release <slug>"
     do
       grep -qF "$form" "$f" || {
         echo "  ($client) body missing the one-line invocation form: $form"; ok=1; }
@@ -240,8 +239,7 @@ invocations_03_render() {
       "sh \"$lib/antz-flow.sh\" discover" \
       "sh \"$lib/antz-flow.sh\" ensure <slug>" \
       "sh \"$lib/antz-flow.sh\" state <slug> \"$lib/antz-probe.sh\"" \
-      "sh \"$lib/antz-flow.sh\" release <slug>" \
-      "sh \"$lib/antz-skills.sh\" <working-root> <match keyword> ..."
+      "sh \"$lib/antz-flow.sh\" release <slug>"
     do
       grep -qF "$form" "$f" || {
         echo "  $client body missing the concrete-path invocation: $form"; ok=1; }
@@ -343,10 +341,6 @@ invocations_04_machine_line_vocabulary() {
   done
   grep -qF 'subspec=%s ids=%s %s' "$so/antz-probe.sh" || {
     echo "  the probe's subspec= line format is lost"; ok=1; }
-  grep -qF 'skill=%s path=%s matched=%s' "$so/antz-skills.sh" || {
-    echo "  the skills script's skill= line format is lost"; ok=1; }
-  grep -qF 'Skills: none matched' "$so/antz-skills.sh" || {
-    echo "  the skills script's none-matched line is lost"; ok=1; }
   # the flow script's header usage comment keeps the historical "sh <tempfile>"
   # wording (presence in the product source is the fact; comparing the tree
   # against a git HEAD copy was deleted by change optimize-test-suite,
@@ -425,16 +419,14 @@ invocations_06_structure() {
     f="$INV_HOME/$client/agents/antz-orchestrator.md"
     [ -f "$f" ] || { echo "  missing rendered file: $f"; ok=1; continue; }
     fl=$(grep -cE '^[[:space:]]*```' "$f")
-    [ "$fl" -eq 8 ] || { echo "  ($client) expected 8 fence lines, got: $fl"; ok=1; }
+    [ "$fl" -eq 4 ] || { echo "  ($client) expected 4 fence lines, got: $fl"; ok=1; }
     sh=$(grep -cE '^[[:space:]]*```sh' "$f")
     [ "$sh" -eq 0 ] || { echo "  ($client) expected no \`\`\`sh fence, got: $sh"; ok=1; }
     blocks=$((fl / 2))
-    [ "$blocks" -eq 4 ] || { echo "  ($client) expected 4 fenced blocks, got: $blocks"; ok=1; }
-    # the four surviving blocks are the delegation header, the two skills-block
-    # shapes, and the human follow-up print
+    [ "$blocks" -eq 2 ] || { echo "  ($client) expected 2 fenced blocks, got: $blocks"; ok=1; }
+    # the two surviving blocks are the delegation header and the human
+    # follow-up print
     grep -qF 'Working root: <repo root absolute path>' "$f" || { echo "  ($client) delegation-header block lost"; ok=1; }
-    grep -qF 'Skills: none matched' "$f" || { echo "  ($client) none-matched block shape lost"; ok=1; }
-    grep -qF '(matched: <keyword>, <keyword>)' "$f" || { echo "  ($client) matched-list block shape lost"; ok=1; }
     grep -qF 'git branch -d antz/<slug>' "$f" || { echo "  ($client) follow-up print block lost"; ok=1; }
     # the four tables survive, steps still end at 6
     for hdr in \
@@ -531,79 +523,6 @@ invocations_07_cache_effect_recorded() {
   grep -qF '~335' "$readme" || { echo "  README does not record the ~335 embedded lines"; ok=1; }
   grep -qE 'per-session re-materialization|re-emits the whole script text' "$readme" || {
     echo "  README does not record the per-session re-materialization that drops to zero"; ok=1; }
-  return $ok
-}
-
-# ---- invocations-08 ----------------------------------------------------------
-# The skills-derivation contract at the installed file: the rendered body runs
-# antz-skills.sh by resolved path (never a CLI on PATH, hook, plugin, or
-# temp-file copy), the derivation output contract is untouched (skill=/
-# none-matched/cap-5/alphabetical tie-break/case-insensitive), the block
-# shapes are byte-unchanged, and the never-read/SKILL.md constraint survives.
-
-invocations_08_body_skills_bullets() {
-  # Reuses the suite's single staged render (install.sh's render is
-  # deterministic; the shared staging is defined next to the helpers).
-  ok=0
-  home="$INV_HOME"
-  lib="$INV_LIB"
-  for client in .claude .config/opencode; do
-    f="$home/$client/agents/antz-orchestrator.md"
-    grep -qF "sh \"$lib/antz-skills.sh\" <working-root> <match keyword> ..." "$f" || {
-      echo "  ($client) the skills bullet does not run the installed script by resolved path"; ok=1; }
-    grep -qF 'never a temp-file copy' "$f" || {
-      echo "  ($client) the never-a-temp-file-copy clause is gone"; ok=1; }
-    grep -qF 'never a new installed command, CLI, hook, or plugin' "$f" || {
-      echo "  ($client) the no-CLI/hook/plugin clause is gone"; ok=1; }
-    # the "## Skills to load before work" block shapes, byte-unchanged
-    grep -qF '## Skills to load before work' "$f" || {
-      echo "  ($client) the delegation block heading shape is gone"; ok=1; }
-    grep -qF -- '- /absolute/path/to/first-skill/SKILL.md (matched: <keyword>, <keyword>)' "$f" || {
-      echo "  ($client) the matched-list shape is gone"; ok=1; }
-    grep -qF "it never reads or follows a SKILL.md's instructions" "$f" || {
-      echo "  ($client) the never-read constraint is gone"; ok=1; }
-    grep -qF 'paths, not summaries' "$f" || {
-      echo "  ($client) the paths-not-summaries constraint is gone"; ok=1; }
-  done
-  return $ok
-}
-
-invocations_08_derivation_contract() {
-  d=$(new_tmp_dir); ok=0
-  co="$d/checkout"; stage_checkout "$co"
-  home="$d/home"; mkdir -p "$home"
-  install_at "$home" "$co/install.sh" --claude > "$d/install.log" 2>&1 \
-    || { echo "  install exited non-zero"; return 1; }
-  skills="$home/.config/antz/scripts/antz-skills.sh"
-  [ -f "$skills" ] || { echo "  installed antz-skills.sh missing"; return 1; }
-
-  wroot="$d/wroot"
-  empty="$d/empty-home"; mkdir -p "$empty"
-  for n in a b c d e f g; do
-    mkdir -p "$wroot/.agents/skills/sk-$n"
-    printf -- '---\nname: sk-%s\ndescription: a kw-matching fixture skill\n---\n\nbody\n' "$n" \
-      > "$wroot/.agents/skills/sk-$n/SKILL.md"
-  done
-  phys=$(cd "$wroot" && pwd)
-
-  # matched run: at most five, best score first with an alphabetical-by-name
-  # tie-break (all equal here -> sk-a..sk-e), each line skill=/path=/matched=
-  out=$(env -u XDG_CONFIG_HOME HOME="$empty" sh "$skills" "$phys" kw 2>&1); rc=$?
-  [ "$rc" -eq 0 ] || { echo "  matched run exited $rc"; ok=1; }
-  n=$(printf '%s\n' "$out" | grep -c '^skill=')
-  [ "$n" -eq 5 ] || { echo "  expected the cap of five matched lines, got: $n"; ok=1; }
-  printf '%s\n' "$out" | head -1 | grep -qxF "skill=sk-a path=$phys/.agents/skills/sk-a/SKILL.md matched=kw" || {
-    echo "  first line is not the alphabetical-by-name tie-break winner: $(printf '%s\n' "$out" | head -1)"; ok=1; }
-  printf '%s\n' "$out" | grep -qF 'sk-f' && { echo "  sk-f leaked past the cap of five"; ok=1; }
-
-  # case-insensitive description matching: uppercase KW hits the same skills
-  out2=$(env -u XDG_CONFIG_HOME HOME="$empty" sh "$skills" "$phys" KW 2>&1); rc=$?
-  [ "$rc" -eq 0 ] && [ "$out2" = "$out" ] || { echo "  case-insensitive matching drifted"; ok=1; }
-
-  # nothing matches -> exactly one line, exit 0
-  out3=$(env -u XDG_CONFIG_HOME HOME="$empty" sh "$skills" "$phys" zzznomatchzzz 2>&1); rc=$?
-  [ "$rc" -eq 0 ] || { echo "  none-matched run exited $rc"; ok=1; }
-  [ "$out3" = "Skills: none matched" ] || { echo "  none-matched output drifted: $out3"; ok=1; }
   return $ok
 }
 
@@ -711,18 +630,16 @@ invocationsfix_02_changelog_clause_deleted() {
 
 # ---- run ---------------------------------------------------------------------
 
-run_test "invocations-01: the rendered bodies run discover/ensure/state/release and the skills derivation as one-line path invocations of the resolved libdir (state still carrying the probe's path), with no temp-file instruction and no include marker or unresolved placeholder surviving" invocations_01_invocation_forms
+run_test "invocations-01: the rendered bodies run discover/ensure/state/release as one-line path invocations of the resolved libdir (state still carrying the probe's path), with no temp-file instruction and no include marker or unresolved placeholder surviving" invocations_01_invocation_forms
 run_test "invocations-02: inject_includes(), its orchestrator-keyed call site and the antz-skills.sh done-carve-out are gone from install.sh, which substitutes the once-resolved libdir for the placeholder at render time" invocations_02_mechanism_retired
 run_test "invocations-03: both rendered orchestrator bodies are exactly the source prompt with the concrete resolved path substituted -- zero script lines, zero markers, zero placeholders anywhere installed -- with the Claude and OpenCode frontmatter shapes intact" invocations_03_render
 run_test "invocations-03: with XDG_CONFIG_HOME set the invocation lines carry that XDG-resolved concrete path (never the HOME fallback, never a trailing slash)" invocations_03_xdg_concrete_path
 run_test "invocations-04: the rendered body instructs zero re-materialization (no temp file anywhere; every installed-file run is a one-line sh call), the 'Never writes anything itself' Owns bullet holds, and every script-machine-line invocation is by path" invocations_04_no_rematerialization
 run_test "invocations-04: the scripts' machine-line vocabulary survives -- every pinned literal present in the scripts/orchestration/ product files, historical sh <tempfile> header wording included" invocations_04_machine_line_vocabulary
 run_test "invocations-05: the four tables, step 3 classification, step 4 rejection routing, the session guards, the Report Format, the byte-pinned delegation header and the human follow-up print survive both renders; the flow script keeps exactly its four subcommands" invocations_05_routing_surface
-run_test "invocations-06: structural pins of the de-embedded shape, observed on the rendered bodies -- 4 fenced blocks (8 fence lines, no \`\`\`sh), the four tables, steps ending at 6, no new fenced block" invocations_06_structure
+run_test "invocations-06: structural pins of the de-embedded shape, observed on the rendered bodies -- 2 fenced blocks (4 fence lines, no \`\`\`sh), the four tables, steps ending at 6, no new fenced block" invocations_06_structure
 run_test "invocations-07: renders are deterministic and idempotent (two fresh-HOME installs and a same-HOME re-install give byte-identical trees), the body carries no per-session data with the frontmatter marker as its only version-bearing string, and no script line appears in any rendered agent body" invocations_07_stable_prefix
 run_test "invocations-07: the expected cache effect (KV-cache priority, ~335 embedded lines gone, per-session re-materialization dropping to zero) is recorded in the change README" invocations_07_cache_effect_recorded
-run_test "invocations-08: the rendered skills bullets run the installed antz-skills.sh by resolved path with never-a-temp-file-copy, the no-CLI/hook/plugin clause, the byte-unchanged block shapes and the never-read constraint" invocations_08_body_skills_bullets
-run_test "invocations-08: the installed antz-skills.sh keeps the derivation output contract untouched -- skill=/path=/matched= lines, cap of five with the alphabetical-by-name tie-break, case-insensitive matching, 'Skills: none matched' at exit 0" invocations_08_derivation_contract
 run_test "invocationsfix-01: invocations-07's record clause reads the immutable archived change README (spdd/archive/deembed-orchestration-scripts/README.md), still requires the three recorded cache-effect facts as gated reads, runs green at the current disk state, and introduces no git comparison, byte-pin vs HEAD, or prose pin of prompts/docs" invocationsfix_01_record_clause_reads_archive
 run_test "invocationsfix-02: the CHANGELOG-clause SKIP stub of invocations-07 is deleted with its stale deferral text, neither retained invocations-07 registration asserts CHANGELOG content, and exactly two id-headed registrations carry the invocations-07 id" invocationsfix_02_changelog_clause_deleted
 

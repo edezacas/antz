@@ -35,7 +35,7 @@ set -u
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 INSTALL_SH="$SCRIPT_DIR/install.sh"
-SCRIPTS="antz-flow antz-probe antz-skills"
+SCRIPTS="antz-flow antz-probe"
 
 pass_count=0
 fail_count=0

@@ -205,7 +205,7 @@ refpin_01() {
   for rel in VERSION CHANGELOG.md \
       agents/meta/specifier.yaml agents/meta/coder.yaml agents/meta/verifier.yaml agents/meta/orchestrator.yaml \
       agents/prompts/specifier.prompt agents/prompts/coder.prompt agents/prompts/verifier.prompt agents/prompts/orchestrator.prompt \
-      scripts/orchestration/antz-flow.sh scripts/orchestration/antz-probe.sh scripts/orchestration/antz-skills.sh; do
+      scripts/orchestration/antz-flow.sh scripts/orchestration/antz-probe.sh; do
     grep -qxF "$rel" "$d/rels" || { echo "  never fetched from master: $rel"; ok=1; }
   done
   grep -qF "fresh install of antz 9.9.9" "$d/run-a.log" \
@@ -361,8 +361,7 @@ refpin_04() {
 
 refpin_05() {
   d=$(new_tmp_dir); ok=0
-  for rel in scripts/orchestration/antz-flow.sh scripts/orchestration/antz-probe.sh \
-      scripts/orchestration/antz-skills.sh; do
+  for rel in scripts/orchestration/antz-flow.sh scripts/orchestration/antz-probe.sh; do
     grep -qF "fetch_file \"$rel\"" "$INSTALL_SH" || {
       echo "  the script installation no longer fetches $rel through fetch_file"; ok=1; }
   done
