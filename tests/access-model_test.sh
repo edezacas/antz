@@ -240,16 +240,20 @@ test_render_04() {
     *Skill*) echo "  orchestrateonly tools line grants Skill: $(tools_line "$oc")"; ok=1 ;;
   esac
   # Pi mapping levels, forced renders: readonly grants no edit/write, and
-  # orchestrateonly adds exactly the delegation tool over readonly.
+  # orchestrateonly adds the writer tools plus the delegation tool over
+  # readonly (see install.sh's pi_tools_for_access comment: the writer tools
+  # are pass-through grants a readonly delegator would otherwise strip from
+  # the roles it spawns).
   [ "$(tools_line "$pf_ro")" = "read, grep, find, ls, bash" ] \
     || { echo "  Pi readonly tools line is: $(tools_line "$pf_ro")"; ok=1; }
   case "$(tools_line "$pf_ro")" in
     *edit*|*write*|*subagent*) echo "  Pi readonly tools line grants a writer or delegator: $(tools_line "$pf_ro")"; ok=1 ;;
   esac
-  [ "$(tools_line "$pf_oo")" = "read, grep, find, ls, bash, subagent" ] \
+  [ "$(tools_line "$pf_oo")" = "read, grep, find, ls, bash, edit, write, subagent" ] \
     || { echo "  Pi orchestrateonly tools line is: $(tools_line "$pf_oo")"; ok=1; }
   case "$(tools_line "$pf_oo")" in
-    *edit*|*write*) echo "  Pi orchestrateonly tools line grants a writer: $(tools_line "$pf_oo")"; ok=1 ;;
+    *subagent*) ;;
+    *) echo "  Pi orchestrateonly tools line lost the delegation tool: $(tools_line "$pf_oo")"; ok=1 ;;
   esac
   # The Pi skills-catalog inheritance mirrors the Claude Skill grant: only
   # the readwrite roles see it.

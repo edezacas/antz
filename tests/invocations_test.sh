@@ -271,7 +271,7 @@ invocations_03_render() {
   # nested-delegation tool named, the skills/context inheritance the role
   # prompts depend on, and the current-version marker.
   p="$home/.pi/agent/agents/antz-orchestrator.md"
-  grep -qxF 'tools: read, grep, find, ls, bash, subagent' "$p" || {
+  grep -qxF 'tools: read, grep, find, ls, bash, edit, write, subagent' "$p" || {
     echo "  Pi frontmatter lost the orchestrateonly tools allowlist"; ok=1; }
   grep -qxF 'inheritSkills: false' "$p" || {
     echo "  Pi orchestrator frontmatter should not inherit the skills catalog"; ok=1; }

@@ -203,12 +203,19 @@ pi_tools_for_access() {
   # Pi's builtin tool names are lowercase (read/grep/find/ls/bash/edit/write),
   # not Claude Code's capitalized Glob/Grep. Nested delegation is authorized
   # by naming the pi-subagents `subagent` tool in the strict allowlist (see
-  # pi-subagents docs/agents.md), so orchestrateonly gets exactly that one
-  # extra grant over readonly.
+  # pi-subagents docs/agents.md).
+  #
+  # orchestrateonly also names `edit, write`, which it must: pi-subagents
+  # intersects a child's tool plan with the delegating session's available
+  # builtins, so a readonly orchestrator would strip edit/write from the
+  # readwrite roles it spawns (they would fall back to writing through bash).
+  # These are pass-through grants, not a licence to write: the orchestrator's
+  # "Never writes anything itself" is the same prompt-level boundary the
+  # Claude Code render relies on for its unscoped `Agent` grant.
   case "$1" in
     readonly) printf 'read, grep, find, ls, bash' ;;
     readwrite) printf 'read, grep, find, ls, bash, edit, write' ;;
-    orchestrateonly) printf 'read, grep, find, ls, bash, subagent' ;;
+    orchestrateonly) printf 'read, grep, find, ls, bash, edit, write, subagent' ;;
     *) echo "Unknown access level: $1" >&2; exit 1 ;;
   esac
 }

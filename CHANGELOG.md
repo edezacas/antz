@@ -9,6 +9,12 @@ changes to the workflow contract (directory layout, access model, etc).
 
 This branch (`master`) carries the branch-marked, no-commit variant of antz.
 
+## [5.2.0] - 2026-09-15
+
+### Fixed
+- **The Pi orchestrator now names `edit`/`write` in its tool allowlist, so the `specifier`/`coder`/`verifier` sessions it spawns keep their writer tools (found in a live Pi session, not by any unit test).** pi-subagents intersects a child's tool plan with the *delegating session's* available builtins, so the readonly-plus-`subagent` orchestrator render silently stripped `edit`/`write` from its children — a real `/antz` run showed the non-fatal `host runtime tool availability omitted [edit, write]` diagnostic and the roles fell back to writing through `bash`. The grants are pass-through, not authority: the orchestrator's "Never writes anything itself" stays the same prompt-level boundary Claude Code's unscoped `Agent` grant relies on. The Pi mapping is now `read, grep, find, ls, bash, edit, write, subagent` for `orchestrateonly`; `readonly` and `readwrite` are unchanged, and the Claude Code / OpenCode renders stay byte-identical.
+- This grades as **minor**: the Pi rendered behavior changes (the orchestrator's tool allowlist), which is not the wording-only kind of change that grades as patch. Not major: no workflow contract, machine line, marker, or non-Pi render changes. No role creates the `v5.2.0` tag — the local tag is the human's commit-time follow-up, created against the human's bump commit and not pushed automatically.
+
 ## [5.1.0] - 2026-09-15
 
 ### Added

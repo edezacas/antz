@@ -133,12 +133,18 @@ committing to a design, not assumed from memory:
   list is a strict allowlist, and nested delegation is authorized either by
   naming the extension's `subagent` tool in that allowlist or by setting
   `allowNestedSubagents: true`. `antz-orchestrator`'s Pi render therefore
-  names `subagent` explicitly — the narrowest grant over the readonly set —
-  and relies on `orchestrator.prompt`'s "What you don't do" for the
-  three-roles-only boundary, the same prompt-level discipline Claude Code
-  needs. Pi core ships no question tool, so `/antz-set-model`'s Pi picker
-  asks only when the session exposes one and otherwise degrades to the
-  explicit `--model`/`--clear` path.
+  names `subagent` explicitly, and — verified in a live session — it must
+  also name `edit`/`write`: pi-subagents intersects a child's tool plan with
+  the delegating session's *available* builtins, so an orchestrator that
+  lacked the writer tools silently stripped them from the
+  `specifier`/`coder`/`verifier` it spawned (they fell back to writing
+  through `bash`; a real `/antz` run showed exactly this as a non-fatal
+  `host runtime tool availability omitted [edit, write]` diagnostic). The
+  grants are pass-through, and the three-roles-only boundary stays
+  prompt-level, the same discipline Claude Code needs. Pi core ships no
+  question tool, so `/antz-set-model`'s Pi picker asks only when the session
+  exposes one and otherwise degrades to the explicit `--model`/`--clear`
+  path.
 
 ## Why `verifier` runs once per change, not once per sub-spec
 

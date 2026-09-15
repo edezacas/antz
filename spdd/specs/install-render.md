@@ -274,8 +274,10 @@ to the quoted descriptions.
     When install.sh renders a role's meta for Pi
     Then the frontmatter carries `name`, a quoted `description`, and the
       lowercase tool allowlist for that access level (`read, grep, find, ls,
-      bash` for readonly; plus `edit, write` for readwrite; plus `subagent`
-      for orchestrateonly)
+      bash` for readonly; plus `edit, write` for readwrite; plus `edit,
+      write, subagent` for orchestrateonly — the writer tools are required
+      pass-through grants, since pi-subagents intersects a child's tool plan
+      with the delegating session's available builtins)
     And it carries `inheritProjectContext: true`, `systemPromptMode: replace`,
       and `defaultContext: fresh`
     And `inheritSkills:` is `true` exactly for the readwrite roles and

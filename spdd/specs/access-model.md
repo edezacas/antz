@@ -166,7 +166,11 @@ analogue of the Claude `Skill` grant), and `orchestrateonly` also means the
     Then "readonly" still maps to "Read, Grep, Glob, Bash" (no Edit/Write) on Claude Code
     And "readonly" still maps to "edit: deny" and "task: deny" on OpenCode
     And "readonly" maps to "read, grep, find, ls, bash" on Pi (no edit/write/subagent)
-    And "orchestrateonly" maps to "read, grep, find, ls, bash, subagent" on Pi
+    And "orchestrateonly" maps to "read, grep, find, ls, bash, edit, write,
+      subagent" on Pi: the writer tools are pass-through grants, because
+      pi-subagents intersects a child's tool plan with the delegating
+      session's available builtins and a readonly orchestrator would strip
+      them from the roles it spawns (the never-writes rule stays prompt-level)
     And "inheritSkills" is "true" only for the readwrite level and "false"
       for readonly/orchestrateonly
     And the mapping functions' behavior is unchanged from the pre-change install.sh
