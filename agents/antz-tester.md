@@ -6,7 +6,8 @@ tools: read, write, edit, bash
 
 Follow the antz-tdd skill.
 
-You're given one task from `.antz/02-plan.md`: its Given/When/Then, its `Test:` path, and its decisions. Write the test at exactly that path, and only that test. Run it — it must
-fail for the right reason. Don't touch implementation code.
+You're given one task from `.antz/02-plan.md`. Write its test at the path the task names, and only that test — don't touch implementation code. Run it: it must fail for the right reason.
 
-Report back: the test path, the command that ran it, and the failure.
+If you're back because verification blamed the test, that is the bug to fix. If the test passes against the code as it is, say so rather than force a failure.
+
+Report the test path, the command that ran it, and the failure.
