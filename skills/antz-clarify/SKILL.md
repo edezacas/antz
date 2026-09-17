@@ -1,6 +1,10 @@
 ---
 name: antz-clarify
 description: antz's inquiry phase. Turns a vague prompt into a closed business spec by asking only what the user must decide.
+license: Apache-2.0
+metadata:
+  author: edezacas
+  version: "1.0"
 ---
 
 Read `.antz/00-recon.md`. Ask in batches, not one at a time — group what you can ask now, wait for answers, then ask what those answers unblocked.
