@@ -38,7 +38,7 @@ cp -r prompts/*    ~/.pi/agent/prompts/
 ```
 
 Reload pi (`/reload`) or restart it. The `extensions/` copy is what makes the rest work:
-pi core has no sub-agents, and `subagent.ts` is the extension that provides the dispatch
+pi core has no sub-agents, and `antz-subagent.ts` is the extension that provides the dispatch
 tool every agent is run through.
 
 ## Use, from inside any repo
@@ -52,8 +52,13 @@ tool every agent is run through.
 `/antz "<prompt>"` routes on what is already in `.antz/`, so a run can be resumed
 mid-flight. `antz-scout`, `antz-planner`, `antz-tester`, `antz-implementer` and
 `antz-verifier` are subagents; the routing, the spec phase, the `[x]` marking and the
-reporting happen in the session. Clarify has to run there — a subagent is spawned with
-`pi -p`, which has no UI, so it could not ask the user anything.
+reporting happen in the session. Clarify has to run there — a subagent is an isolated
+session with no UI, so it could not ask the user anything.
+
+The `antz_subagent` tool belongs to antz and nowhere else: a normal session is never
+offered it. `/antz` makes it available, and it disappears again once a run ends with
+`.antz/` gone (the verifier deletes it on PASS). A run left half-done, waiting on a
+clarify answer, or under repair keeps it.
 
 1. **Recon** — `antz-scout` scans the repo and writes `.antz/00-recon.md`.
 2. **Spec** — the `antz-clarify` skill asks the user only what changes the acceptance
@@ -75,7 +80,9 @@ reporting happen in the session. Clarify has to run there — a subagent is spaw
 - `skills/antz-clarify/` — the inquiry phase
 - `skills/antz-tdd/` — red/green rules used by antz-tester and antz-implementer
 - `prompts/antz.md` — orchestration
-- `extensions/subagent.ts` — the dispatch tool: single, parallel (max 4), or chain
+- `extensions/antz-subagent.ts` — the dispatch tool: single, parallel (max 4), or chain;
+  each agent runs as its own session inside pi, not as a child process, and the tool is
+  only offered during an `/antz` run
 
 ## Per target project
 
@@ -87,10 +94,13 @@ one living document per domain — written by `antz-verifier` on PASS.
 ## Models
 
 Agents inherit the session's model. Pinning one means adding a `model:` line to an agent
-file: `antz-scout` can run cheap and fast, `antz-tester` and `antz-implementer` need a
-capable coding model, and `antz-verifier` should be a different model family from
-`antz-implementer` so the two don't share blind spots.
+file — `provider/model`, with an optional `:thinking` suffix: `antz-scout` can run cheap
+and fast, `antz-tester` and `antz-implementer` need a capable coding model, and
+`antz-verifier` should be a different model family from `antz-implementer` so the two
+don't share blind spots. The pin is resolved in process, so a model that does not exist or
+has no credentials fails that agent by name rather than silently running on the session's
+model.
 
-**Not usable yet.** `buildArgs()` in `extensions/subagent.ts` passes `-m`, which pi 0.85.1
-rejects, so any agent carrying a `model:` line fails to dispatch. No agent pins one today,
-and that is the only reason the pipeline runs. See the gotcha in `AGENTS.md`.
+What bounds the choice is auth, not the extension: only `nan/*` is usable in this
+environment (`~/.pi/agent/models.json` holds the only provider key), so any other pin
+needs a `/login` for that provider first.

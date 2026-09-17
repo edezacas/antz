@@ -23,19 +23,21 @@ short version is:
   literally. If a better model would make the rule unnecessary, leave it out.
 
 ## Stack
-- Markdown with YAML frontmatter — everything except `extensions/subagent.ts`, the one
+- Markdown with YAML frontmatter — everything except `extensions/antz-subagent.ts`, the one
   file of actual code.
 - pi 0.85.x (installed: 0.85.1). `prompts/<name>.md` and `skills/<name>/SKILL.md` are pi
   built-ins; `extensions/*.ts` is pi's auto-discovery path for extensions;
-  `agents/<name>.md` is the `subagent` extension's convention, not pi core.
-- `bash` + coreutils for install. No runtime, no package manager, no build step.
+  `agents/<name>.md` is the `antz-subagent` extension's convention, not pi core.
+- `bash` + coreutils for install. No runtime, no package manager, no build step. The
+  extension imports only pi's own bundled modules (`@earendil-works/pi-coding-agent`,
+  `typebox`) — nothing to `npm install`.
 
 ## Commands
 Install (user scope — makes antz available in every project), then `/reload` in pi:
 
 `mkdir -p ~/.pi/agent/{agents,extensions} && cp -r extensions/* ~/.pi/agent/extensions/ && cp -r agents/* ~/.pi/agent/agents/ && cp -r skills/* ~/.pi/agent/skills/ && cp -r prompts/* ~/.pi/agent/prompts/`
 
-The `extensions/` copy is what makes the rest work: `subagent.ts` is the extension that
+The `extensions/` copy is what makes the rest work: `antz-subagent.ts` is the extension that
 provides the dispatch tool every agent is run through (see Gotchas). pi core has no
 sub-agents, so without it `/antz` has nothing to run.
 
@@ -50,8 +52,11 @@ deletes it on PASS — and `docs/decisions/<slug>.md` afterwards).
 - `agents/` — pi subagents: `antz-scout`, `antz-planner`, `antz-tester`, `antz-implementer`, `antz-verifier`.
 - `skills/antz-clarify/` — the inquiry phase; the only phase that talks to the user.
 - `skills/antz-tdd/` — red/green rules shared by antz-tester and antz-implementer.
-- `extensions/subagent.ts` — the dispatch tool: single, parallel (max 4), or chain.
+- `extensions/antz-subagent.ts` — the dispatch tool: single, parallel (max 4), or chain;
+  every agent runs in-process as its own session, never as a child `pi`, and the tool is
+  only offered during an `/antz` run.
 - `README.md` — the design of record for this repo.
+- `TODO.md` — known gaps, deliberate deferrals, and decisions not to re-open.
 
 Flow: antz-scout (recon) → clarify (spec) → antz-planner (plan) → antz-tester→antz-implementer
 per task → antz-verifier, once per round, with every task green. Independent tasks may run
@@ -90,29 +95,45 @@ Per target project: `<repo>/.antz/` is scratch space, and antz-scout creates it 
   and antz-implementer capable, antz-verifier a different model family from
   antz-implementer so they don't share blind spots. Omitting the line inherits the
   session's model.
-- It does not work today. `buildArgs()` in `extensions/subagent.ts` passes `-m`, which pi
-  0.85.1 rejects (`Error: Unknown option: -m`), so **any agent with a `model:` line fails
-  to dispatch**. No agent pins one today, which is the only reason the pipeline runs:
-  leave the line out. The extension's own header warns that these one-shot flags have to
-  be checked against `pi --help`.
-- Even once that flag is fixed, auth bounds the choice: only `nan/*` models are usable in
-  this environment (`~/.pi/agent/models.json` holds the only provider key), so anything
-  else fails with "No API key found" until you `/login` that provider.
-- `tools:` in the agent frontmatter is parsed but never forwarded to the child process,
-  so it is not enforced: every agent gets every tool regardless of what it declares. Keep
-  the declarations honest anyway, because the obvious fix (forwarding `--tools`) would
-  make a declaration that contradicts the body bite immediately: antz-verifier's body
+- `extensions/antz-subagent.ts` dispatches in-process: each agent is its own `AgentSession`,
+  built with pi's SDK (`createAgentSession` + a `DefaultResourceLoader`), not a child
+  `pi` process. That is why there is no CLI flag to keep in sync with `pi --help` — and
+  why `tools:` and `model:` bite for real. The tool is named `antz_subagent`, so it does
+  not collide with the `subagent` tool that third-party packages (including pi's own
+  example) install globally. The tool is registered but starts inactive: only an `/antz`
+  input activates it, so no other session sees it.
+- The deactivation is gated on `.antz/` being gone, not on the run merely settling.
+  Settling also happens when a clarify turn hands the conversation back to the user and
+  when a run stops mid-way; either would lose the tool the repair loop needs. Failing
+  open — a tool that lingers after a finished run — is the deliberate trade over failing
+  closed, where an in-flight run cannot dispatch. Because of that, a session where antz
+  stopped without PASS keeps the tool until the next `/antz` finishes cleanly.
+- Children load the repo's skills and `AGENTS.md` but **no extensions**
+  (`noExtensions: true`), so a subagent cannot recurse into `antz_subagent` and no
+  other extension's side effects run inside one. A capability that exists only as an
+  extension tool is therefore unavailable to subagents.
+- Auth still bounds the pinned model: only `nan/*` models are usable in this environment
+  (`~/.pi/agent/models.json` holds the only provider key), so anything else fails with
+  "No API key found" until you `/login` that provider. A `model:` line that doesn't
+  resolve fails that agent by name instead of falling back to the session's model.
+- `tools:` in the agent frontmatter is enforced: the child gets exactly the tools it
+  declares, and pi's default four when it declares none. Keep the declarations honest,
+  because a declaration that contradicts the body bites immediately: antz-verifier's body
   writes `docs/decisions/` and deletes `.antz/`, so it declares `read, write, edit, bash`.
-- `agents/` is not pi core: `extensions/subagent.ts` is what discovers
+- `agents/` is not pi core: `extensions/antz-subagent.ts` is what discovers
   `~/.pi/agent/agents/*.md` (or `.pi/agents/*.md` in a host repo) and exposes the
   dispatch tool. With it missing, `/antz` has no antz-scout to run.
 - The install command starts with `mkdir -p` for a reason: `~/.pi/agent/agents/` does
   not exist by default, `cp` into a missing target fails, and the copies are chained
   with `&&`, so the first failure means the rest never copy.
-- Installing clobbers only antz's own files: `prompts/antz.md` and the `skills/antz-*`
-  directories. The generic user-level `~/.pi/agent/skills/tdd/` is left alone — antz
+- Installing clobbers only antz's own files: `prompts/antz.md`, `agents/antz-*.md`,
+  `skills/antz-*` and `extensions/antz-subagent.ts`. The generic user-level
+  `~/.pi/agent/skills/tdd/` is left alone — antz
   installs as `skills/antz-tdd/`, a separate skill on the same subject with narrower,
-  seam-focused rules. Don't confuse the two, or point at the wrong one.
+  seam-focused rules. Don't confuse the two, or point at the wrong one. A copy never
+  removes anything, so an extension installed under the old `subagent.ts` name survives
+  the copy and registers a second, obsolete `subagent` tool alongside `antz_subagent`:
+  delete `~/.pi/agent/extensions/subagent.ts` once when upgrading.
 - This repo is the successor to the elaborate phase/partition/`antzspec/` flow in the
   sibling `../antz` repo. Do not port that machinery — partitions, fact gates, ledgers —
   back in; the simplification is the point.
