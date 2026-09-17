@@ -30,16 +30,23 @@ sibling `../antz` — and the simplification is the point.
 ## Install (user scope — available in every project, no per-repo setup)
 
 ```
-mkdir -p ~/.pi/agent/{agents,extensions} && \
-cp -r extensions/* ~/.pi/agent/extensions/ && \
-cp -r agents/*     ~/.pi/agent/agents/     && \
-cp -r skills/*     ~/.pi/agent/skills/     && \
-cp -r prompts/*    ~/.pi/agent/prompts/
+curl -fsSL https://raw.githubusercontent.com/edezacas/antz-pi/master/install.sh | bash
 ```
 
 Reload pi (`/reload`) or restart it. The `extensions/` copy is what makes the rest work:
 pi core has no sub-agents, and `antz-subagent.ts` is the extension that provides the dispatch
 tool every agent is run through.
+
+From a checkout, `./install.sh` copies that working tree instead of cloning — which is also how
+a change to the installer gets tried before it is pushed. It takes `--ref <branch|tag|commit>`
+to pick what to install, `--dir <path>` to override the target (default
+`$PI_CODING_AGENT_DIR`, else `~/.pi/agent`), and `--uninstall` to remove exactly antz's files.
+A reinstall is an upgrade: only antz's own paths are written, so anything else already in pi's
+agent dir survives both directions. Under a pipe the flags go through bash:
+
+```
+curl -fsSL .../install.sh | bash -s -- --ref v1.0.0
+```
 
 ## Use, from inside any repo
 
@@ -80,6 +87,9 @@ clarify answer, or under repair keeps it.
 - `skills/antz-clarify/` — the inquiry phase
 - `skills/antz-tdd/` — red/green rules used by antz-tester and antz-implementer
 - `prompts/antz.md` — orchestration
+- `install.sh` — the installer: pi preflight, then a copy into pi's agent dir. It reads the
+  working tree when run from a checkout and clones the requested ref otherwise, verifies what
+  it copied, and uninstalls on `--uninstall`.
 - `extensions/antz-subagent.ts` — the dispatch tool: single, parallel (max 4), or chain;
   each agent runs as its own session inside pi, not as a child process, and the tool is
   only offered during an `/antz` run. While it runs, a panel shows what each agent is

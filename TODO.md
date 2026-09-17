@@ -21,6 +21,26 @@ reaches the orchestrator. Three limits are deliberate.
   the panel does not give the implementer that report, so truncating there would break
   the flow instead of saving context.
 
+## Decided, don't re-open: the installer copies, it is not a pi package
+
+`install.sh` reproduces the manual one-liner's flat layout in pi's agent dir, so
+`findAgentFile` and the children's loading of the host repo's skills and `AGENTS.md` keep
+working with no change to the extension. `pi install git:` was the alternative and gives
+`pi update --extensions`, `pi remove` and `pi config` for free. It was left out because
+`agents/` is not a pi resource type: a clone lands in `~/.pi/agent/git/<host>/<path>` where
+`findAgentFile` does not look, so the extension would need a third lookup path relative to
+its own file, and it is not established that a child's `DefaultResourceLoader` sees a
+package's `skills/antz-tdd` — losing the red/green rules silently is a worse failure than
+not having an update command. Revisit if distribution through pi.dev/packages starts to
+matter; the relative `../agents` lookup is worth adding then, and it is compatible with the
+copy layout.
+
+Three shapes are deliberate too. `--uninstall` is a flag rather than a second script: one
+artifact, and the removal list sits next to the install list it mirrors. There is no state
+file: what antz installed is derivable from the file names, so a reinstall is just a copy
+and nothing has to be kept in sync with the tree. And nothing is ever read from stdin —
+under `curl | bash` stdin is the script itself — so every choice is a flag.
+
 ## Parallel chains
 
 `prompts/antz.md` says plan tasks may run in parallel, but the tool's `tasks` mode

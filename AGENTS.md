@@ -35,7 +35,15 @@ short version is:
 ## Commands
 Install (user scope — makes antz available in every project), then `/reload` in pi:
 
-`mkdir -p ~/.pi/agent/{agents,extensions} && cp -r extensions/* ~/.pi/agent/extensions/ && cp -r agents/* ~/.pi/agent/agents/ && cp -r skills/* ~/.pi/agent/skills/ && cp -r prompts/* ~/.pi/agent/prompts/`
+`curl -fsSL https://raw.githubusercontent.com/edezacas/antz-pi/master/install.sh | bash`
+
+`install.sh` is the installer: it checks for `pi`, resolves the target
+(`--dir`, else `$PI_CODING_AGENT_DIR`, else `~/.pi/agent`), and copies `agents/`,
+`extensions/`, `skills/` and `prompts/` there. Run from a checkout it copies that working
+tree; run on its own — the curl one-liner — it fetches `--ref` (default `master`) into a
+temporary clone. Uninstall is `install.sh --uninstall`, which removes only antz's files.
+
+It never reads stdin — under a pipe stdin is the script itself — so every choice is a flag.
 
 The `extensions/` copy is what makes the rest work: `antz-subagent.ts` is the extension that
 provides the dispatch tool every agent is run through (see Gotchas). pi core has no
@@ -45,7 +53,9 @@ Use, from inside a target repo: `/antz "<prompt>"`.
 
 There is no build, test, lint, or CI. Verification is manual: install, run `/antz` against
 a sandbox repo, and read what it writes (`<repo>/.antz/` mid-flight — antz-verifier
-deletes it on PASS — and `docs/decisions/<slug>.md` afterwards).
+deletes it on PASS — and `docs/decisions/<slug>.md` afterwards). The installer is checked
+the same way, without touching the real agent dir: `./install.sh --dir "$(mktemp -d)"`,
+twice for the reinstall, then `--uninstall`.
 
 ## Structure
 - `prompts/antz.md` — the slash command; routes on `.antz/` and orchestrates every phase.
@@ -58,6 +68,9 @@ deletes it on PASS — and `docs/decisions/<slug>.md` afterwards).
   doing — files, commands, its own text — collapsed to one line per agent and expanded
   with `app.tools.expand` (ctrl+o).
 - `README.md` — the design of record for this repo.
+- `install.sh` — the only way in: preflight, copy or clone, verify, uninstall. Bash and
+  coreutils only, like the manual copy it replaced; the gotchas below are the parts that
+  must not regress.
 - `TODO.md` — known gaps, deliberate deferrals, and decisions not to re-open.
 
 Flow: antz-scout (recon) → clarify (spec) → antz-planner (plan) → antz-tester→antz-implementer
@@ -136,17 +149,23 @@ Per target project: `<repo>/.antz/` is scratch space, and antz-scout creates it 
 - `agents/` is not pi core: `extensions/antz-subagent.ts` is what discovers
   `~/.pi/agent/agents/*.md` (or `.pi/agents/*.md` in a host repo) and exposes the
   dispatch tool. With it missing, `/antz` has no antz-scout to run.
-- The install command starts with `mkdir -p` for a reason: `~/.pi/agent/agents/` does
-  not exist by default, `cp` into a missing target fails, and the copies are chained
-  with `&&`, so the first failure means the rest never copy.
-- Installing clobbers only antz's own files: `prompts/antz.md`, `agents/antz-*.md`,
+- `install.sh` creates its target directories with `mkdir -p` before copying for a reason:
+  `~/.pi/agent/agents/` does not exist by default and `cp` into a missing target fails.
+  The manual copy it replaced also chained the four `cp`s with `&&`, so the first failure
+  meant the rest never ran; the script instead fails once, after copying, by listing what
+  is missing — which is why its verification step, not the copy, is the thing that catches
+  a tree that lost a file.
+- The installer resolves the target the way the extension does — `--dir`, then
+  `$PI_CODING_AGENT_DIR`, then `~/.pi/agent` — because `findAgentFile` reads `getAgentDir()`.
+  Hard-coding `~/.pi/agent` would install everything correctly into the directory nothing
+  is looking at.
+- Installing writes only antz's own files: `prompts/antz.md`, `agents/antz-*.md`,
   `skills/antz-*` and `extensions/antz-subagent.ts`. The generic user-level
   `~/.pi/agent/skills/tdd/` is left alone — antz
   installs as `skills/antz-tdd/`, a separate skill on the same subject with narrower,
   seam-focused rules. Don't confuse the two, or point at the wrong one. A copy never
-  removes anything, so an extension installed under the old `subagent.ts` name survives
-  the copy and registers a second, obsolete `subagent` tool alongside `antz_subagent`:
-  delete `~/.pi/agent/extensions/subagent.ts` once when upgrading.
+  removes anything, so a reinstall is an upgrade over what was there and nothing else in
+  the agent dir is touched in either direction.
 - This repo is the successor to the elaborate phase/partition/`antzspec/` flow in the
   sibling `../antz` repo. Do not port that machinery — partitions, fact gates, ledgers —
   back in; the simplification is the point.
