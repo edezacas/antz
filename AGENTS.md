@@ -30,7 +30,7 @@ short version is:
   `agents/<name>.md` is the `antz-subagent` extension's convention, not pi core.
 - `bash` + coreutils for install. No runtime, no package manager, no build step. The
   extension imports only pi's own bundled modules (`@earendil-works/pi-coding-agent`,
-  `typebox`) — nothing to `npm install`.
+  `@earendil-works/pi-tui`, `typebox`) — nothing to `npm install`.
 
 ## Commands
 Install (user scope — makes antz available in every project), then `/reload` in pi:
@@ -54,7 +54,9 @@ deletes it on PASS — and `docs/decisions/<slug>.md` afterwards).
 - `skills/antz-tdd/` — red/green rules shared by antz-tester and antz-implementer.
 - `extensions/antz-subagent.ts` — the dispatch tool: single, parallel (max 4), or chain;
   every agent runs in-process as its own session, never as a child `pi`, and the tool is
-  only offered during an `/antz` run.
+  only offered during an `/antz` run. While it runs, a panel shows what each child is
+  doing — files, commands, its own text — collapsed to one line per agent and expanded
+  with `app.tools.expand` (ctrl+o).
 - `README.md` — the design of record for this repo.
 - `TODO.md` — known gaps, deliberate deferrals, and decisions not to re-open.
 
@@ -75,6 +77,17 @@ Per target project: `<repo>/.antz/` is scratch space, and antz-scout creates it 
   `01-spec.md`, `02-plan.md`. Renaming one breaks the chain. There is no
   `03-verification-report.md` anywhere in the flow: antz-verifier returns its verdict as
   text, and on PASS it writes `docs/decisions/<slug>.md` and deletes `.antz/`.
+- The panel is fed by `details`, not `content`: `details` is rendered and persisted
+  with the session but never sent to the model, while `content` is what the orchestrator
+  reads — which is why the trail can be shown while `content` stays capped at 16 KB. The
+  cap applies to single and tasks only; chain is exempt because `{previous}` is the
+  handoff between agents. `details` holds the tool trail plus the child's last message
+  (capped the same way), not every text block — the full transcript was tried and reverted
+  because it duplicated the report in the session file without bound. The trail comes from
+  `session.subscribe` on the child, and only boundaries count (tool start/end, finished
+  messages), never `text_delta` — plus a 1 s tick while a child runs, so the clock keeps
+  moving through a long LLM call or command. A panel that shows less than expected means
+  the child's events stopped matching `ChildEvent`, not that it did nothing.
 - The verifier's verdict lives in the orchestrator's context, not on disk, so a session
   restart between the verdict and the repair loses the test-vs-implementation
   distinction and sends the task back through the full tester→implementer chain. That is

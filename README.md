@@ -82,7 +82,11 @@ clarify answer, or under repair keeps it.
 - `prompts/antz.md` — orchestration
 - `extensions/antz-subagent.ts` — the dispatch tool: single, parallel (max 4), or chain;
   each agent runs as its own session inside pi, not as a child process, and the tool is
-  only offered during an `/antz` run
+  only offered during an `/antz` run. While it runs, a panel shows what each agent is
+  doing — files, commands, the last thing it said — one line per agent collapsed with a
+  live clock, the whole trail with ctrl+o. All of it is rendered from tool details, which
+  never reach the model, so only a capped slice of each agent's final text enters the
+  orchestrator's context.
 
 ## Per target project
 

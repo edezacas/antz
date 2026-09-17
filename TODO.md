@@ -3,23 +3,23 @@
 Known gaps, deliberate deferrals, and decisions not to re-open. Nothing here blocks
 a run; the flow works as documented in `README.md`.
 
-## Cap per-task output in parallel dispatch
+## Decided: the panel repaints on boundaries plus a tick, and chain stays uncapped
 
-`mapConcurrent` returns every child's full final text and the parallel branch pastes
-all of it into the orchestrator's context. One verbose tester or implementer can bloat
-the parent's window — `pi-subagents` caps each task (50 KB) for exactly this reason.
+The tool streams what each child is doing into an expandable panel, and caps what
+reaches the orchestrator. Three limits are deliberate.
 
-Next: truncate each task's text on a byte boundary inside the parallel branch, ~5
-lines. Decide the cap, and whether the truncation notice reports how much was dropped.
-
-## Progress streaming for long runs
-
-The tool returns only final text, so a ten-minute antz run is opaque to the user until
-it ends. `onUpdate` in `execute` would stream child activity into the TUI.
-
-Next: decide whether watching progress is worth anything for antz. It threads a
-stateful callback through all three dispatch modes and changes nothing about how the
-orchestrator works.
+- Repaints happen on tool start/end and finished messages — never `text_delta` — plus a
+  1 s tick while any child is running. Without the tick the clock would freeze during a
+  long LLM call or a long command, which is precisely the stretch a watcher is nervous
+  about. The tick is the cheapest signal that the run is alive; the transcript is not.
+- `details` holds the tool trail plus the child's last message, capped like `content`.
+  Storing every text block was tried and reverted: it duplicated the report in the
+  session file, unbounded, to serve prose nobody reads while waiting. The trail and the
+  final line answer "is it alive and on what" on their own.
+- The cap is 16 KB and applies to single and tasks alone. Chain is uncapped because
+  `{previous}` is the handoff between agents: the user seeing the tester's report in
+  the panel does not give the implementer that report, so truncating there would break
+  the flow instead of saving context.
 
 ## Parallel chains
 

@@ -14,6 +14,11 @@
 // The tool is registered but starts inactive: antz is its only caller, so it
 // stays out of every other session. `/antz` turns it on and it goes away when
 // the run is over.
+//
+// While a run is in flight, what each child is doing is streamed into the TUI
+// through `details` — which is rendered and persisted but never sent to the
+// model — so the panel can show the whole trail while `content`, the part the
+// orchestrator reads, stays capped.
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
@@ -21,17 +26,25 @@ import {
   createAgentSession,
   DefaultResourceLoader,
   getAgentDir,
+  keyHint,
   ModelRuntime,
   parseFrontmatter,
   resolveCliModel,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const MAX_CONCURRENCY = 4;
 const TOOL_NAME = "antz_subagent";
+// How much of a child's final text reaches the orchestrator, and how much of it
+// the panel keeps in `details`. Chain mode is exempt from the cap: there the text
+// is the handoff, so truncating it would break the flow instead of saving context.
+const MAX_OUTPUT_BYTES = 16 * 1024;
+// How many agent lines a tool row lists before it starts counting the rest.
+const MAX_CALL_LINES = 4;
 
 // Only `/antz` may dispatch, so the tool starts inactive and is turned on by
 // that input. "The run is over" means `.antz/` is gone — the verifier deletes it
@@ -86,30 +99,193 @@ function modelRuntime(): Promise<ModelRuntime> {
   return (runtime ??= ModelRuntime.create());
 }
 
+// What the TUI shows. `details` is rendered, persisted with the session, and
+// never sent to the model; `content` is the opposite. So the trail of what each
+// child did lives here in full and the orchestrator pays only for what it reads.
+
+type RunStatus = "queued" | "running" | "done" | "failed";
+
+interface ToolStep {
+  tool: string;
+  arg: string;
+  // undefined while it runs, then whether it failed.
+  failed?: boolean;
+}
+
+interface AgentRun {
+  agent: string;
+  task: string;
+  status: RunStatus;
+  // Every tool the child called, in order — what it touched and whether that
+  // worked. This, not its prose, is what answers "what is it doing".
+  steps: ToolStep[];
+  // The last thing the child said: one block, not all of them. The trail above
+  // carries the story, and this is the only prose worth reading when something
+  // looks wrong. Capped like `content`, so details stay bounded.
+  lastText?: string;
+  // toolCallId -> the step its start pushed, so the end event can mark it. A
+  // plain object, not a Map: details get serialized to the session file.
+  open: Record<string, ToolStep>;
+  error?: string;
+  startedAt?: number;
+  endedAt?: number;
+}
+
+interface AntzDetails {
+  mode: "single" | "tasks" | "chain";
+  runs: AgentRun[];
+}
+
+// The child's events, as far as the panel cares about them.
+interface ChildEvent {
+  type?: string;
+  toolCallId?: string;
+  toolName?: string;
+  args?: unknown;
+  isError?: boolean;
+  message?: unknown;
+}
+
+function newRun(agent: string, task: string): AgentRun {
+  return { agent, task, status: "queued", steps: [], open: {} };
+}
+
+function modeOf(params: { chain?: unknown[]; tasks?: unknown[] }): AntzDetails["mode"] {
+  return params.chain?.length ? "chain" : params.tasks?.length ? "tasks" : "single";
+}
+
+function oneLine(text: unknown, max: number): string {
+  const line = String(text ?? "").split("\n", 1)[0].trim();
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+}
+
+// The one argument worth a line in the panel: which file, which command.
+function toolArg(args: unknown): string {
+  if (!args || typeof args !== "object") return "";
+  const record = args as Record<string, unknown>;
+  for (const key of ["command", "path", "pattern", "query", "url"]) {
+    if (typeof record[key] === "string") return oneLine(record[key], 64);
+  }
+  const first = Object.values(record).find((value) => typeof value === "string");
+  return typeof first === "string" ? oneLine(first, 64) : "";
+}
+
+// Boundaries only — never `text_delta` — so a run costs a handful of repaints on
+// top of the caller's one-second tick, instead of one per token. Returns whether
+// anything the panel shows changed, which decides if the TUI is asked to repaint.
+function track(run: AgentRun, event: ChildEvent): boolean {
+  switch (event.type) {
+    case "tool_execution_start": {
+      const step: ToolStep = { tool: String(event.toolName ?? "?"), arg: toolArg(event.args) };
+      run.steps.push(step);
+      run.open[String(event.toolCallId)] = step;
+      return true;
+    }
+    case "tool_execution_end": {
+      const step = run.open[String(event.toolCallId)];
+      if (step) step.failed = Boolean(event.isError);
+      delete run.open[String(event.toolCallId)];
+      return step !== undefined;
+    }
+    case "message_end": {
+      const text = messageText(event.message);
+      if (!text || text === run.lastText) return false;
+      run.lastText = capText(text, MAX_OUTPUT_BYTES);
+      return true;
+    }
+    default:
+      return false;
+  }
+}
+
+function messageText(message: unknown): string {
+  const { role, content } = message as { role?: string; content?: Array<{ type: string; text?: string }> };
+  if (role !== "assistant" || !Array.isArray(content)) return "";
+  return content
+    .filter((part) => part.type === "text")
+    .map((part) => part.text ?? "")
+    .join("")
+    .trim();
+}
+
 function lastAssistantText(session: { messages: readonly unknown[] }): string {
   for (const message of [...session.messages].reverse()) {
-    const { role, content } = message as { role?: string; content?: Array<{ type: string; text?: string }> };
-    if (role !== "assistant" || !Array.isArray(content)) continue;
-    const text = content
-      .filter((part) => part.type === "text")
-      .map((part) => part.text ?? "")
-      .join("")
-      .trim();
+    const text = messageText(message);
     if (text) return text;
   }
   return "";
 }
 
+function formatMs(ms: number): string {
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
+  return `${Math.floor(ms / 60_000)}m${String(Math.round((ms % 60_000) / 1000)).padStart(2, "0")}s`;
+}
+
+function duration(run: AgentRun): string {
+  if (run.startedAt === undefined) return "";
+  return formatMs((run.endedAt ?? Date.now()) - run.startedAt);
+}
+
+// Wall clock of the whole call: from the first child to start until the last one
+// stopped, or until now while any is still going. The number a watcher checks.
+function elapsed(runs: AgentRun[]): string {
+  const starts = runs.map((run) => run.startedAt).filter((at): at is number => at !== undefined);
+  if (starts.length === 0) return "";
+  const ends = runs.map((run) => run.endedAt).filter((at): at is number => at !== undefined);
+  // Every dispatched child sets endedAt in its finally, so a short count means at
+  // least one is still going.
+  const until = ends.length < starts.length ? Date.now() : Math.max(...ends);
+  return formatMs(until - Math.min(...starts));
+}
+
+function lastAction(run: AgentRun): string {
+  const step = run.steps[run.steps.length - 1];
+  if (!step) return "thinking…";
+  // The mark is also the phase: `…` means a tool is running right now, `✓` that
+  // the child is back in the model writing its next move.
+  const mark = step.failed === undefined ? " …" : step.failed ? " ✗" : " ✓";
+  return `${step.tool} ${step.arg}`.trim() + mark;
+}
+
+// The partial `content`. Kept to a status line on purpose: if a partial ever did
+// reach the model, it should be a status, not a fragment of a report.
+function statusLine(details: AntzDetails): string {
+  const count = (status: RunStatus) => details.runs.filter((run) => run.status === status).length;
+  return `${TOOL_NAME} ${details.mode}: ${count("done")}/${details.runs.length} done, ${count("running")} running, ${count("failed")} failed`;
+}
+
+// Truncates on a byte boundary, so a multi-byte character is never cut in half.
+function capText(text: string, limit: number): string {
+  if (limit <= 0 || Buffer.byteLength(text, "utf8") <= limit) return text;
+  let head = text.slice(0, limit);
+  while (Buffer.byteLength(head, "utf8") > limit) head = head.slice(0, -1);
+  return head;
+}
+
+// The orchestrator-facing version: says how many bytes the model is not seeing.
+function capOutput(text: string, limit: number): string {
+  const head = capText(text, limit);
+  if (head === text) return text;
+  const bytes = Buffer.byteLength(text, "utf8");
+  return `${head}\n\n[truncated: ${bytes - Buffer.byteLength(head, "utf8")} of ${bytes} bytes omitted]`;
+}
+
 async function runAgent(
-  name: string,
-  task: string,
+  run: AgentRun,
   ctx: ExtensionContext,
   signal: AbortSignal | undefined,
+  onUpdate: (() => void) | undefined,
 ): Promise<string> {
   let session: Awaited<ReturnType<typeof createAgentSession>>["session"] | undefined;
+  let unsubscribe: (() => void) | undefined;
   const abort = () => void session?.abort();
   try {
-    const agent = loadAgent(ctx.cwd, name);
+    // Dispatched is not the same as busy: "queued" is only honest until here, and
+    // loading the agent and its resources is already work.
+    run.status = "running";
+    run.startedAt = Date.now();
+    onUpdate?.();
+    const agent = loadAgent(ctx.cwd, run.agent);
     const loader = new DefaultResourceLoader({
       cwd: ctx.cwd,
       agentDir: getAgentDir(),
@@ -139,16 +315,29 @@ async function runAgent(
       tools: agent.tools,
     });
     session = created.session;
+    unsubscribe = session.subscribe((event) => {
+      if (track(run, event as ChildEvent)) onUpdate?.();
+    });
 
     if (signal?.aborted) abort();
     else signal?.addEventListener("abort", abort, { once: true });
 
-    await session.prompt(task, { expandPromptTemplates: false });
+    await session.prompt(run.task, { expandPromptTemplates: false });
     if (session.agent.state.errorMessage) throw new Error(session.agent.state.errorMessage);
+    run.status = "done";
     return lastAssistantText(session) || "(no output)";
   } catch (error) {
-    throw new Error(`${TOOL_NAME} ${name}: ${error instanceof Error ? error.message : String(error)}`);
+    run.status = "failed";
+    run.error = error instanceof Error ? error.message : String(error);
+    throw new Error(`${TOOL_NAME} ${run.agent}: ${run.error}`);
   } finally {
+    run.endedAt = Date.now();
+    // A tool still open here died with the run and never gets its end event, so
+    // the panel must not leave it spinning.
+    for (const step of Object.values(run.open)) step.failed = true;
+    run.open = {};
+    onUpdate?.();
+    unsubscribe?.();
     signal?.removeEventListener("abort", abort);
     session?.dispose();
   }
@@ -190,40 +379,170 @@ export default function (pi: ExtensionAPI) {
       tasks: Type.Optional(Type.Array(Type.Object({ agent: Type.String(), task: Type.String() }))),
       chain: Type.Optional(Type.Array(Type.Object({ agent: Type.String(), task: Type.String() }))),
     }),
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      if (params.chain?.length) {
-        let previous = "";
-        for (const step of params.chain) {
-          previous = await runAgent(step.agent, step.task.replaceAll("{previous}", previous), ctx, signal);
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      const chain = params.chain ?? [];
+      const tasks = params.tasks ?? [];
+      const details: AntzDetails = { mode: modeOf(params), runs: [] };
+      const update = () => onUpdate?.({ content: [{ type: "text", text: statusLine(details) }], details });
+      const limit = details.mode === "chain" ? 0 : MAX_OUTPUT_BYTES;
+
+      // A child parked in one long LLM call or one long command emits nothing, so
+      // without a tick the clock would freeze at the last boundary — exactly when
+      // a watcher wants to know it is still alive. Only a UI can show a clock, so
+      // in print and json runs the tick is pure waste.
+      const heartbeat = ctx.hasUI
+        ? setInterval(() => {
+            if (details.runs.some((run) => run.status === "running")) update();
+          }, 1000)
+        : undefined;
+
+      try {
+        if (chain.length) {
+          const runs = chain.map((step) => newRun(step.agent, step.task));
+          details.runs.push(...runs);
+          update();
+          let previous = "";
+          for (const run of runs) {
+            run.task = run.task.replaceAll("{previous}", previous);
+            previous = await runAgent(run, ctx, signal, update);
+          }
+          return { content: [{ type: "text", text: previous }], details };
         }
-        return { content: [{ type: "text", text: previous }] };
-      }
 
-      if (params.tasks?.length) {
-        const results = await mapConcurrent(
-          params.tasks,
-          MAX_CONCURRENCY,
-          async (task): Promise<{ agent: string; output: string; failed?: string }> => {
+        if (tasks.length) {
+          const runs = tasks.map((task) => newRun(task.agent, task.task));
+          details.runs.push(...runs);
+          update();
+          const results = await mapConcurrent(runs, MAX_CONCURRENCY, async (run) => {
             try {
-              return { agent: task.agent, output: await runAgent(task.agent, task.task, ctx, signal) };
+              return { run, output: await runAgent(run, ctx, signal, update) };
             } catch (error) {
-              return { agent: task.agent, output: "", failed: error instanceof Error ? error.message : String(error) };
+              return { run, output: error instanceof Error ? error.message : String(error) };
             }
-          },
-        );
-        const text = results
-          .map((result) =>
-            result.failed ? `[${result.agent}] FAILED — ${result.failed}` : `[${result.agent}]\n${result.output}`,
-          )
-          .join("\n\n---\n\n");
-        return { content: [{ type: "text", text }], isError: results.some((result) => result.failed !== undefined) };
+          });
+          const text = results
+            .map(({ run, output }) =>
+              run.status === "failed" ? `[${run.agent}] FAILED — ${output}` : `[${run.agent}]\n${capOutput(output, limit)}`,
+            )
+            .join("\n\n---\n\n");
+          return {
+            content: [{ type: "text", text }],
+            details,
+            isError: results.some(({ run }) => run.status === "failed"),
+          };
+        }
+
+        if (params.agent && params.task) {
+          const run = newRun(params.agent, params.task);
+          details.runs.push(run);
+          update();
+          const output = await runAgent(run, ctx, signal, update);
+          return { content: [{ type: "text", text: capOutput(output, limit) }], details };
+        }
+
+        throw new Error(`${TOOL_NAME}: provide agent+task, tasks, or chain`);
+      } finally {
+        if (heartbeat) clearInterval(heartbeat);
+      }
+    },
+
+    renderCall(args, theme, context) {
+      const raw = args.chain?.length ? args.chain : args.tasks?.length ? args.tasks : args.agent ? [args] : [];
+      // `{previous}` is only substituted once its step runs, so on the call it is
+      // noise. The panel numbers its agents in this same order.
+      const calls = raw.map((call) => ({
+        agent: String(call.agent ?? "?"),
+        task: String(call.task ?? "")
+          .replaceAll("{previous}", "")
+          .replace(/\s+/g, " ")
+          .trim(),
+      }));
+      const numbered = calls.length > 1;
+      const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+      let content = theme.fg("toolTitle", theme.bold(`${TOOL_NAME} `));
+      content += theme.fg("accent", modeOf(args));
+      if (!context.argsComplete) content += theme.fg("muted", " …");
+      for (const [index, call] of calls.slice(0, MAX_CALL_LINES).entries()) {
+        const label = numbered ? `${index + 1}. ${call.agent}` : call.agent;
+        content += `\n  ${theme.fg("accent", label)} ${theme.fg("dim", oneLine(call.task, 56))}`;
+      }
+      if (calls.length > MAX_CALL_LINES) {
+        content += `\n  ${theme.fg("muted", `+${calls.length - MAX_CALL_LINES} more`)}`;
+      }
+      text.setText(content);
+      return text;
+    },
+
+    renderResult(result, { expanded }, theme, context) {
+      // The same component across repaints, which matters now that the panel is
+      // repainted once a second.
+      const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+      const details = result.details as AntzDetails | undefined;
+      if (!details?.runs.length) {
+        const first = result.content[0];
+        text.setText(first?.type === "text" ? first.text : "(no output)");
+        return text;
       }
 
-      if (params.agent && params.task) {
-        return { content: [{ type: "text", text: await runAgent(params.agent, params.task, ctx, signal) }] };
-      }
+      const icon: Record<RunStatus, string> = {
+        queued: theme.fg("muted", "○"),
+        running: theme.fg("accent", "●"),
+        done: theme.fg("success", "✓"),
+        failed: theme.fg("error", "✗"),
+      };
+      const count = (status: RunStatus) => details.runs.filter((run) => run.status === status).length;
+      // Four testers in parallel are four identical names, so number them: the
+      // call's own list above uses the same order.
+      const numbered = details.runs.length > 1;
+      const label = (index: number, agent: string) => (numbered ? `${index + 1}. ${agent}` : agent);
+      const nameWidth = Math.max(...details.runs.map((run, index) => label(index, run.agent).length));
 
-      throw new Error(`${TOOL_NAME}: provide agent+task, tasks, or chain`);
+      let header = theme.fg("toolTitle", theme.bold(`${TOOL_NAME} `));
+      header += theme.fg("accent", details.mode);
+      header += theme.fg("muted", ` (${details.runs.length})`);
+      const clock = elapsed(details.runs);
+      if (clock) header += theme.fg("muted", ` · ${clock}`);
+      header += theme.fg("muted", ` · ${count("done")}/${details.runs.length} done`);
+      if (count("running")) header += theme.fg("muted", ` · ${count("running")} running`);
+      if (count("failed")) header += theme.fg("error", ` · ${count("failed")} failed`);
+
+      const lines = [header];
+      for (const [index, run] of details.runs.entries()) {
+        if (!expanded) {
+          const detail =
+            run.status === "running"
+              ? `${lastAction(run)} · ${duration(run)}`
+              : run.status === "done"
+                ? `done (${duration(run)})`
+                : run.status === "failed"
+                  ? oneLine(run.error ?? "failed", 48)
+                  : "queued";
+          const name = theme.fg(run.status === "failed" ? "error" : "text", label(index, run.agent).padEnd(nameWidth));
+          lines.push(`  ${icon[run.status]} ${name} ${theme.fg("muted", detail)}`);
+          continue;
+        }
+
+        const spent = run.startedAt === undefined ? "" : theme.fg("dim", `  ${duration(run)}`);
+        lines.push("", `  ${icon[run.status]} ${theme.fg("toolTitle", theme.bold(label(index, run.agent)))}${spent}`);
+        lines.push(`     ${theme.fg("dim", oneLine(run.task, 80))}`);
+        for (const step of run.steps) {
+          const mark =
+            step.failed === undefined
+              ? theme.fg("muted", " …")
+              : step.failed
+                ? theme.fg("error", " ✗")
+                : theme.fg("success", " ✓");
+          lines.push(`     ${theme.fg("muted", "→")} ${theme.fg("text", step.tool)} ${theme.fg("dim", step.arg)}${mark}`);
+        }
+        if (run.lastText) {
+          lines.push("");
+          for (const line of run.lastText.split("\n")) lines.push(`     ${theme.fg("toolOutput", line)}`);
+        }
+        if (run.error) lines.push(`     ${theme.fg("error", oneLine(run.error, 80))}`);
+      }
+      lines.push(theme.fg("muted", `  ${keyHint("app.tools.expand", expanded ? "to collapse" : "to expand")}`));
+      text.setText(lines.join("\n"));
+      return text;
     },
   });
 }
