@@ -17,7 +17,7 @@ short version is:
 - A **step** ("chain antz-tester into antz-implementer") stays. A **shape** ("report
   exactly these three lines", a `Verdict: fault=…` line, a `Seam:` field, an
   `{previous}` concatenation recipe) does not.
-- Agents are 9–13 lines, `prompts/antz.md` is ~28, the whole flow ~106. A change that
+- Agents are 9–13 lines, `prompts/antz.md` is ~33, the whole flow ~111. A change that
   pushes those up needs a reason, not a reflex.
 - Prefer a rule the model applies with judgement over a contract it must satisfy
   literally. If a better model would make the rule unnecessary, leave it out.

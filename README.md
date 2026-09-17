@@ -50,7 +50,10 @@ tool every agent is run through.
 ## Flow
 
 `/antz "<request>"` routes on what is already in `.antz/`, so a run can be resumed
-mid-flight:
+mid-flight. `antz-scout`, `antz-planner`, `antz-tester`, `antz-implementer` and
+`antz-verifier` are subagents; the routing, the spec phase, the `[x]` marking and the
+reporting happen in the session. Clarify has to run there — a subagent is spawned with
+`pi -p`, which has no UI, so it could not ask the user anything.
 
 1. **Recon** — `antz-scout` scans the repo and writes `.antz/00-recon.md`.
 2. **Spec** — the `antz-clarify` skill asks the user only what changes the acceptance
