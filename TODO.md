@@ -41,6 +41,22 @@ file: what antz installed is derivable from the file names, so a reinstall is ju
 and nothing has to be kept in sync with the tree. And nothing is ever read from stdin —
 under `curl | bash` stdin is the script itself — so every choice is a flag.
 
+## Decided, don't re-open: a reinstall keeps the `model:` line, with no flag to reset it
+
+The README tells the user to pin a model by editing an agent file, which makes that file
+half antz's and half theirs. The installer resolves it by copying upstream's file and
+putting the local `model:` line back — a pin, and nothing else, survives an upgrade. The
+pin is local state that is not tracked anywhere, so it is read from the file that is
+about to be overwritten rather than from a state file.
+
+Two consequences are accepted. Once a pin is installed there is no way to tell it from a
+value antz shipped, so an agent whose `model:` changes upstream keeps the old one until
+the line is deleted and the installer run again — the escape hatch is `sed -i
+'/^model:/d'`, not a flag, because a flag is another thing to document and the line is
+already editable by hand. And only `model:` is preserved: `tools:` and `description:` come
+from upstream every time, so a stale local override cannot contradict an agent whose body
+changed with it.
+
 ## Parallel chains
 
 `prompts/antz.md` says plan tasks may run in parallel, but the tool's `tasks` mode

@@ -166,6 +166,13 @@ Per target project: `<repo>/.antz/` is scratch space, and antz-scout creates it 
   seam-focused rules. Don't confuse the two, or point at the wrong one. A copy never
   removes anything, so a reinstall is an upgrade over what was there and nothing else in
   the agent dir is touched in either direction.
+- The `model:` line in an agent file is the one thing a reinstall does not overwrite: the
+  pin is read from the file before the copy and written back after it. That is why
+  `install.sh` has `local_pins`/`restore_pins` at all, and it is the reason a copy is not
+  a plain `cp`. The pin is whatever the file says, so an agent whose model changes
+  upstream keeps the old value until the line is deleted and the installer run again —
+  and there is no flag for that, because a flag is one more thing to document and the
+  line is already editable by hand.
 - This repo is the successor to the elaborate phase/partition/`antzspec/` flow in the
   sibling `../antz` repo. Do not port that machinery — partitions, fact gates, ledgers —
   back in; the simplification is the point.

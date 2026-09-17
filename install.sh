@@ -11,7 +11,8 @@
 #
 # The script copies; it does not build. Only antz's own paths are touched, so a
 # reinstall is an upgrade and unrelated files in pi's agent dir survive both
-# directions.
+# directions. The one thing a copy would otherwise clobber is the `model:` line
+# the user pinned in an agent file, so that line survives a reinstall.
 
 set -euo pipefail
 
@@ -106,6 +107,42 @@ resolve_source() {
     fail "could not fetch $REPO@$REF (check the ref and your network)"
 }
 
+# The `model:` line is the one thing the README tells the user to edit by hand,
+# so it is the one thing a reinstall must not take away: upstream's file wins,
+# the pin in it does not. The pin is read from the file that is about to be
+# overwritten and put back afterwards — no state file, nothing to keep in sync.
+local_pins() {
+  local name file line
+  for name in "${AGENTS[@]}"; do
+    file="$DEST/agents/$name.md"
+    [ -f "$file" ] || continue
+    line=$(sed -n 's/^model:[[:space:]]*//p' "$file" | head -n 1)
+    if [ -n "$line" ]; then
+      printf '%s\t%s\n' "$name" "$line"
+    fi
+  done
+  return 0
+}
+
+restore_pins() {
+  local name model file
+  while IFS=$'\t' read -r name model; do
+    [ -n "$name" ] || continue
+    file="$DEST/agents/$name.md"
+    [ -f "$file" ] || continue
+    awk -v pin="model: $model" '
+      /^model:/ { if (!kept) { print pin; kept = 1 } next }
+      { print }
+      /^name:/  { if (!kept) { print pin; kept = 1 } }
+    ' "$file" > "$file.antz-tmp" && mv "$file.antz-tmp" "$file" || {
+      rm -f "$file.antz-tmp"
+      fail "could not keep model: on agents/$name.md"
+    }
+    grep -q '^model:' "$file" || fail "model: did not survive on agents/$name.md"
+    note "agents/$name.md keeps model: $model"
+  done <<< "${1:-}"
+}
+
 install_antz() {
   command -v pi >/dev/null 2>&1 || fail "pi is not on PATH; antz is a pi workflow, install pi first"
   resolve_source
@@ -114,10 +151,13 @@ install_antz() {
   # mkdir -p first: ~/.pi/agent/agents/ does not exist by default and cp into a
   # missing directory fails.
   mkdir -p "$DEST/agents" "$DEST/extensions" "$DEST/skills" "$DEST/prompts"
+  local pins
+  pins=$(local_pins)
   for dir in agents extensions skills prompts; do
     cp -R "$SOURCE/$dir/." "$DEST/$dir/"
     ok "$dir/"
   done
+  restore_pins "$pins"
 
   step "Verifying"
   local missing=()
@@ -137,6 +177,9 @@ install_antz() {
     exit 1
   fi
   ok "${#AGENTS[@]} agents, ${#SKILLS[@]} skills, $PROMPT.md, $EXTENSION"
+  if [ -n "$pins" ]; then
+    note "The rest of each agent file comes from $REPO. Drop a model: line and reinstall to reset it."
+  fi
 
   step "Done"
   say "  Reload pi (${BOLD}/reload${OFF}) or restart it, then from inside any repo:"

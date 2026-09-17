@@ -89,7 +89,9 @@ clarify answer, or under repair keeps it.
 - `prompts/antz.md` — orchestration
 - `install.sh` — the installer: pi preflight, then a copy into pi's agent dir. It reads the
   working tree when run from a checkout and clones the requested ref otherwise, verifies what
-  it copied, and uninstalls on `--uninstall`.
+  it copied, and uninstalls on `--uninstall`. A `model:` line already in an agent file is put
+  back after the copy, so a reinstall updates the agents without re-pointing them at another
+  model.
 - `extensions/antz-subagent.ts` — the dispatch tool: single, parallel (max 4), or chain;
   each agent runs as its own session inside pi, not as a child process, and the tool is
   only offered during an `/antz` run. While it runs, a panel shows what each agent is
@@ -118,3 +120,9 @@ model.
 What bounds the choice is auth, not the extension: only `nan/*` is usable in this
 environment (`~/.pi/agent/models.json` holds the only provider key), so any other pin
 needs a `/login` for that provider first.
+
+A reinstall keeps your pin. `install.sh` copies upstream's file over the one you edited
+and then puts the `model:` line back — the file is antz's, that line is yours, so
+upgrading never silently re-points an agent at another model. To go back to upstream's
+value (or to none), delete the line and reinstall; with the line gone there is nothing to
+put back.
