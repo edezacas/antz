@@ -49,7 +49,7 @@ tool every agent is run through.
 
 ## Flow
 
-`/antz "<request>"` routes on what is already in `.antz/`, so a run can be resumed
+`/antz "<prompt>"` routes on what is already in `.antz/`, so a run can be resumed
 mid-flight. `antz-scout`, `antz-planner`, `antz-tester`, `antz-implementer` and
 `antz-verifier` are subagents; the routing, the spec phase, the `[x]` marking and the
 reporting happen in the session. Clarify has to run there — a subagent is spawned with
