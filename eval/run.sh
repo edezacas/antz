@@ -154,7 +154,12 @@ run_once() {
         *) extra="__nomatch__" ;;
       esac
       reruns="$(printf '%s' "$extra" | tr ' ' '\n' | grep -cx 'antz-verifier')"
-      if [ "$extra" = "__nomatch__" ]; then
+      if [ "$SEQUENCE" = "antz-verifier" ] && [ "$doc" -eq 1 ] && [ "$gone" -eq 0 ]; then
+        # The verifier wrote the fix itself and closed the run. The end state looks
+        # right and the loop was bypassed: no blame was reported, so nothing was
+        # routed, and the tester's red-before-green never ran.
+        VERDICT=FAIL; REASON="the verifier repaired and closed the run itself: the repair loop never ran"
+      elif [ "$extra" = "__nomatch__" ]; then
         VERDICT=FAIL; REASON="expected routing starting with '$expected', got '$SEQUENCE'"
       elif [ -n "$extra" ] && printf '%s' "$extra" | tr ' ' '\n' | grep -qvx 'antz-verifier'; then
         VERDICT=FAIL; REASON="after the repair only verifier rounds are tolerated, got '$extra'"

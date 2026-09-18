@@ -40,7 +40,9 @@ A trailing extra `verifier` round is tolerated in A and B, because a verifier ca
 return PASS without doing the PASS work (writing the decision, deleting
 `.antz/`), and the orchestrator sends it back to finish. That is recovery, not a
 routing fault, and it is reported in the run's detail rather than counted as a
-failure.
+failure. The opposite case is a failure: a single `verifier` dispatch that ends
+with the decision written and `.antz/` gone means it repaired the fault itself,
+so no blame was reported and nothing was routed — the loop never ran.
 
 ## Running it
 
@@ -76,32 +78,49 @@ meaningless if the session's recorded `cwd` is anywhere else.
 
 ## What it has shown so far
 
-One run per scenario, 2026-09-18, with the orchestrator on
-`nan/deepseek-v4-flash`, tester and implementer on `nan/glm5.3-flash` and the
-verifier on `nan/mimo-v2.5` — a different family from the implementer, as the
+Two 10-run batches — five A and five B, run concurrently — with the orchestrator
+on `nan/deepseek-v4-flash`, tester and implementer on `nan/glm5.3-flash` and the
+verifier on `nan/mimo-v2.5`, a different family from the implementer as the
 README recommends:
 
-| Scenario | Time | Dispatch order |
-|---|---|---|
-| A | 141 s | `verifier → implementer → verifier` |
-| B | 260 s | `verifier → tester → verifier` |
-| C | 857 s | `verifier` and `implementer` alternating, three attempts, then stop |
+| `agents/antz-verifier.md` | stuck runs (needed an extra round) | repaired by itself | misrouted |
+|---|---|---|---|
+| as it stands | 1 / 10 | 0 / 10 | 0 / 10 |
+| reordered, then rolled back | 0 / 10 | 1 / 10 | 0 / 10 |
 
-A and B are the point of the whole thing: each repair went to the blamed agent
-and to that agent alone, with the verifier's report handed to it as the task.
-The same failing suite, one side faithful to the criteria, two different
-routings. In C the cap held — three attempts on the failing task, then a stop
-with `.antz/` untouched, no decision document, and a report naming the task.
+**Neither row is evidence of an improvement, and the second one was rolled
+back.** Ten runs cannot tell 10% from 0%. What the batch established is the rate
+itself: the failure the reorder was chasing — a verifier declaring PASS without
+writing the decision or deleting `.antz/`, which leaves a finished run that never
+ends — is roughly a 1-in-10 event, not the 3-in-4 that a handful of earlier runs
+on an uncontrolled harness had suggested. Worth knowing before spending a prompt
+line on it, and the reason to repeat a batch before believing any of this.
 
-Three behaviours worth knowing about, none of them in the prompt:
+The reorder moved the verdict to the end and tied the word PASS to a state of the
+repo rather than to the report. That bought nothing measurable and put a worse
+failure next to it: a verifier taking the shortest path to the state it had just
+been told *is* PASS, fixing the test itself and closing the run. One observation
+is not a cause, but the trade is bad either way — a stuck run costs one verifier
+round and heals on the next `/antz`, while a bypassed loop reports no blame,
+routes nothing, and never runs the tester's red-before-green. A prompt change needs
+a reason rather than a reflex, and there was no reason here. The `agents/` file is
+back to what it was; only this eval and its verdicts changed.
+
+The batch also turned up the opposite failure, once: a verifier that wrote the test
+fix itself and closed the run in PASS. That is the one worth keeping an eye on, and
+the reason it gets its own verdict here instead of being reported as a routing
+mismatch: the end state looks right, so nothing else would notice that the loop
+never ran.
+
+Misrouting never happened: 20 of 20 runs sent a test fault to the tester and an
+implementation fault to the implementer, each with the verifier's report as the
+task and never to both agents. That is the part the loop exists for.
+
+Two behaviours worth knowing about, both observed, neither in any prompt:
 
 - **The orchestrator does not trust a child's report.** An implementer has
   claimed a green suite while the file was unchanged; the orchestrator re-read
   it, caught the lie, and said so in the next attempt's task.
-- **The verifier sometimes returns PASS without the PASS work** — declaring
-  success while `.antz/` was still in place and `docs/decisions/` unwritten. The
-  orchestrator noticed on disk and sent it back to finish, which is what the
-  trailing extra verifier round in some traces is.
 - **`antz-scout` can appear mid-loop**, as a fresh in-process probe while the
   orchestrator was diagnosing why writes appeared not to persist. It is not part
   of the documented repair loop and it did not consume an attempt.
