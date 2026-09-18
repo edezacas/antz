@@ -24,9 +24,6 @@ Before adding anything to `prompts/`, `agents/` or `skills/`, ask:
   is a script it executes.
 - **Would a better model make this unnecessary?** Then leave it out.
 
-This repo already paid for the lesson once — the phase/partition/`antzspec/` flow in the
-sibling `../antz` — and the simplification is the point.
-
 ## Install (user scope — available in every project, no per-repo setup)
 
 ```
@@ -64,23 +61,23 @@ session with no UI, so it could not ask the user anything.
 
 The `antz_subagent` tool belongs to antz and nowhere else: a normal session is never
 offered it. `/antz` makes it available, and it disappears again once a run ends with
-`.antz/` gone (the orchestrator deletes it once the decision is written). A run left half-done, waiting on a
-clarify answer, or under repair keeps it.
+`.antz/` gone — the orchestrator deletes it once the decision is written. A run left
+half-done, waiting on a clarify answer, or under repair keeps it.
 
 1. **Recon** — `antz-scout` scans the repo and writes `.antz/00-recon.md`.
 2. **Spec** — the `antz-clarify` skill asks the user only what changes the acceptance
    criteria, and writes `.antz/01-spec.md`. This is the only phase that talks to the user.
 3. **Plan** — `antz-planner` writes `.antz/02-plan.md`: small tasks, each with its own
-   test file and its `Depends on`.
+   test file, its `Depends on` and the files it touches (`Touches`).
 4. **Per task** — `antz-tester` → `antz-implementer`, chained: a failing test, then the
    minimum code to pass it. Independent tasks run in parallel (max 4), never two that
-   touch the same file.
+   would touch the same files.
 5. **Verify** — `antz-verifier` runs once, with every task green. On PASS it writes
    `docs/decisions/<slug>.md`, and the orchestrator deletes `.antz/` once that document
-   exists. On failure it names the failing task
-   and whether the test or the implementation is at fault, and the loop goes back to step
-   4 for that task alone — a test fault to the tester, an implementation fault to the
-   implementer, never both. Max 3 attempts per task, then it stops and reports.
+   exists. On failure it names the failing task and whether the test or the implementation
+   is at fault, and the loop goes back to step 4 for that task alone — a test fault to the
+   tester, an implementation fault to the implementer, never both. Max 3 attempts per task,
+   then it stops and reports.
 
    That last part is the only piece a normal run may never reach, because a normal run
    almost never fails. It has its own eval — `eval/run.sh` seeds a fault and reads the
@@ -92,22 +89,20 @@ clarify answer, or under repair keeps it.
 - `skills/antz-clarify/` — the inquiry phase
 - `skills/antz-tdd/` — red/green rules used by antz-tester and antz-implementer
 - `prompts/antz.md` — orchestration
-- `install.sh` — the installer: pi preflight, then a copy into pi's agent dir. It reads the
-  working tree when run from a checkout and clones the requested ref otherwise, verifies what
-  it copied, and uninstalls on `--uninstall`. A `model:` line already in an agent file is put
-  back after the copy, so a reinstall updates the agents without re-pointing them at another
-  model.
+- `install.sh` — pi preflight, then a copy or clone into pi's agent dir, a verification
+  pass, and `--uninstall`.
 - `extensions/antz-subagent.ts` — the dispatch tool: single, parallel (max 4), or chain;
   each agent runs as its own session inside pi, not as a child process, and the tool is
   only offered during an `/antz` run. While it runs, a panel shows what each agent is
   doing — files, commands, the last thing it said — one line per agent collapsed with a
-  live clock, the whole trail with ctrl+o. All of it is rendered from tool details, which
-  never reach the model, so only a capped slice of each agent's final text enters the
-  orchestrator's context.
+  live clock, the whole trail with ctrl+o. The panel is rendered from tool details, which
+  never reach the model; what reaches the orchestrator is each agent's final text, capped
+  at 16 KB — except in chain mode, where that text is the handoff between agents.
 - `eval/` — the repair-loop eval: it seeds `.antz/` with the plan already complete and a
   deliberate fault, runs `/antz` end to end, and reads the dispatch order back out of the
   session file. Not a test and not part of the install: the loop is model judgement, so the
-  result is a rate over N runs. See `eval/README.md`.
+  result is a rate over `RUNS` runs. See `eval/README.md`.
+- `TODO.md` — known gaps and decisions not to reopen.
 
 ## Per target project
 
