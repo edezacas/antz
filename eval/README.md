@@ -37,12 +37,14 @@ to reach the cap deterministically; without the watcher, hitting three attempts
 depends on the model failing three times on its own.
 
 A trailing extra `verifier` round is tolerated in A and B, because a verifier can
-return PASS without doing the PASS work (writing the decision, deleting
-`.antz/`), and the orchestrator sends it back to finish. That is recovery, not a
-routing fault, and it is reported in the run's detail rather than counted as a
-failure. The opposite case is a failure: a single `verifier` dispatch that ends
-with the decision written and `.antz/` gone means it repaired the fault itself,
-so no blame was reported and nothing was routed — the loop never ran.
+return PASS without writing the decision document, and the orchestrator sends it
+back to finish. That is recovery, not a routing fault, and it is reported in the
+run's detail rather than counted as a failure. The opposite case is a failure: a
+single `verifier` dispatch that ends with the decision written and `.antz/` gone
+means it repaired the fault itself, so no blame was reported and nothing was
+routed — the loop never ran. Deleting `.antz/` is not the verifier's job at all:
+on PASS the orchestrator removes it once the document exists, so a verifier that
+forgets costs a round rather than leaving a finished run on disk.
 
 ## Running it
 
@@ -85,16 +87,16 @@ README recommends:
 
 | `agents/antz-verifier.md` | stuck runs (needed an extra round) | repaired by itself | misrouted |
 |---|---|---|---|
-| as it stands | 1 / 10 | 0 / 10 | 0 / 10 |
+| as it was, verifier deleting on PASS | 1 / 10 | 0 / 10 | 0 / 10 |
 | reordered, then rolled back | 0 / 10 | 1 / 10 | 0 / 10 |
 
-**Neither row is evidence of an improvement, and the second one was rolled
-back.** Ten runs cannot tell 10% from 0%. What the batch established is the rate
-itself: the failure the reorder was chasing — a verifier declaring PASS without
-writing the decision or deleting `.antz/`, which leaves a finished run that never
-ends — is roughly a 1-in-10 event, not the 3-in-4 that a handful of earlier runs
-on an uncontrolled harness had suggested. Worth knowing before spending a prompt
-line on it, and the reason to repeat a batch before believing any of this.
+**Neither row is evidence of an improvement.** Ten runs cannot tell 10% from 0%.
+What the first two batches established is the rate itself: the failure the reorder
+was chasing — a verifier declaring PASS without writing the decision, which leaves
+a finished run that never ends — is roughly a 1-in-10 event, not the 3-in-4 that a
+handful of earlier runs on an uncontrolled harness had suggested. Worth knowing
+before spending a prompt line on it, and the reason to repeat a batch before
+believing any of this.
 
 The reorder moved the verdict to the end and tied the word PASS to a state of the
 repo rather than to the report. That bought nothing measurable and put a worse
@@ -102,9 +104,18 @@ failure next to it: a verifier taking the shortest path to the state it had just
 been told *is* PASS, fixing the test itself and closing the run. One observation
 is not a cause, but the trade is bad either way — a stuck run costs one verifier
 round and heals on the next `/antz`, while a bypassed loop reports no blame,
-routes nothing, and never runs the tester's red-before-green. A prompt change needs
-a reason rather than a reflex, and there was no reason here. The `agents/` file is
-back to what it was; only this eval and its verdicts changed.
+routes nothing, and never runs the tester's red-before-green. It was rolled back.
+
+What changed instead is who closes the run: the verifier writes the decision and
+stops, and the orchestrator deletes `.antz/` on PASS once that document exists.
+That removes the deletion from a prompt that had it as a trailing clause after a
+long sentence about something else, and it puts the act with the one who decides
+the run is over. A and B still end with the document written and `.antz/` gone; C,
+where there is no PASS, is what checks the other half — that the new owner does not
+delete it on the way out. One run of each says yes: `verifier → implementer →
+verifier` and `verifier → tester → verifier` closing clean, and `verifier →
+implementer` three times over, with `.antz/` left where it was and no decision
+written.
 
 The batch also turned up the opposite failure, once: a verifier that wrote the test
 fix itself and closed the run in PASS. That is the one worth keeping an eye on, and
@@ -125,10 +136,10 @@ Two behaviours worth knowing about, both observed, neither in any prompt:
   orchestrator was diagnosing why writes appeared not to persist. It is not part
   of the documented repair loop and it did not consume an attempt.
 
-The shape of the rounds varies between runs — `verifier, implementer ×3,
-verifier` in one, an alternation in another — which is the prompt leaving the
-orchestrator free to re-verify between attempts or not. The assertions do not
-pin that shape, only the cap and the outcome.
+The shape of the rounds varies between runs — `verifier, implementer ×3, verifier`,
+an alternation, and `verifier, implementer ×3` with no closing verification, because
+the last attempt was the last one allowed. The assertions do not pin that shape: the
+cap is on attempts, and re-verifying between them is left to the orchestrator.
 
 ## Adding a scenario
 

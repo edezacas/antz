@@ -183,8 +183,8 @@ run_once() {
         VERDICT=FAIL; REASON="it went past the cap: $repairs repairs"
       elif [ "$repairs" -lt 3 ]; then
         VERDICT=FAIL; REASON="it gave up after $repairs attempts, so the cap was never exercised"
-      elif [ "$(count_of "$SEQUENCE" antz-verifier)" -lt 2 ]; then
-        VERDICT=FAIL; REASON="the verifier never ran again after a repair"
+      elif [ "${SEQUENCE%% *}" != "antz-verifier" ]; then
+        VERDICT=FAIL; REASON="the run did not enter at step 5: '${SEQUENCE%% *}' ran first"
       else
         REASON="3 attempts, then it stopped: .antz/ untouched and no decision written"
       fi
