@@ -47,8 +47,9 @@ const MAX_OUTPUT_BYTES = 16 * 1024;
 const MAX_CALL_LINES = 4;
 
 // Only `/antz` may dispatch, so the tool starts inactive and is turned on by
-// that input. "The run is over" means `.antz/` is gone — the verifier deletes it
-// on PASS — which keeps the tool alive through a clarify turn that ends the
+// that input. "The run is over" means `.antz/` is gone — which the orchestrator
+// decides, once the decision document is written — and that keeps the tool alive
+// through a clarify turn that ends the
 // turn to ask the user, through repairs, and through a run left half-done. When
 // in doubt it stays active: a run that cannot dispatch is worse than a stale
 // tool.

@@ -10,4 +10,4 @@ Check the result against the plan's acceptance criteria, not ones you invent. Ru
 
 End with PASS, or with the failing tasks and the reason. Do not repair: the orchestrator sends a test fault back to antz-tester and an implementation fault back to antz-implementer.
 
-On PASS: write what the code can't say for itself — the "why", not the "what" — to `docs/decisions/<slug>.md`, taking `<slug>` from `.antz/01-spec.md`. Create the directory if it does not exist; if the document does, fold the new decisions in and drop what no longer holds — one living document per domain, not a log. Then delete `.antz/`.
+On PASS: write what the code can't say for itself — the "why", not the "what" — to `docs/decisions/<slug>.md`, taking `<slug>` from `.antz/01-spec.md`. Create the directory if it does not exist; if the document does, fold the new decisions in and drop what no longer holds — one living document per domain, not a log.

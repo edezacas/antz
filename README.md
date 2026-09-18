@@ -64,7 +64,7 @@ session with no UI, so it could not ask the user anything.
 
 The `antz_subagent` tool belongs to antz and nowhere else: a normal session is never
 offered it. `/antz` makes it available, and it disappears again once a run ends with
-`.antz/` gone (the verifier deletes it on PASS). A run left half-done, waiting on a
+`.antz/` gone (the orchestrator deletes it once the decision is written). A run left half-done, waiting on a
 clarify answer, or under repair keeps it.
 
 1. **Recon** — `antz-scout` scans the repo and writes `.antz/00-recon.md`.
@@ -76,7 +76,8 @@ clarify answer, or under repair keeps it.
    minimum code to pass it. Independent tasks run in parallel (max 4), never two that
    touch the same file.
 5. **Verify** — `antz-verifier` runs once, with every task green. On PASS it writes
-   `docs/decisions/<slug>.md` and deletes `.antz/`. On failure it names the failing task
+   `docs/decisions/<slug>.md`, and the orchestrator deletes `.antz/` once that document
+   exists. On failure it names the failing task
    and whether the test or the implementation is at fault, and the loop goes back to step
    4 for that task alone — a test fault to the tester, an implementation fault to the
    implementer, never both. Max 3 attempts per task, then it stops and reports.

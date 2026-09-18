@@ -53,8 +53,8 @@ Use, from inside a target repo: `/antz "<prompt>"`.
 
 There is no build, lint or CI, and no unit tests: the artifacts are prompts. Verification
 is manual: install, run `/antz` against a sandbox repo, and read what it writes
-(`<repo>/.antz/` mid-flight — antz-verifier deletes it on PASS — and
-`docs/decisions/<slug>.md` afterwards). The installer is checked the same way, without
+(`<repo>/.antz/` mid-flight — the orchestrator deletes it on PASS, once the decision is
+written — and `docs/decisions/<slug>.md` afterwards). The installer is checked the same way, without
 touching the real agent dir: `./install.sh --dir "$(mktemp -d)"`, twice for the
 reinstall, then `--uninstall`.
 
@@ -104,7 +104,10 @@ Per target project: `<repo>/.antz/` is scratch space, and antz-scout creates it 
 - Intermediates are numbered and referenced by name in the prompts: `00-recon.md`,
   `01-spec.md`, `02-plan.md`. Renaming one breaks the chain. There is no
   `03-verification-report.md` anywhere in the flow: antz-verifier returns its verdict as
-  text, and on PASS it writes `docs/decisions/<slug>.md` and deletes `.antz/`.
+  text, and on PASS it writes `docs/decisions/<slug>.md` and stops; the orchestrator
+  deletes `.antz/` once that document exists. The deletion is the orchestrator's because
+  the run is over when the artifact is on disk, and because a step that forgets a
+  trailing `rm` costs a whole repair round to notice.
 - The panel is fed by `details`, not `content`: `details` is rendered and persisted
   with the session but never sent to the model, while `content` is what the orchestrator
   reads — which is why the trail can be shown while `content` stays capped at 16 KB. The
@@ -160,7 +163,7 @@ Per target project: `<repo>/.antz/` is scratch space, and antz-scout creates it 
 - `tools:` in the agent frontmatter is enforced: the child gets exactly the tools it
   declares, and pi's default four when it declares none. Keep the declarations honest,
   because a declaration that contradicts the body bites immediately: antz-verifier's body
-  writes `docs/decisions/` and deletes `.antz/`, so it declares `read, write, edit, bash`.
+  writes `docs/decisions/`, so it declares `read, write, edit, bash`.
 - `agents/` is not pi core: `extensions/antz-subagent.ts` is what discovers
   `~/.pi/agent/agents/*.md` (or `.pi/agents/*.md` in a host repo) and exposes the
   dispatch tool. With it missing, `/antz` has no antz-scout to run.
