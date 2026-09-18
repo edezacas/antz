@@ -59,6 +59,47 @@ mid-flight. `antz-scout`, `antz-planner`, `antz-tester`, `antz-implementer` and
 reporting happen in the session. Clarify has to run there — a subagent is an isolated
 session with no UI, so it could not ask the user anything.
 
+```
+                    /antz "<prompt>"       routes on what .antz/ already holds
+                                |
+                                v
+                       .-----------------.  scans the repo: stack, conventions, patterns
+                       |    antz-scout   |  -> .antz/00-recon.md
+                       '-----------------'
+                                |
+                                v
+   you <--- asks --->  .-----------------.  asks only what changes the acceptance criteria
+  (the run's only      |   antz-clarify  |  -> .antz/01-spec.md
+   question)           '-----------------'
+                                |
+                                v
+                       .-----------------.  cuts the spec into small tasks, one test file each
+                       |   antz-planner  |  Depends on, Touches -> .antz/02-plan.md
+                       '-----------------'
+                                |
+                                v
+          +---------------------+---------------------+
+          |             per task (max 4)              |  independent tasks run in parallel
+          |  .-------------.   .------------------.   |
+      +-->|  | antz-tester |-->| antz-implementer |   |  a failing test, then the code to pass it
+      |   |  '-------------'   '------------------'   |
+      |   +---------------------+---------------------+
+      |                         |
+      |                         v
+      |                .-----------------.  adjudicates the whole change once, every task green,
+      |                |  antz-verifier  |  PASS -> docs/decisions/<slug>.md
+      |                '-----------------'
+      |                   |           |
+      |                 FAIL        PASS
+      |                   |           v
+      |                             .antz/ deleted
+      |                   |
+      +-------------------+
+         on FAIL: the failing task alone — a test fault to the tester, an
+         implementation fault to the implementer, never both. Max 3 attempts
+         per task, then it stops and reports.
+```
+
 The `antz_subagent` tool belongs to antz and nowhere else: a normal session is never
 offered it. `/antz` makes it available, and it disappears again once a run ends with
 `.antz/` gone — the orchestrator deletes it once the decision is written. A run left
