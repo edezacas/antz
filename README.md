@@ -102,7 +102,7 @@ half-done, waiting on a clarify answer, or under repair keeps it.
   deliberate fault, runs `/antz` end to end, and reads the dispatch order back out of the
   session file. Not a test and not part of the install: the loop is model judgement, so the
   result is a rate over `RUNS` runs. See `eval/README.md`.
-- `TODO.md` — known gaps and decisions not to reopen.
+- `TODO.md` — known gaps.
 
 ## Per target project
 

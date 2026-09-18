@@ -7,7 +7,7 @@ ships markdown — five subagents, two skills, one slash command — plus the on
 dispatches them. `install.sh` copies those four directories, not this file: antz is never the
 base, it runs inside foreign repos.
 
-`README.md` is the design of record; `TODO.md` holds decisions not to reopen.
+`README.md` is the design of record; `TODO.md` holds the open gaps.
 
 ## Design principle
 **Steps and a few rules. Nothing else.** A step ("chain antz-tester into antz-implementer")
