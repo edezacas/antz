@@ -25,7 +25,7 @@ core.
 
 ## Commands
 - Install (user scope, then `/reload` in pi):
-  `curl -fsSL https://raw.githubusercontent.com/edezacas/antz-pi/master/install.sh | bash`.
+  `curl -fsSL https://raw.githubusercontent.com/edezacas/antz/master/install.sh | bash`.
   Uninstall with `--uninstall`. It never reads stdin, so every choice is a flag: from a
   checkout it copies that tree, alone it clones `--ref` (default `master`). Smoke check it in
   a scratch dir with `./install.sh --dir "$(mktemp -d)"`, twice, then `--uninstall`.

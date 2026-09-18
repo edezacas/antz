@@ -2,7 +2,7 @@
 # Installs antz as a user-scope pi workflow: five subagents, two skills, the
 # /antz prompt and the extension that dispatches them.
 #
-#   curl -fsSL https://raw.githubusercontent.com/edezacas/antz-pi/master/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/edezacas/antz/master/install.sh | bash
 #   curl -fsSL .../install.sh | bash -s -- --ref v1.0.0
 #   ./install.sh                       # from a checkout: copies the working tree
 #   ./install.sh --uninstall
@@ -16,7 +16,7 @@
 
 set -euo pipefail
 
-REPO="edezacas/antz-pi"
+REPO="edezacas/antz"
 REF="master"
 
 # pi's config dir. PI_CODING_AGENT_DIR is the variable getAgentDir() honours, so

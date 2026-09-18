@@ -27,7 +27,7 @@ Before adding anything to `prompts/`, `agents/` or `skills/`, ask:
 ## Install (user scope — available in every project, no per-repo setup)
 
 ```
-curl -fsSL https://raw.githubusercontent.com/edezacas/antz-pi/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/edezacas/antz/master/install.sh | bash
 ```
 
 Reload pi (`/reload`) or restart it. The `extensions/` copy is what makes the rest work:
