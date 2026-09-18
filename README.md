@@ -81,6 +81,10 @@ clarify answer, or under repair keeps it.
    4 for that task alone — a test fault to the tester, an implementation fault to the
    implementer, never both. Max 3 attempts per task, then it stops and reports.
 
+   That last part is the only piece a normal run may never reach, because a normal run
+   almost never fails. It has its own eval — `eval/run.sh` seeds a fault and reads the
+   dispatch order back out of the session — and it is a rate, not a gate.
+
 ## Structure
 
 - `agents/` — antz-scout, antz-planner, antz-tester, antz-implementer, antz-verifier
@@ -99,6 +103,10 @@ clarify answer, or under repair keeps it.
   live clock, the whole trail with ctrl+o. All of it is rendered from tool details, which
   never reach the model, so only a capped slice of each agent's final text enters the
   orchestrator's context.
+- `eval/` — the repair-loop eval: it seeds `.antz/` with the plan already complete and a
+  deliberate fault, runs `/antz` end to end, and reads the dispatch order back out of the
+  session file. Not a test and not part of the install: the loop is model judgement, so the
+  result is a rate over N runs. See `eval/README.md`.
 
 ## Per target project
 

@@ -51,11 +51,22 @@ sub-agents, so without it `/antz` has nothing to run.
 
 Use, from inside a target repo: `/antz "<prompt>"`.
 
-There is no build, test, lint, or CI. Verification is manual: install, run `/antz` against
-a sandbox repo, and read what it writes (`<repo>/.antz/` mid-flight — antz-verifier
-deletes it on PASS — and `docs/decisions/<slug>.md` afterwards). The installer is checked
-the same way, without touching the real agent dir: `./install.sh --dir "$(mktemp -d)"`,
-twice for the reinstall, then `--uninstall`.
+There is no build, lint or CI, and no unit tests: the artifacts are prompts. Verification
+is manual: install, run `/antz` against a sandbox repo, and read what it writes
+(`<repo>/.antz/` mid-flight — antz-verifier deletes it on PASS — and
+`docs/decisions/<slug>.md` afterwards). The installer is checked the same way, without
+touching the real agent dir: `./install.sh --dir "$(mktemp -d)"`, twice for the
+reinstall, then `--uninstall`.
+
+The one exception is `eval/`: it seeds `.antz/` with a plan already complete and a
+deliberate fault, so `/antz` enters at step 5 and the dispatch order — read back from the
+session file — shows which agent the repair went to. That is the only part of the flow a
+normal run never exercises, because a normal run almost never fails. It is an eval, not a
+test: the routing is model judgement, so the result is a rate over `RUNS` runs and one
+green run proves nothing. It costs money and minutes, it measures what is installed in
+`~/.pi/agent` rather than the working tree (and refuses to run when the two disagree),
+and it is the regression net for `prompts/`, `agents/` and `skills/`. The scenarios and
+what each one asserts are in `eval/README.md`.
 
 ## Structure
 - `prompts/antz.md` — the slash command; routes on `.antz/` and orchestrates every phase.
@@ -71,6 +82,10 @@ twice for the reinstall, then `--uninstall`.
 - `install.sh` — the only way in: preflight, copy or clone, verify, uninstall. Bash and
   coreutils only, like the manual copy it replaced; the gotchas below are the parts that
   must not regress.
+- `eval/` — the repair-loop eval: seeded `.antz/` states that force a verification
+  failure, and the dispatch trace that shows where the repair was routed. Bash, jq and a
+  tiny Node fixture. Not part of the install — the installer copies only its four
+  directories — and not a gate, because it needs models and minutes to run.
 - `TODO.md` — known gaps, deliberate deferrals, and decisions not to re-open.
 
 Flow: antz-scout (recon) → clarify (spec) → antz-planner (plan) → antz-tester→antz-implementer
