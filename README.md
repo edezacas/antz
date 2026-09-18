@@ -94,10 +94,11 @@ half-done, waiting on a clarify answer, or under repair keeps it.
 - `extensions/antz-subagent.ts` — the dispatch tool: single, parallel (max 4), or chain;
   each agent runs as its own session inside pi, not as a child process, and the tool is
   only offered during an `/antz` run. While it runs, a panel shows what each agent is
-  doing — files, commands, the last thing it said — one line per agent collapsed with a
-  live clock, the whole trail with ctrl+o. The panel is rendered from tool details, which
-  never reach the model; what reaches the orchestrator is each agent's final text, capped
-  at 16 KB — except in chain mode, where that text is the handoff between agents.
+  doing — the model and thinking level it actually runs with, files, commands, the last
+  thing it said — one line per agent collapsed with a live clock, the whole trail with
+  ctrl+o. The panel is rendered from tool details, which never reach the model; what
+  reaches the orchestrator is each agent's final text, capped at 16 KB — except in chain
+  mode, where that text is the handoff between agents.
 - `eval/` — the repair-loop eval: it seeds `.antz/` with the plan already complete and a
   deliberate fault, runs `/antz` end to end, and reads the dispatch order back out of the
   session file. Not a test and not part of the install: the loop is model judgement, so the

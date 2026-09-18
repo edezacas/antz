@@ -127,6 +127,10 @@ interface AgentRun {
   // toolCallId -> the step its start pushed, so the end event can mark it. A
   // plain object, not a Map: details get serialized to the session file.
   open: Record<string, ToolStep>;
+  // What it actually runs with — the agent file's pin, or the session's model and
+  // thinking level when it declares none. Read back from the child's session, so
+  // the panel proves the pin instead of repeating the frontmatter.
+  engine?: string;
   error?: string;
   startedAt?: number;
   endedAt?: number;
@@ -316,6 +320,18 @@ async function runAgent(
       tools: agent.tools,
     });
     session = created.session;
+    // Read back from the session instead of trusting what we passed: the level is
+    // clamped to what the model supports, so this is the pair the child actually
+    // runs with. Provider and id are spelled the way the frontmatter pin is, which
+    // makes validating a comparison against the agent file, and the fallbacks keep
+    // the panel populated if the state lags a step behind.
+    const engineModel = session.agent.state.model ?? model;
+    const engineThinking = session.agent.state.thinkingLevel ?? thinkingLevel;
+    run.engine = engineModel
+      ? [`${engineModel.provider}/${engineModel.id}`, engineThinking].filter(Boolean).join(" · ")
+      : "";
+    onUpdate?.();
+
     unsubscribe = session.subscribe((event) => {
       if (track(run, event as ChildEvent)) onUpdate?.();
     });
@@ -519,12 +535,17 @@ export default function (pi: ExtensionAPI) {
                   ? oneLine(run.error ?? "failed", 48)
                   : "queued";
           const name = theme.fg(run.status === "failed" ? "error" : "text", label(index, run.agent).padEnd(nameWidth));
-          lines.push(`  ${icon[run.status]} ${name} ${theme.fg("muted", detail)}`);
+          const engine = run.engine ? theme.fg("dim", `${run.engine} · `) : "";
+          lines.push(`  ${icon[run.status]} ${name} ${engine}${theme.fg("muted", detail)}`);
           continue;
         }
 
         const spent = run.startedAt === undefined ? "" : theme.fg("dim", `  ${duration(run)}`);
-        lines.push("", `  ${icon[run.status]} ${theme.fg("toolTitle", theme.bold(label(index, run.agent)))}${spent}`);
+        const engine = run.engine ? theme.fg("dim", ` · ${run.engine}`) : "";
+        lines.push(
+          "",
+          `  ${icon[run.status]} ${theme.fg("toolTitle", theme.bold(label(index, run.agent)))}${engine}${spent}`,
+        );
         lines.push(`     ${theme.fg("dim", oneLine(run.task, 80))}`);
         for (const step of run.steps) {
           const mark =
