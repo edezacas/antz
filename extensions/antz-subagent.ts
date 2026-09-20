@@ -7,11 +7,13 @@
 // `model:` pin are enforced by the SDK rather than by arguments we hope it
 // still accepts.
 //
-// Each child gets the agent's own system prompt, the repo's skills and
-// AGENTS.md, and its declared tools — but no extensions: no recursion into
-// this tool, no side effects from whatever else the session loaded. The nested
-// LLM usage of its children is returned on the tool result, so pi accounts it in
-// the session totals (footer, `/session`, RPC) instead of antz keeping a log.
+// Each child gets the repo's skills and AGENTS.md and its declared tools — but
+// no extensions: no recursion into this tool, no side effects from whatever else
+// the session loaded. The agent's own instructions ride in as the first user
+// message, not the system prompt, so that prompt stays byte-identical across
+// agents and the provider can reuse one cached prefix. The nested LLM usage of
+// its children is returned on the tool result, so pi accounts it in the session
+// totals (footer, `/session`, RPC) instead of antz keeping a log.
 //
 // The tool is registered but starts inactive: antz is its only caller, so it
 // stays out of every other session. `/antz` turns it on and it goes away when
@@ -64,7 +66,9 @@ function setAntzToolActive(pi: ExtensionAPI, active: boolean): void {
 interface AgentDef {
   model?: string;
   tools?: string[];
-  systemPrompt: string;
+  // The agent file's body: what the agent is told to do. Passed as the task, not
+  // as a system prompt, so the shared system prompt is not split per agent.
+  instructions: string;
 }
 
 function findAgentFile(cwd: string, name: string): string {
@@ -91,7 +95,7 @@ function loadAgent(cwd: string, name: string): AgentDef {
   return {
     model: typeof frontmatter.model === "string" ? frontmatter.model : undefined,
     tools: parseToolList(frontmatter.tools),
-    systemPrompt: body.trim(),
+    instructions: body.trim(),
   };
 }
 
@@ -334,7 +338,6 @@ async function runAgent(
     const loader = new DefaultResourceLoader({
       cwd: ctx.cwd,
       agentDir: getAgentDir(),
-      appendSystemPrompt: [agent.systemPrompt],
       noExtensions: true,
     });
     await loader.reload();
@@ -379,7 +382,7 @@ async function runAgent(
     if (signal?.aborted) abort();
     else signal?.addEventListener("abort", abort, { once: true });
 
-    await session.prompt(run.task, { expandPromptTemplates: false });
+    await session.prompt(`${agent.instructions}\n\n---\n\n${run.task}`, { expandPromptTemplates: false });
     if (session.agent.state.errorMessage) throw new Error(session.agent.state.errorMessage);
     run.status = "done";
     return lastAssistantText(session) || "(no output)";
