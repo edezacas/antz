@@ -102,6 +102,13 @@ at the top of that range because it runs the whole chain. Every run appends a ro
 to `out/results.tsv` and a usage row to `out/usage.tsv`, and leaves the sandbox,
 the log and the session trace in `out/`, all of it gitignored.
 
+The `.tsv` files are the record; the rest is only there to inspect a past run and
+costs a few megabytes a batch. To reclaim it without losing the numbers:
+
+```bash
+find out -mindepth 1 -maxdepth 1 ! -name '*.tsv' -exec rm -rf {} +
+```
+
 It measures **what is installed** in `~/.pi/agent`, not the working tree, and
 refuses to run when the two disagree — editing `prompts/antz.md` and forgetting
 `./install.sh` would otherwise grade the previous antz. The `model:` line is
