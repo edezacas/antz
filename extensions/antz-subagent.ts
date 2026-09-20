@@ -9,7 +9,9 @@
 //
 // Each child gets the agent's own system prompt, the repo's skills and
 // AGENTS.md, and its declared tools — but no extensions: no recursion into
-// this tool, no side effects from whatever else the session loaded.
+// this tool, no side effects from whatever else the session loaded. The nested
+// LLM usage of its children is returned on the tool result, so pi accounts it in
+// the session totals (footer, `/session`, RPC) instead of antz keeping a log.
 //
 // The tool is registered but starts inactive: antz is its only caller, so it
 // stays out of every other session. `/antz` turns it on and it goes away when
@@ -20,7 +22,7 @@
 // model — so the panel can show the whole trail while `content`, the part the
 // orchestrator reads, stays capped.
 
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { AgentSession, AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
   CONFIG_DIR_NAME,
   createAgentSession,
@@ -113,6 +115,10 @@ interface ToolStep {
   failed?: boolean;
 }
 
+// pi's own usage type, so the tool result carries the nested LLM spend in the
+// shape pi already sums (footer, `/session`, RPC) instead of a local mirror.
+type RunUsage = NonNullable<AgentToolResult["usage"]>;
+
 interface AgentRun {
   agent: string;
   task: string;
@@ -131,6 +137,9 @@ interface AgentRun {
   // thinking level when it declares none. Read back from the child's session, so
   // the panel proves the pin instead of repeating the frontmatter.
   engine?: string;
+  // Token accounting for this child, read from its session once the run ends so
+  // the tool result can carry the nested usage pi totals.
+  usage?: RunUsage;
   error?: string;
   startedAt?: number;
   endedAt?: number;
@@ -275,6 +284,37 @@ function capOutput(text: string, limit: number): string {
   return `${head}\n\n[truncated: ${bytes - Buffer.byteLength(head, "utf8")} of ${bytes} bytes omitted]`;
 }
 
+// The child session's own totals: input/output/cacheRead/cacheWrite come from
+// its assistant messages, so retries and tool results are already counted. pi
+// only reads the combined `cost.total` back, so the breakdown stays zero.
+function sessionUsage(session: AgentSession): RunUsage {
+  const { tokens, cost } = session.getSessionStats();
+  return {
+    input: tokens.input,
+    output: tokens.output,
+    cacheRead: tokens.cacheRead,
+    cacheWrite: tokens.cacheWrite,
+    totalTokens: tokens.total,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: cost },
+  };
+}
+
+// Every child's usage, summed into the one number the tool result carries, so
+// pi's session totals include the nested LLM calls. Undefined when no child
+// reported usage.
+function totalUsage(runs: AgentRun[]): RunUsage | undefined {
+  const present = runs.flatMap((run) => (run.usage ? [run.usage] : []));
+  if (present.length === 0) return undefined;
+  return present.reduce((a, b) => ({
+    input: a.input + b.input,
+    output: a.output + b.output,
+    cacheRead: a.cacheRead + b.cacheRead,
+    cacheWrite: a.cacheWrite + b.cacheWrite,
+    totalTokens: a.totalTokens + b.totalTokens,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: a.cost.total + b.cost.total },
+  }));
+}
+
 async function runAgent(
   run: AgentRun,
   ctx: ExtensionContext,
@@ -349,6 +389,7 @@ async function runAgent(
     throw new Error(`${TOOL_NAME} ${run.agent}: ${run.error}`);
   } finally {
     run.endedAt = Date.now();
+    run.usage = session ? sessionUsage(session) : undefined;
     // A tool still open here died with the run and never gets its end event, so
     // the panel must not leave it spinning.
     for (const step of Object.values(run.open)) step.failed = true;
@@ -423,7 +464,7 @@ export default function (pi: ExtensionAPI) {
             run.task = run.task.replaceAll("{previous}", previous);
             previous = await runAgent(run, ctx, signal, update);
           }
-          return { content: [{ type: "text", text: previous }], details };
+          return { content: [{ type: "text", text: previous }], details, usage: totalUsage(runs) };
         }
 
         if (tasks.length) {
@@ -445,6 +486,7 @@ export default function (pi: ExtensionAPI) {
           return {
             content: [{ type: "text", text }],
             details,
+            usage: totalUsage(runs),
             isError: results.some(({ run }) => run.status === "failed"),
           };
         }
@@ -454,7 +496,7 @@ export default function (pi: ExtensionAPI) {
           details.runs.push(run);
           update();
           const output = await runAgent(run, ctx, signal, update);
-          return { content: [{ type: "text", text: capOutput(output, limit) }], details };
+          return { content: [{ type: "text", text: capOutput(output, limit) }], details, usage: totalUsage(details.runs) };
         }
 
         throw new Error(`${TOOL_NAME}: provide agent+task, tasks, or chain`);
