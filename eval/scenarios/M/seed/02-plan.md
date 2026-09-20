@@ -1,0 +1,22 @@
+# Plan
+
+- [ ] Task 1 — `range(start, end, step = 1)` in `src/range.js`.
+  - Test: `src/range.test.js`
+  - Acceptance: `range(0, 5)` is `[0, 1, 2, 3, 4]`; `range(5, 0, -1)` is `[5, 4, 3, 2, 1]`; a `step` of 0 throws a `RangeError`.
+  - Depends on: none
+  - Touches: `src/range.js`, `src/range.test.js`
+- [ ] Task 2 — `chunk(items, size)` in `src/chunk.js`.
+  - Test: `src/chunk.test.js`
+  - Acceptance: `chunk([1, 2, 3, 4, 5], 2)` is `[[1, 2], [3, 4], [5]]`; a `size` below 1 throws a `RangeError`.
+  - Depends on: none
+  - Touches: `src/chunk.js`, `src/chunk.test.js`
+- [ ] Task 3 — `unique(items)` in `src/unique.js`.
+  - Test: `src/unique.test.js`
+  - Acceptance: `unique([3, 1, 3, 2, 1])` is `[3, 1, 2]`; `unique([])` is `[]`.
+  - Depends on: none
+  - Touches: `src/unique.js`, `src/unique.test.js`
+- [ ] Task 4 — `sum(items)` in `src/sum.js`.
+  - Test: `src/sum.test.js`
+  - Acceptance: `sum([1, 2, 3])` is `6`; `sum([])` is `0`.
+  - Depends on: none
+  - Touches: `src/sum.js`, `src/sum.test.js`

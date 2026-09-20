@@ -5,6 +5,9 @@ the repair loop. Everything else in this repo is prompt text, and the loop is
 prompt text too — `prompts/antz.md` steps 4 and 5 — so it cannot be asserted on
 like code. It can be *provoked*.
 
+`run.sh M` is the exception: it runs the per-task chain and records what each
+subagent spent, so the same harness measures prompt caching across agents.
+
 **This is not a test, it is an eval.** The verdict depends on model judgement, so
 the result is a rate over N runs, not a boolean: it costs money and minutes, and
 one green run proves nothing — the same way a first-try PASS on a real feature
@@ -29,6 +32,7 @@ decides. Two different red test suites tell the loop apart:
 | **A** | test faithful to the criteria, implementation violating them | `verifier → implementer → verifier`, `.antz/` deleted, `docs/decisions/pagination.md` written |
 | **B** | implementation faithful, test contradicting the criteria | `verifier → tester → verifier`, same end state |
 | **C** | A, plus a watcher re-injecting the fault every 2 s | ≤ 3 repairs, then stop: `.antz/` untouched and no decision written |
+| **M** | fixed recon, spec and plan, no fault, and a realistic `AGENTS.md` | enters at step 4 and runs the four planned test/implement chains and the verifier; the measurement is its usage row, not the routing |
 
 A and B are the same observable — one failing suite — and differ only in which
 side respects the acceptance criteria. That difference is the whole experiment:
@@ -46,19 +50,57 @@ routed — the loop never ran. Deleting `.antz/` is not the verifier's job at al
 on PASS the orchestrator removes it once the document exists, so a verifier that
 forgets costs a round rather than leaving a finished run on disk.
 
+## Measuring cache reuse (`M`)
+
+A/B/C enter at step 5, so they exercise about three dispatches and cannot show a
+caching change. `M` seeds recon, spec and a plan whose four tasks are unchecked:
+`/antz` enters at step 4, so every run does the same work — the four per-task
+tester → implementer chains and the verifier. The plan is fixed on purpose: a
+planner-generated one changes between runs, and that movement would be mistaken
+for the change under test.
+
+`M` also replaces the fixture's ten-line `AGENTS.md` with a realistic one. What a
+caching change buys is `AGENTS.md`, the skills and the cwd no longer being
+recomputed on every agent's first call, so against the fixture's tiny context
+that saving is a rounding error. The bigger one makes it a measurable share of
+the tokens.
+
+Whatever the verdict, every run appends its subagent totals to `out/usage.tsv`
+(separate from `results.tsv`, whose fixed columns predate this): calls to the
+tool, how many of those reported usage, and summed `input` / `cacheRead` /
+`cacheWrite` / `output`, read from the `usage` pi persists on each `toolResult`.
+One call can carry several agents, so `calls` is not the dispatch count; the
+trace in `results.tsv` is. `TAG` labels the phase, so the same feature is
+measured either side of a change:
+
+```bash
+TAG=before RUNS=5 ./run.sh M
+# apply the change, then ./install.sh
+TAG=after  RUNS=5 ./run.sh M
+```
+
+What to look for: `input` down and `cacheRead` up, with `withUsage` equal to
+`calls` — the verdict already checks that all four tasks reached the tester and
+the implementer. Two caveats — a provider that reports no cache leaves every
+token column at zero (`calls` still counts the tool invocations), and a provider
+without pricing in `models.json` reports `cost: 0`, so compare tokens, not money.
+Runs with long gaps between agents can miss the provider's cache window even
+when the change is correct.
+
 ## Running it
 
 ```bash
-./run.sh                # the three scenarios, once each
-./run.sh A B            # only those
-RUNS=5 ./run.sh         # five repetitions of each
+./run.sh                       # A, B and C, once each
+./run.sh A B                   # only those
+RUNS=5 ./run.sh                # five repetitions of each
+TAG=before RUNS=5 ./run.sh M   # the full chain, to measure usage
 SKIP_FRESHNESS=1 ./run.sh
 ```
 
-Roughly 2–15 minutes per run depending on how many repair rounds happen. Every
-run appends a row to `out/results.tsv`, which is the file worth looking at after
-`RUNS=5`, and leaves the sandbox, the log and the session trace in `out/`, all
-of it gitignored.
+Roughly 2–15 minutes per run depending on how many repair rounds happen; `M` is
+at the top of that range because it runs the whole chain. Every run appends a row
+to `out/results.tsv` and a usage row to `out/usage.tsv`, and leaves the sandbox,
+the log and the session trace in `out/`, all of it gitignored.
 
 It measures **what is installed** in `~/.pi/agent`, not the working tree, and
 refuses to run when the two disagree — editing `prompts/antz.md` and forgetting
@@ -69,10 +111,13 @@ meaningless if the session's recorded `cwd` is anywhere else.
 
 ## What it does not prove
 
-- Not the happy path: recon, clarify, planning and the per-task red/green chain
-  are outside it. It starts where a feature already exists and already fails.
-- Not a real repo. The fixture is one 8-line module with three tests; a
-  TypeScript codebase with a slow suite is a harder judgement for the verifier.
+- Not the happy path: recon, clarify and planning are out of both. A/B/C start
+  where a feature already exists and already fails; `M` skips planning too, so
+  its workload is identical run to run. Clarify is missing everywhere — `pi -p`
+  cannot answer it.
+- Not a real repo. The fixture is one 8-line module with three tests, and `M`
+  adds four toy helpers; a TypeScript codebase with a slow suite is a harder
+  judgement for the verifier.
 - Not the model's fault alone: the agents carry `model:` pins, so a run measures
   a particular model pairing. A different pin is a different measurement.
 - Not stable across antz edits: this eval is the regression net for `prompts/`,

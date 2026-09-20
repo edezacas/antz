@@ -16,12 +16,19 @@
 #   ./run.sh A B            # only those
 #   RUNS=5 ./run.sh         # five repetitions of each
 #
-# The scenarios seed .antz/ with the plan already complete, so /antz enters at
-# step 5 (verification) instead of recon: about 3 dispatches per run.
+# A/B/C seed .antz/ with the plan already complete, so /antz enters at step 5
+# (verification) instead of recon: about 3 dispatches per run.
 #
 #   A  test faithful to the criteria, implementation that violates them  -> implementation at fault
 #   B  implementation faithful, test that contradicts the criteria      -> test at fault
 #   C  A, plus a watcher that re-injects the fault every 2 s             -> the 3-attempt cap
+#
+# M measures something else: it seeds recon, spec and a fixed plan, so /antz
+# enters at step 4 with the same tasks every run (tests -> verify), and it gives
+# the sandbox a realistic AGENTS.md so the shared context a caching change
+# targets is a measurable share of the tokens. It records what the subagents
+# spent in out/usage.tsv; TAG=before|after labels the phase, so the same scenario
+# is run either side of a change.
 #
 # It measures what is INSTALLED (~/.pi/agent), not the working tree, and checks
 # that the two agree: a prompts/ edit without ./install.sh would grade the old
@@ -37,8 +44,9 @@ RUNS="${RUNS:-1}"
 TIMEOUT="${TIMEOUT:-1800}"
 
 PROMPT='paginate() must respect the spec limit: asking for limit 1000 has to return 100 elements, not 1000'
+PROMPT_M='add range, chunk, unique and sum helpers under src/, each with its own test file'
 
-usage() { sed -n '3,28p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { sed -n '3,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 for arg in "$@"; do [ "$arg" = "-h" ] || [ "$arg" = "--help" ] && usage; done
 
 # Everything antz copies into an agent. If the two sides differ, the eval would
@@ -85,6 +93,23 @@ sequence() {
 
 count_of() { printf '%s\n' "$1" | tr ' ' '\n' | grep -cx "$2"; }
 
+# What the subagents spent in one session: token counts only. `calls` is every
+# dispatch and `withUsage` is how many reported any, so a provider that reports
+# nothing shows up as calls > 0 with all-zero token columns.
+usage_of() {
+  jq -rs '
+    [.[] | select(.type == "message") | .message] as $m
+    | [$m[] | select(.role == "toolResult" and .toolName == "antz_subagent")] as $calls
+    | [$calls[].usage | select(.)] as $t
+    | [($calls | length),
+       ($t | length),
+       ([$t[].input] | add // 0),
+       ([$t[].cacheRead] | add // 0),
+       ([$t[].cacheWrite] | add // 0),
+       ([$t[].output] | add // 0)]
+    | @tsv' "$1" 2>/dev/null
+}
+
 # One scenario, one run. Leaves the verdict in VERDICT/REASON/SEQUENCE/SECONDS_TAKEN.
 run_once() {
   local scenario="$1" run="$2" seed="$1"
@@ -92,6 +117,7 @@ run_once() {
   # The session file stays outside the sandbox: inside it, an agent poking at the
   # repo would find the orchestrator's own transcript and the harness's intent.
   local session="$OUT/$scenario-$run.session.jsonl" watcher="" start seconds
+  SESSION_FILE="$session"
   [ "$scenario" = "C" ] && seed="A"   # C is A with the fault re-injected
 
   # --session appends to an existing file, so a leftover trace from an earlier
@@ -100,11 +126,18 @@ run_once() {
   rm -rf "$sandbox"
   mkdir -p "$sandbox/.antz" "$sandbox/src"
   cp -R "$HERE/fixture/." "$sandbox/"
-  cp "$HERE/scenarios/spec/"*.md "$sandbox/.antz/"
+  if [ "$scenario" = "M" ]; then
+    # Fixed recon, spec and plan: /antz enters at step 4 with the same tasks every
+    # run, and a bigger AGENTS.md than the fixture so the shared prefix is real.
+    cp "$HERE/scenarios/M/seed/"*.md "$sandbox/.antz/"
+    cp "$HERE/scenarios/M/AGENTS.md" "$sandbox/AGENTS.md"
+  else
+    cp "$HERE/scenarios/spec/"*.md "$sandbox/.antz/"
+  fi
   # Named `antz.gitignore` here so it cannot ignore this directory: as a real
   # `.gitignore` holding `*` it would hide the seed from the repo itself.
   cp "$HERE/scenarios/spec/antz.gitignore" "$sandbox/.antz/.gitignore"
-  cp -R "$HERE/scenarios/$seed/src/." "$sandbox/src/"
+  [ -d "$HERE/scenarios/$seed/src" ] && cp -R "$HERE/scenarios/$seed/src/." "$sandbox/src/"
   ( cd "$sandbox" && git init -q && git add -A \
     && git -c user.email=eval@antz -c user.name=eval commit -qm baseline ) >/dev/null 2>&1
 
@@ -117,10 +150,12 @@ run_once() {
     watcher=$!
   fi
 
+  local prompt="$PROMPT"
+  [ "$scenario" = "M" ] && prompt="$PROMPT_M"
   start="$(date +%s)"
   # From inside the sandbox: `/antz` routes on what is in the cwd, so launching
   # it anywhere else would measure another repo — or none.
-  ( cd "$sandbox" && timeout "$TIMEOUT" pi -a -p --session "$session" "/antz $PROMPT" ) \
+  ( cd "$sandbox" && timeout "$TIMEOUT" pi -a -p --session "$session" "/antz $prompt" ) \
     >"$OUT/$scenario-$run.log" 2>&1
   [ -n "$watcher" ] && kill "$watcher" 2>/dev/null
   seconds=$(( $(date +%s) - start ))
@@ -136,7 +171,9 @@ run_once() {
   [ -n "$SEQUENCE" ] || SEQUENCE="(no dispatches)"
 
   local gone=1; [ -d "$sandbox/.antz" ] || gone=0
-  local doc=0; [ -f "$sandbox/docs/decisions/pagination.md" ] && doc=1
+  local doc_name="pagination.md"
+  [ "$scenario" = "M" ] && doc_name="collection-helpers.md"
+  local doc=0; [ -f "$sandbox/docs/decisions/$doc_name" ] && doc=1
   local repairs; repairs=$(( $(count_of "$SEQUENCE" antz-implementer) + $(count_of "$SEQUENCE" antz-tester) ))
 
   VERDICT=PASS
@@ -168,7 +205,7 @@ run_once() {
       elif [ "$gone" -eq 1 ]; then
         VERDICT=FAIL; REASON="the verifier should have deleted .antz/ after PASS"
       elif [ "$doc" -eq 0 ]; then
-        VERDICT=FAIL; REASON="docs/decisions/pagination.md is missing, and only PASS writes it"
+        VERDICT=FAIL; REASON="docs/decisions/$doc_name is missing, and only PASS writes it"
       else
         REASON="blame routed to $blame, PASS on round 2, .antz/ deleted and the decision written"
         [ "$reruns" -gt 0 ] && REASON="$REASON; the verifier needed $reruns extra round(s) to finish the PASS work"
@@ -189,6 +226,19 @@ run_once() {
         REASON="3 attempts, then it stopped: .antz/ untouched and no decision written"
       fi
       ;;
+    M)
+      # Not a routing contract: the measurement is the usage row. This only says
+      # the run reached the end, so a broken run is visible instead of a zero row.
+      if [ "$gone" -eq 1 ]; then
+        VERDICT=FAIL; REASON="the run did not finish: .antz/ is still there"
+      elif [ "$doc" -eq 0 ]; then
+        VERDICT=FAIL; REASON="docs/decisions/$doc_name is missing"
+      elif [ "$(count_of "$SEQUENCE" antz-tester)" -lt 4 ] || [ "$(count_of "$SEQUENCE" antz-implementer)" -lt 4 ]; then
+        VERDICT=FAIL; REASON="the four planned tasks did not all reach the tester and the implementer: '$SEQUENCE'"
+      else
+        REASON="four tasks tested, implemented and verified: decision written and .antz/ deleted"
+      fi
+      ;;
     *) VERDICT=FAIL; REASON="unknown scenario" ;;
   esac
   SECONDS_TAKEN="$seconds"
@@ -199,6 +249,10 @@ SCENARIOS=("$@")
 mkdir -p "$OUT"
 RESULTS="$OUT/results.tsv"
 [ -f "$RESULTS" ] || printf 'scenario\trun\tverdict\tsequence\tdetail\tseconds\n' >"$RESULTS"
+# Usage lives in its own file so results.tsv keeps its fixed columns and rows
+# from before this measurement stay aligned.
+USAGE="$OUT/usage.tsv"
+[ -f "$USAGE" ] || printf 'tag\tscenario\trun\tcalls\twithUsage\tinput\tcacheRead\tcacheWrite\toutput\n' >"$USAGE"
 
 failures=0
 for scenario in "${SCENARIOS[@]}"; do
@@ -207,6 +261,9 @@ for scenario in "${SCENARIOS[@]}"; do
     run_once "$scenario" "$run"
     printf '%s  %s/%s  [%s]  %ss\n    %s\n' "$VERDICT" "$scenario" "$run" "$SEQUENCE" "$SECONDS_TAKEN" "$REASON"
     printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$scenario" "$run" "$VERDICT" "$SEQUENCE" "$REASON" "$SECONDS_TAKEN" >>"$RESULTS"
+    if [ -n "${SESSION_FILE:-}" ] && [ -f "$SESSION_FILE" ]; then
+      printf '%s\t%s\t%s\t%s\n' "${TAG:-}" "$scenario" "$run" "$(usage_of "$SESSION_FILE")" >>"$USAGE"
+    fi
     [ "$VERDICT" = PASS ] || failures=$((failures + 1))
   done
 done
@@ -214,6 +271,13 @@ done
 printf '\n== summary ==\n'
 awk -F'\t' 'NR>1 { total[$1]++; pass[$1]+=($3=="PASS") }
   END { for (s in total) printf "  %s: %d/%d\n", s, pass[s], total[s] }' "$RESULTS" | sort
-printf '  traces in %s (results.tsv accumulates every run)\n' "$OUT"
+printf '  traces in %s (results.tsv and usage.tsv accumulate every run)\n' "$OUT"
+if [ -f "$USAGE" ]; then
+  printf '\n== usage (mean per tag/scenario) ==\n'
+  awk -F'\t' 'NR>1 { k=($1=="" ? "-" : $1)"/"$2; n[k]++
+      calls[k]+=$4; wu[k]+=$5; inp[k]+=$6; cr[k]+=$7; cw[k]+=$8; outp[k]+=$9 }
+    END { for (k in n) printf "  %s: %d run(s), %.1f calls (%.1f reported usage), input %.0f, cacheRead %.0f, cacheWrite %.0f, output %.0f\n",
+      k, n[k], calls[k]/n[k], wu[k]/n[k], inp[k]/n[k], cr[k]/n[k], cw[k]/n[k], outp[k]/n[k] }' "$USAGE" | sort
+fi
 [ "$failures" -eq 0 ] || printf '\n%d run(s) outside the contract\n' "$failures"
 exit "$([ "$failures" -eq 0 ] && echo 0 || echo 1)"
