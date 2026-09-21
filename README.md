@@ -125,6 +125,13 @@ half-done, waiting on a clarify answer, or under repair keeps it.
    almost never fails. It has its own eval — `eval/run.sh` seeds a fault and reads the
    dispatch order back out of the session — and it is a rate, not a gate.
 
+   Both arms have since been watched on a real run (2026-09-21, a small Node checkout
+   project entered at step 5 with one fault seeded): an implementation that ignored a
+   discount cap gave `verifier → implementer → verifier`, and a test that contradicted
+   the spec gave `verifier → tester → verifier`. Each named the failing task and the side
+   at fault, sent it only there, and closed in PASS with `docs/decisions/checkout.md`
+   written and `.antz/` deleted.
+
 ## Structure
 
 - `agents/` — antz-scout, antz-planner, antz-tester, antz-implementer, antz-verifier
