@@ -31,17 +31,21 @@ core.
   a scratch dir with `./install.sh --dir "$(mktemp -d)"`, twice, then `--uninstall`.
 - Run it from inside a target repo: `/antz "<prompt>"`.
 
-The artifacts are prompts: no build, lint or unit tests, and verification is manual — install,
-run `/antz` against a sandbox repo, read `.antz/` mid-flight and `docs/decisions/` after.
-Only `eval/` covers the repair loop, as a rate over `RUNS` runs rather than a gate, and it
-grades what is installed in `~/.pi/agent` (`eval/README.md`).
+The artifacts are prompts: no build and no lint, and verification of the flow is manual —
+install, run `/antz` against a sandbox repo, read `.antz/` mid-flight and `docs/decisions/`
+after. `extensions/antz-subagent.ts` is the one file of code that is not prompt text, and
+`eval/` has an instrument for each: `./eval/dispatch.sh` drives the tool with the pi SDK
+stubbed — four shapes, concurrency cap, per-chain handoff, failure path, panel — free, in a
+second, against the working tree; `./eval/run.sh` covers the repair loop as a rate over
+`RUNS` runs and grades what is installed in `~/.pi/agent` (`eval/README.md`).
 
 ## Structure
 - `prompts/antz.md` — the slash command: routes on `.antz/` and runs every phase.
 - `agents/` — scout (recon) → planner (plan) → tester → implementer per task → verifier.
 - `skills/antz-clarify/` — the spec phase, the only one that talks to the user.
 - `skills/antz-tdd/` — red/green rules shared by antz-tester and antz-implementer.
-- `extensions/antz-subagent.ts` — dispatch: single, parallel (max 4), or chain.
+- `extensions/antz-subagent.ts` — dispatch: single, parallel (max 4), chain, or several
+  chains at once (max 4 in flight).
 
 ## Gotchas
 - Intermediates are numbered and referenced by name: `00-recon.md`, `01-spec.md`,

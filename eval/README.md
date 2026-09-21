@@ -8,6 +8,12 @@ like code. It can be *provoked*.
 `run.sh M` is the exception: it runs the per-task chain and records what each
 subagent spent, so the same harness measures prompt caching across agents.
 
+`dispatch.sh` is the other instrument, and the mirror image. Instead of
+provoking prompt text with real agents, it checks the one file of code that is
+not prompt text — `extensions/antz-subagent.ts` — with the pi SDK stubbed out.
+Free, deterministic, about a second, and it grades the **working tree** where
+`run.sh` grades the install. It has its own section at the end of this file.
+
 **This is not a test, it is an eval.** The verdict depends on model judgement, so
 the result is a rate over N runs, not a boolean: it costs money and minutes, and
 one green run proves nothing — the same way a first-try PASS on a real feature
@@ -32,7 +38,7 @@ decides. Two different red test suites tell the loop apart:
 | **A** | test faithful to the criteria, implementation violating them | `verifier → implementer → verifier`, `.antz/` deleted, `docs/decisions/pagination.md` written |
 | **B** | implementation faithful, test contradicting the criteria | `verifier → tester → verifier`, same end state |
 | **C** | A, plus a watcher re-injecting the fault every 2 s | ≤ 3 repairs, then stop: `.antz/` untouched and no decision written |
-| **M** | fixed recon, spec and plan, no fault, and a realistic `AGENTS.md` | enters at step 4 and runs the four planned test/implement chains and the verifier; the measurement is its usage row, not the routing |
+| **M** | fixed recon, spec and plan, no fault, and a realistic `AGENTS.md` | enters at step 4, dispatches the four independent per-task chains in one parallel dispatch, and verifies; the measurement is its usage row, not the routing |
 
 A and B are the same observable — one failing suite — and differ only in which
 side respects the acceptance criteria. That difference is the whole experiment:
@@ -58,6 +64,12 @@ caching change. `M` seeds recon, spec and a plan whose four tasks are unchecked:
 tester → implementer chains and the verifier. The plan is fixed on purpose: a
 planner-generated one changes between runs, and that movement would be mistaken
 for the change under test.
+
+The four tasks are independent, so the verdict also asserts the parallel shape:
+at least one dispatch must have carried more than one unit of work — several
+chains in one call, or sibling calls in one message, which pi runs concurrently
+as well. Tasks walked one call per turn are sequential however green they look,
+and `M` is the only scenario positioned to notice.
 
 `M` also replaces the fixture's ten-line `AGENTS.md` with a realistic one. What a
 caching change buys is `AGENTS.md`, the skills and the cwd no longer being
@@ -129,8 +141,28 @@ meaningless if the session's recorded `cwd` is anywhere else.
   a particular model pairing. A different pin is a different measurement.
 - Not stable across antz edits: this eval is the regression net for `prompts/`,
   `agents/` and `skills/`, so run it after touching them, with the same `RUNS`.
+- The parallel assertion is a shape, not a stopwatch: it counts the units of work
+  one dispatch carried, which is when pi runs them concurrently. Whether they
+  actually overlapped is in the run's own `details` — each agent's `startedAt`
+  and `endedAt` are persisted with the session — so it is checkable by hand and
+  not checked here.
 
 ## What it has shown so far
+
+One `M` run after `chains` was added — four independent tasks, one dispatch:
+the orchestrator made **two** tool calls where the pre-`chains` `M` runs made
+five, a single `chains` call holding one tester → implementer chain per task,
+then the verifier. The four testers started within four milliseconds of each
+other, at most 4 agents ran at once (the cap), and 322 s of agent work finished
+in 126 s of wall clock. One run says the shape is reachable, not that the model
+reaches for it every time.
+
+A second run — interactive, on a sandbox in `/tmp` that entered at step 4 — repeated
+it: one `chains` call of four, the four testers starting together, 4 agents at the
+cap and 2.3×, so the shape is not an artefact of headless mode. It also showed the
+property that makes parallel chains safe: every implementer's task carried its own
+tester's report and no chain's text reached another, so `{previous}` is per chain
+and not shared state.
 
 Two 10-run batches — five A and five B, run concurrently — with the orchestrator
 on `nan/deepseek-v4-flash`, tester and implementer on `nan/glm5.3-flash` and the
@@ -200,3 +232,41 @@ Add `scenarios/<X>/src/…` with the files that differ from `fixture/`, plus a
 comment, filename or seed text may hint at which side is at fault, or the eval
 measures the hint instead of the loop. C is the example of a scenario that
 borrows another's files and adds a perturbation, rather than restating them.
+
+## The dispatch harness (`dispatch.sh`)
+
+```bash
+./dispatch.sh
+```
+
+`run.sh` can only see the tool through a real run: it is the wrong instrument for
+"did I break the four shapes?", and a run costs money. This one substitutes the
+pi SDK with stubs (`stubs/`, three packages, ~40 lines) and drives the tool
+directly, so the parts that are the tool's own behaviour rather than the model's
+judgement can be asserted on:
+
+- **the four shapes**: `agent`, `tasks`, `chain`, `chains` — including that
+  providing two by accident is refused rather than silently resolved;
+- **the concurrency cap**: six chains of two steps, with the peak number of live
+  fake sessions asserted at 4. The clock would prove less: it can pass on a fast
+  machine for the wrong reason;
+- **the per-chain handoff**: `{previous}` reaches the next step of the same chain
+  and no other chain's text does — the property that makes parallel chains safe;
+- **the failure path**: one chain failing leaves its siblings' results intact,
+  marks the steps behind it `not run` instead of leaving them queued, and sets
+  the error;
+- **both renderers**: chain-per-line in the call, `chain.step` numbering in the
+  result, and a half-streamed call not throwing while it renders.
+
+The fake agents are the input: they sleep a fixed delay, record the prompt, and
+fail on demand. Everything else in the assertions is the tool's.
+
+**What it does not prove.** The SDK and the agents are fake, so it says nothing
+about how a real model uses the shapes, what a real subagent does with its task,
+or whether the flow works — that is `run.sh` and, above it, the manual run. A new
+import in the extension needs a new export in `stubs/node_modules/…/pi-coding-agent`;
+a missing name fails the harness by name rather than silently.
+
+`run.sh` remains the only instrument that grades what is *installed*, and the two
+are allowed to disagree: this one exists so a change to the tool can be checked
+before anything is installed, or paid for.

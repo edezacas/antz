@@ -26,7 +26,7 @@ Route on what is on disk, never on memory of an earlier session. If what is ther
 
 3. Run antz-planner (single) to write `.antz/02-plan.md`, then step 4.
 
-4. For each unchecked task, respecting `Depends on`: chain antz-tester → antz-implementer, handing the tester's report to the implementer, and mark the task `[x]` when the chain is done. Tasks may run in parallel, up to 4 at a time, but never two that would touch the same files (`Touches` is the hint). When every task is checked, step 5.
+4. For each unchecked task, respecting `Depends on`: chain antz-tester → antz-implementer, handing the tester's report to the implementer, and mark the task `[x]` when its chain is done. Dispatch independent tasks in one dispatch, up to 4 at a time, never two that would touch the same files (`Touches` is the hint). When every task is checked, step 5.
 
 5. Run antz-verifier (single) with every task checked. It returns PASS, or the failing tasks and whether the test or the implementation is at fault. A test fault goes back to antz-tester, an implementation fault to antz-implementer, never both. The verifier runs again for the whole plan, once per round, never per task. On PASS, once `docs/decisions/<slug>.md` exists, delete `.antz/`, then step 6. After 3 failed attempts on the same task, stop, leave `.antz/` in place, and report.
 

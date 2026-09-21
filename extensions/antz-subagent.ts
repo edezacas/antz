@@ -127,6 +127,10 @@ interface AgentRun {
   agent: string;
   task: string;
   status: RunStatus;
+  // Which chain this run belongs to and which step of it, when the call was
+  // `chains`. Unset for the other three shapes, whose runs are a flat list.
+  group?: number;
+  step?: number;
   // Every tool the child called, in order — what it touched and whether that
   // worked. This, not its prose, is what answers "what is it doing".
   steps: ToolStep[];
@@ -150,7 +154,7 @@ interface AgentRun {
 }
 
 interface AntzDetails {
-  mode: "single" | "tasks" | "chain";
+  mode: "single" | "tasks" | "chain" | "chains";
   runs: AgentRun[];
 }
 
@@ -168,7 +172,17 @@ function newRun(agent: string, task: string): AgentRun {
   return { agent, task, status: "queued", steps: [], open: {} };
 }
 
-function modeOf(params: { chain?: unknown[]; tasks?: unknown[] }): AntzDetails["mode"] {
+// The shape of a call, taking the first one it finds: it runs while rendering a
+// half-streamed call, where exclusivity cannot be assumed yet, and in `execute`,
+// which checks the shapes are exclusive before trusting the answer.
+function modeOf(params: {
+  agent?: unknown;
+  task?: unknown;
+  chain?: unknown[];
+  chains?: unknown[][];
+  tasks?: unknown[];
+}): AntzDetails["mode"] {
+  if (params.chains?.length) return "chains";
   return params.chain?.length ? "chain" : params.tasks?.length ? "tasks" : "single";
 }
 
@@ -433,16 +447,27 @@ export default function (pi: ExtensionAPI) {
     description:
       "Delegate to one of antz's isolated agents, with its own context window. Provide exactly one of: " +
       "{agent, task} for single, {tasks: [...]} for parallel, " +
-      "{chain: [...]} for sequential handoff ({previous} is substituted).",
+      "{chain: [...]} for sequential handoff ({previous} is substituted), " +
+      "{chains: [[...], ...]} for one chain per task in parallel ({previous} inside each, max 4 at once).",
     parameters: Type.Object({
       agent: Type.Optional(Type.String()),
       task: Type.Optional(Type.String()),
       tasks: Type.Optional(Type.Array(Type.Object({ agent: Type.String(), task: Type.String() }))),
       chain: Type.Optional(Type.Array(Type.Object({ agent: Type.String(), task: Type.String() }))),
+      chains: Type.Optional(
+        Type.Array(Type.Array(Type.Object({ agent: Type.String(), task: Type.String() }))),
+      ),
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const chain = params.chain ?? [];
+      const chains = params.chains ?? [];
       const tasks = params.tasks ?? [];
+      // Four shapes and no precedence between them: a call that provides two by
+      // accident would otherwise run a shape the orchestrator did not ask for.
+      const shapes = [chains.length > 0, chain.length > 0, tasks.length > 0, Boolean(params.agent && params.task)];
+      if (shapes.filter(Boolean).length !== 1) {
+        throw new Error(`${TOOL_NAME}: provide exactly one of agent+task, tasks, chain, or chains`);
+      }
       const details: AntzDetails = { mode: modeOf(params), runs: [] };
       const update = () => onUpdate?.({ content: [{ type: "text", text: statusLine(details) }], details });
       const limit = details.mode === "chain" ? 0 : MAX_OUTPUT_BYTES;
@@ -458,6 +483,54 @@ export default function (pi: ExtensionAPI) {
         : undefined;
 
       try {
+        if (chains.length) {
+          // One chain per task, every chain in flight up to the same cap `tasks`
+          // uses: the parallelism is a step the orchestrator takes, not a hope
+          // that it happens to emit sibling `chain` calls. Inside a chain the
+          // steps are sequential and `{previous}` is the handoff, so only the
+          // chain's final text is capped — that is what the orchestrator reads.
+          const groups = chains.map((steps, group) =>
+            steps.map((step, index) => ({ ...newRun(step.agent, step.task), group, step: index })),
+          );
+          details.runs.push(...groups.flat());
+          update();
+          const results = await mapConcurrent(groups, MAX_CONCURRENCY, async (runs) => {
+            let previous = "";
+            try {
+              for (const run of runs) {
+                run.task = run.task.replaceAll("{previous}", previous);
+                previous = await runAgent(run, ctx, signal, update);
+              }
+              return { runs, output: previous };
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              // One chain failing must not swallow the others' results, and the
+              // steps behind it never ran: say so instead of leaving them queued.
+              for (const run of runs) {
+                if (run.status === "queued") {
+                  run.status = "failed";
+                  run.error = `not run: ${message}`;
+                }
+              }
+              update();
+              return { runs, output: message };
+            }
+          });
+          const text = results
+            .map(({ runs, output }) => {
+              const failed = runs.some((run) => run.status === "failed");
+              const label = runs.map((run) => run.agent).join(" → ");
+              return failed ? `[${label}] FAILED — ${output}` : capOutput(output, limit);
+            })
+            .join("\n\n---\n\n");
+          return {
+            content: [{ type: "text", text }],
+            details,
+            usage: totalUsage(details.runs),
+            isError: results.some(({ runs }) => runs.some((run) => run.status === "failed")),
+          };
+        }
+
         if (chain.length) {
           const runs = chain.map((step) => newRun(step.agent, step.task));
           details.runs.push(...runs);
@@ -502,14 +575,31 @@ export default function (pi: ExtensionAPI) {
           return { content: [{ type: "text", text: capOutput(output, limit) }], details, usage: totalUsage(details.runs) };
         }
 
-        throw new Error(`${TOOL_NAME}: provide agent+task, tasks, or chain`);
+        // Unreachable: the shape check admits exactly one of the four branches.
+        throw new Error(`${TOOL_NAME}: provide exactly one of agent+task, tasks, chain, or chains`);
       } finally {
         if (heartbeat) clearInterval(heartbeat);
       }
     },
 
     renderCall(args, theme, context) {
-      const raw = args.chain?.length ? args.chain : args.tasks?.length ? args.tasks : args.agent ? [args] : [];
+      // A `chains` call is one line per chain, its agents joined by an arrow; the
+      // other shapes list one agent per line and `chain` one per step, which is
+      // also the order the panel numbers them in. A half-streamed `chains` can
+      // hold something that is not an array yet, and rendering must not throw.
+      const lines = (args.chains ?? []).map((steps) => (Array.isArray(steps) ? steps : []));
+      const raw = args.chains?.length
+        ? lines.map((steps) => ({
+            agent: steps.map((step) => step.agent).join(" → "),
+            task: steps.map((step) => step.task).join(" "),
+          }))
+        : args.chain?.length
+          ? args.chain
+          : args.tasks?.length
+            ? args.tasks
+            : args.agent
+              ? [args]
+              : [];
       // `{previous}` is only substituted once its step runs, so on the call it is
       // noise. The panel numbers its agents in this same order.
       const calls = raw.map((call) => ({
@@ -554,10 +644,16 @@ export default function (pi: ExtensionAPI) {
       };
       const count = (status: RunStatus) => details.runs.filter((run) => run.status === status).length;
       // Four testers in parallel are four identical names, so number them: the
-      // call's own list above uses the same order.
+      // call's own list above uses the same order. A `chains` run numbers the
+      // chain and then the step inside it, which is how the call rendered.
       const numbered = details.runs.length > 1;
-      const label = (index: number, agent: string) => (numbered ? `${index + 1}. ${agent}` : agent);
-      const nameWidth = Math.max(...details.runs.map((run, index) => label(index, run.agent).length));
+      const label = (index: number, run: AgentRun) =>
+        !numbered
+          ? run.agent
+          : run.group === undefined
+            ? `${index + 1}. ${run.agent}`
+            : `${run.group + 1}.${(run.step ?? 0) + 1} ${run.agent}`;
+      const nameWidth = Math.max(...details.runs.map((run, index) => label(index, run).length));
 
       let header = theme.fg("toolTitle", theme.bold(`${TOOL_NAME} `));
       header += theme.fg("accent", details.mode);
@@ -579,7 +675,7 @@ export default function (pi: ExtensionAPI) {
                 : run.status === "failed"
                   ? oneLine(run.error ?? "failed", 48)
                   : "queued";
-          const name = theme.fg(run.status === "failed" ? "error" : "text", label(index, run.agent).padEnd(nameWidth));
+          const name = theme.fg(run.status === "failed" ? "error" : "text", label(index, run).padEnd(nameWidth));
           const engine = run.engine ? theme.fg("dim", `${run.engine} · `) : "";
           lines.push(`  ${icon[run.status]} ${name} ${engine}${theme.fg("muted", detail)}`);
           continue;
@@ -589,7 +685,7 @@ export default function (pi: ExtensionAPI) {
         const engine = run.engine ? theme.fg("dim", ` · ${run.engine}`) : "";
         lines.push(
           "",
-          `  ${icon[run.status]} ${theme.fg("toolTitle", theme.bold(label(index, run.agent)))}${engine}${spent}`,
+          `  ${icon[run.status]} ${theme.fg("toolTitle", theme.bold(label(index, run)))}${engine}${spent}`,
         );
         lines.push(`     ${theme.fg("dim", oneLine(run.task, 80))}`);
         for (const step of run.steps) {

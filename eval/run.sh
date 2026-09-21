@@ -28,7 +28,9 @@
 # the sandbox a realistic AGENTS.md so the shared context a caching change
 # targets is a measurable share of the tokens. It records what the subagents
 # spent in out/usage.tsv; TAG=before|after labels the phase, so the same scenario
-# is run either side of a change.
+# is run either side of a change. Its four tasks are independent, so step 4 must
+# dispatch them together: M also asserts that shape, which is the parallel-chains
+# contract.
 #
 # It measures what is INSTALLED (~/.pi/agent), not the working tree, and checks
 # that the two agree: a prompts/ edit without ./install.sh would grade the old
@@ -78,20 +80,36 @@ if [ "${SKIP_FRESHNESS:-0}" != "1" ]; then
 fi
 
 # The trace of the loop: every antz_subagent dispatch, in order. The sequence of
-# agents IS the routing, and the routing is what the eval measures.
+# agents IS the routing, and the routing is what the eval measures. A `chains`
+# call carries one chain per task, so it flattens like `chain` and `tasks` do.
 sequence() {
   jq -r '
     select(.message.content? | type == "array")
     | .message.content[]
     | select(.type == "toolCall" and .name == "antz_subagent")
     | .arguments as $a
-    | (($a.chain // []) + ($a.tasks // [])) as $many
+    | (($a.chain // []) + (($a.chains // []) | (add // [])) + ($a.tasks // [])) as $many
     | (if ($many | length) > 0 then $many else [{ agent: $a.agent }] end)
     | .[] | .agent
   ' "$1" 2>/dev/null | paste -sd' ' -
 }
 
 count_of() { printf '%s\n' "$1" | tr ' ' '\n' | grep -cx "$2"; }
+
+# How many dispatches carried more than one unit of concurrent work. A unit is an
+# agent that can run alongside another: every element of `tasks`, every chain of
+# `chains`, and one for the shapes that are sequential by definition. Sibling
+# calls in one message count together, because pi runs those concurrently.
+parallel_dispatches() {
+  jq -r '
+    select(.message.content? | type == "array")
+    | [.message.content[]
+       | select(.type == "toolCall" and .name == "antz_subagent")
+       | ([((.arguments.chains // []) | length), ((.arguments.tasks // []) | length), 1] | max)]
+    | (add // 0)
+    | select(. > 1)
+  ' "$1" 2>/dev/null | wc -l | tr -d ' '
+}
 
 # What the subagents spent in one session: token counts only. `calls` is every
 # dispatch and `withUsage` is how many reported any, so a provider that reports
@@ -161,6 +179,7 @@ run_once() {
   seconds=$(( $(date +%s) - start ))
 
   SEQUENCE="$(sequence "$session")"
+  local parallel; parallel="$(parallel_dispatches "$session")"
   local cwd; cwd="$(jq -r 'select(.type == "session") | .cwd' "$session" 2>/dev/null | head -1)"
   if [ "$cwd" != "$sandbox" ]; then
     VERDICT=FAIL
@@ -228,15 +247,18 @@ run_once() {
       ;;
     M)
       # Not a routing contract: the measurement is the usage row. This only says
-      # the run reached the end, so a broken run is visible instead of a zero row.
+      # the run reached the end as the parallel shape, so a broken run is visible
+      # instead of a zero row.
       if [ "$gone" -eq 1 ]; then
         VERDICT=FAIL; REASON="the run did not finish: .antz/ is still there"
       elif [ "$doc" -eq 0 ]; then
         VERDICT=FAIL; REASON="docs/decisions/$doc_name is missing"
       elif [ "$(count_of "$SEQUENCE" antz-tester)" -lt 4 ] || [ "$(count_of "$SEQUENCE" antz-implementer)" -lt 4 ]; then
         VERDICT=FAIL; REASON="the four planned tasks did not all reach the tester and the implementer: '$SEQUENCE'"
+      elif [ "$parallel" -lt 1 ]; then
+        VERDICT=FAIL; REASON="the independent tasks were not dispatched together: no dispatch carried more than one unit of work: '$SEQUENCE'"
       else
-        REASON="four tasks tested, implemented and verified: decision written and .antz/ deleted"
+        REASON="four independent chains dispatched in parallel ($parallel dispatch(es) carried more than one), verified: decision written and .antz/ deleted"
       fi
       ;;
     *) VERDICT=FAIL; REASON="unknown scenario" ;;

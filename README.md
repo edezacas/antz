@@ -111,8 +111,9 @@ half-done, waiting on a clarify answer, or under repair keeps it.
 3. **Plan** — `antz-planner` writes `.antz/02-plan.md`: small tasks, each with its own
    test file, its `Depends on` and the files it touches (`Touches`).
 4. **Per task** — `antz-tester` → `antz-implementer`, chained: a failing test, then the
-   minimum code to pass it. Independent tasks run in parallel (max 4), never two that
-   would touch the same files.
+   minimum code to pass it. Independent tasks are dispatched together as several chains
+   in one call, so they run in parallel (max 4 at once), never two that would touch the
+   same files.
 5. **Verify** — `antz-verifier` runs once, with every task green. On PASS it writes
    `docs/decisions/<slug>.md`, and the orchestrator deletes `.antz/` once that document
    exists. On failure it names the failing task and whether the test or the implementation
@@ -132,7 +133,8 @@ half-done, waiting on a clarify answer, or under repair keeps it.
 - `prompts/antz.md` — orchestration
 - `install.sh` — pi preflight, then a copy or clone into pi's agent dir, a verification
   pass, and `--uninstall`.
-- `extensions/antz-subagent.ts` — the dispatch tool: single, parallel (max 4), or chain;
+- `extensions/antz-subagent.ts` — the dispatch tool: single, parallel (max 4), chain, or
+  several chains in parallel (max 4 in flight, one per task);
   each agent runs as its own session inside pi, not as a child process, and the tool is
   only offered during an `/antz` run. While it runs, a panel shows what each agent is
   doing — the model and thinking level it actually runs with, files, commands, the last
@@ -140,10 +142,13 @@ half-done, waiting on a clarify answer, or under repair keeps it.
   ctrl+o. The panel is rendered from tool details, which never reach the model; what
   reaches the orchestrator is each agent's final text, capped at 16 KB — except in chain
   mode, where that text is the handoff between agents.
-- `eval/` — the repair-loop eval: it seeds `.antz/` with the plan already complete and a
-  deliberate fault, runs `/antz` end to end, and reads the dispatch order back out of the
-  session file. Not a test and not part of the install: the loop is model judgement, so the
-  result is a rate over `RUNS` runs. See `eval/README.md`.
+- `eval/` — two instruments, neither part of the install. `run.sh` is the repair-loop
+  eval: it seeds `.antz/` with the plan already complete and a deliberate fault, runs
+  `/antz` end to end, and reads the dispatch order back out of the session file — model
+  judgement, so a rate over `RUNS` runs rather than a gate, grading what is installed.
+  `dispatch.sh` checks the dispatch tool itself — the four shapes, the concurrency cap,
+  the per-chain handoff, the failure path and both renderers — with the pi SDK stubbed,
+  so it is deterministic, free, and tests the working tree. See `eval/README.md`.
 - `TODO.md` — known gaps.
 
 ## Per target project
