@@ -4,15 +4,26 @@ Known gaps. Nothing here blocks a run; the flow works as documented in `README.m
 
 ## Client-agnostic prompt assembly
 
-Keeping the agent's body out of the child's system prompt is what lets the five
-agents share one cached prefix. `extensions/antz-subagent.ts` does that in
-process: it prepends the body to the task when prompting the child, so the body
-never enters the orchestrator's context and `prompts/antz.md` does not change.
-That is pi-only. The original design put the concatenation in a `build_task.sh`
-installed in the agent dir and invoked by the orchestrator, so any harness with
-bash could assemble the same task. Not implemented: the body would then pass
-through the orchestrator's context on every dispatch, and it only helps a harness
-that can suppress its own agent-file injection (Claude Code's `Task` may not), so
-the caching win may not transfer anyway. Revisit only if a second harness is a
-real target, and note that then the body has to leave the harness registration
-files too, not just the system prompt.
+Everything antz ships is pi-only. `extensions/antz-subagent.ts` is the only way the
+five agents get dispatched, and `agents/*.md` is that extension's own convention, not
+a format anyone else reads. Concurrency is not the gap: every client's cap sits above
+antz's 4, and the rule that actually carries the safety — never two tasks that touch
+the same file — is already in `prompts/antz.md` and is harness-independent. The gap is
+installation: no client has a portable subagent format, so a second harness needs its
+own registration files.
+
+The next idea is to let the client write them. `INSTALL.md` says "you are one of pi,
+claude, opencode; read `adapters/<you>.md`", and each adapter is a short spec: paths,
+the frontmatter field map, what to verify. Adding a client is then a `.md`, not code,
+and `install.sh` stays where it is — it is pi's adapter and pi's bootstrap. It stays
+deterministic by having the agent copy the agent bodies byte for byte and synthesize
+only the frontmatter, then run the same check `install.sh` runs: the files exist,
+`name:` matches the filename, the body is identical, a previous `model:` survived. It
+is testable the way the rest is: `eval/install.sh`, a stubbed HOME in a scratch
+directory, assert the tree and the byte-identity of the bodies.
+
+Only the harnesses we actually use ship an adapter; the structure is the spec for the
+next one. The agent still needs the spec in context before any of this, so there is a
+clone and a prompt before the install.
+
+Revisit only if a second harness is a real target.
