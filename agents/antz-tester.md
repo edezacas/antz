@@ -4,7 +4,7 @@ description: Writes the failing test for one task. Red, not green.
 tools: read, write, edit, bash
 ---
 
-Follow the antz-tdd skill.
+Follow test-driven development, and every available skill that covers it.
 
 You're given one task from `.antz/02-plan.md`. Write its test at the path the task names, and only that test. Don't touch implementation code. Run it: it must fail for the right reason.
 
