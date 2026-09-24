@@ -43,10 +43,17 @@ let maxLive = 0;
 const prompts = [];
 
 globalThis.__mkSession = async () => {
+  // One listener per session, because a run reads only the tool events its own
+  // child emitted. `__read` is the file the fake child reads, which is how a
+  // skills block makes the run look like the model loading a SKILL.md.
+  let listener;
   const session = {
     messages: [],
     agent: { state: { model: { provider: "fixture", id: "model" }, thinkingLevel: "medium" } },
-    subscribe: () => () => {},
+    subscribe: (fn) => {
+      listener = fn;
+      return () => (listener = undefined);
+    },
     abort() {},
     dispose() {
       live--;
@@ -61,6 +68,11 @@ globalThis.__mkSession = async () => {
       maxLive = Math.max(maxLive, live);
       await new Promise((resolve) => setTimeout(resolve, globalThis.__delay));
       if (globalThis.__failOn && text.includes(globalThis.__failOn)) throw new Error("boom");
+      if (globalThis.__read) {
+        const args = { path: globalThis.__read };
+        listener?.({ type: "tool_execution_start", toolCallId: "read-1", toolName: "read", args });
+        listener?.({ type: "tool_execution_end", toolCallId: "read-1", toolName: "read", isError: false });
+      }
       prompts.push(text);
       const task = text.split("TASK:").pop().trim().split("\n", 1)[0];
       session.messages.push({ role: "assistant", content: [{ type: "text", text: `OUT[${task}]` }] });
@@ -69,13 +81,14 @@ globalThis.__mkSession = async () => {
   return { session };
 };
 
-function reset({ delay = 200, failOn } = {}) {
+function reset({ delay = 200, failOn, read } = {}) {
   spawn = 0;
   live = 0;
   maxLive = 0;
   prompts.length = 0;
   globalThis.__delay = delay;
   globalThis.__failOn = failOn;
+  globalThis.__read = read;
 }
 
 const dispatch = (params) =>
@@ -168,6 +181,38 @@ check("single works", single.details.mode === "single" && single.details.runs[0]
 reset({ delay: 50 });
 const soloChain = await dispatch({ chains: [[{ agent: "antz-tester", task: "TASK: solo" }]] });
 check("a chains call of one chain works", soloChain.details.runs.length === 1 && soloChain.details.runs[0].status === "done");
+
+console.log("\n== the skills a child is handed, and the one it reads");
+const SKILL_FILE = join(FIXTURES, "skills", "antz-tdd", "SKILL.md");
+globalThis.__skills = [{ name: "antz-tdd", filePath: SKILL_FILE }];
+reset({ read: SKILL_FILE });
+const skilled = await dispatch({ agent: "antz-tester", task: "TASK: skilled" });
+check("the discovered skills are on the details, once per call", JSON.stringify(skilled.details.skills) === '["antz-tdd"]', JSON.stringify(skilled.details.skills));
+check("reading the SKILL.md marks the skill as used", JSON.stringify(skilled.details.runs[0].skillsUsed) === '["antz-tdd"]', JSON.stringify(skilled.details.runs[0].skillsUsed));
+check("the header names what was available", /skills: antz-tdd/.test(renderResult(skilled, true)));
+check("the expanded row names what was used", /skills used: antz-tdd/.test(renderResult(skilled, true)));
+reset({ read: "skills/antz-tdd/SKILL.md" });
+const relative = await dispatch({ agent: "antz-tester", task: "TASK: relative" });
+check("a relative read still resolves to the skill", JSON.stringify(relative.details.runs[0].skillsUsed) === '["antz-tdd"]', JSON.stringify(relative.details.runs[0].skillsUsed));
+reset({ read: join(FIXTURES, "src", "pagination.js") });
+const plain = await dispatch({ agent: "antz-tester", task: "TASK: plain" });
+check("an ordinary read is not a skill", plain.details.runs[0].skillsUsed === undefined, JSON.stringify(plain.details.runs[0].skillsUsed));
+check("available and used are not the same list", !/skills used:/.test(renderResult(plain, true)) && /skills: antz-tdd/.test(renderResult(plain, true)));
+globalThis.__skills = Array.from({ length: 10 }, (_, i) => ({
+  name: `s${i}`,
+  filePath: join(FIXTURES, "skills", `s${i}`, "SKILL.md"),
+}));
+reset();
+const many = await dispatch({ agent: "antz-tester", task: "TASK: many" });
+check(
+  "the header caps a long list and counts the rest",
+  /skills: s0, .*s7 \+2 more/.test(renderResult(many, true)),
+  renderResult(many, true).split("\n")[1],
+);
+globalThis.__skills = undefined;
+reset();
+const bare = await dispatch({ agent: "antz-tester", task: "TASK: bare" });
+check("no skills discovered, no header line", !/skills:/.test(renderResult(bare, true)));
 
 console.log("\n== the panel");
 const call = renderCall({ chains: [1, 2].map((n) => pair(`t${n}`)) });

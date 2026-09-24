@@ -1,28 +1,19 @@
 // ~/.pi/agent/extensions/antz-subagent.ts
 //
-// antz's subagent tool, with no third-party dependencies: every agent runs as
-// its own AgentSession in this process (pi's own SDK — createAgentSession with
-// a DefaultResourceLoader), never as a child `pi` process. There is no CLI flag
-// to keep in sync with `pi --help`, and the agent's `tools:` allowlist and
-// `model:` pin are enforced by the SDK rather than by arguments we hope it
-// still accepts.
+// antz's subagent tool, no third-party dependencies: every agent runs as its own
+// AgentSession in this process through pi's SDK, never as a child `pi` process, so
+// its `tools:` allowlist and `model:` pin are enforced by the SDK rather than by
+// flags this file hopes `pi` still accepts.
 //
-// Each child gets the repo's skills and AGENTS.md and its declared tools — but
-// no extensions: no recursion into this tool, no side effects from whatever else
-// the session loaded. The agent's own instructions ride in as the first user
-// message, not the system prompt, so that prompt stays byte-identical across
-// agents and the provider can reuse one cached prefix. The nested LLM usage of
-// its children is returned on the tool result, so pi accounts it in the session
-// totals (footer, `/session`, RPC) instead of antz keeping a log.
+// Each child gets the repo's skills, AGENTS.md and its declared tools, but no
+// extensions: no recursion into this tool, no side effects from whatever else the
+// session loaded. Its instructions ride in as the first user message, not the
+// system prompt, so that prompt stays byte-identical across agents and the provider
+// can reuse one cached prefix. Its usage is returned on the tool result, so pi
+// totals it in the session (footer, `/session`, RPC).
 //
-// The tool is registered but starts inactive: antz is its only caller, so it
-// stays out of every other session. `/antz` turns it on and it goes away when
-// the run is over.
-//
-// While a run is in flight, what each child is doing is streamed into the TUI
-// through `details` — which is rendered and persisted but never sent to the
-// model — so the panel can show the whole trail while `content`, the part the
-// orchestrator reads, stays capped.
+// The panel is built from `details`, rendered and persisted but never sent to the
+// model, while `content` — the part the orchestrator reads — stays capped.
 
 import type { AgentSession, AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
@@ -39,7 +30,7 @@ import {
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 const MAX_CONCURRENCY = 4;
 const TOOL_NAME = "antz_subagent";
@@ -47,16 +38,16 @@ const TOOL_NAME = "antz_subagent";
 // the panel keeps in `details`. Chain mode is exempt from the cap: there the text
 // is the handoff, so truncating it would break the flow instead of saving context.
 const MAX_OUTPUT_BYTES = 16 * 1024;
-// How many agent lines a tool row lists before it starts counting the rest.
 const MAX_CALL_LINES = 4;
+// The panel is bounded everywhere else, and the header line stays so.
+const MAX_SKILLS = 8;
 
 // Only `/antz` may dispatch, so the tool starts inactive and is turned on by
 // that input. "The run is over" means `.antz/` is gone — which the orchestrator
 // decides, once the decision document is written — and that keeps the tool alive
-// through a clarify turn that ends the
-// turn to ask the user, through repairs, and through a run left half-done. When
-// in doubt it stays active: a run that cannot dispatch is worse than a stale
-// tool.
+// through a clarify turn that ends to ask the user, through repairs, and through
+// a run left half-done. When in doubt it stays active: a run that cannot
+// dispatch is worse than a stale tool.
 function setAntzToolActive(pi: ExtensionAPI, active: boolean): void {
   const current = pi.getActiveTools();
   if (active === current.includes(TOOL_NAME)) return;
@@ -66,8 +57,8 @@ function setAntzToolActive(pi: ExtensionAPI, active: boolean): void {
 interface AgentDef {
   model?: string;
   tools?: string[];
-  // The agent file's body: what the agent is told to do. Passed as the task, not
-  // as a system prompt, so the shared system prompt is not split per agent.
+  // Passed as the task, not as a system prompt, so the shared system prompt is
+  // not split per agent.
   instructions: string;
 }
 
@@ -106,10 +97,6 @@ function modelRuntime(): Promise<ModelRuntime> {
   return (runtime ??= ModelRuntime.create());
 }
 
-// What the TUI shows. `details` is rendered, persisted with the session, and
-// never sent to the model; `content` is the opposite. So the trail of what each
-// child did lives here in full and the orchestrator pays only for what it reads.
-
 type RunStatus = "queued" | "running" | "done" | "failed";
 
 interface ToolStep {
@@ -131,12 +118,10 @@ interface AgentRun {
   // `chains`. Unset for the other three shapes, whose runs are a flat list.
   group?: number;
   step?: number;
-  // Every tool the child called, in order — what it touched and whether that
-  // worked. This, not its prose, is what answers "what is it doing".
+  // This, not the child's prose, is what answers "what is it doing".
   steps: ToolStep[];
-  // The last thing the child said: one block, not all of them. The trail above
-  // carries the story, and this is the only prose worth reading when something
-  // looks wrong. Capped like `content`, so details stay bounded.
+  // The last thing the child said, not all of it: the only prose worth reading
+  // when something looks wrong. Capped like `content`, so details stay bounded.
   lastText?: string;
   // toolCallId -> the step its start pushed, so the end event can mark it. A
   // plain object, not a Map: details get serialized to the session file.
@@ -145,6 +130,9 @@ interface AgentRun {
   // thinking level when it declares none. Read back from the child's session, so
   // the panel proves the pin instead of repeating the frontmatter.
   engine?: string;
+  // The skills this run actually put to work, in the order it read them. pi only
+  // advertises a skill, so a `read` of its SKILL.md is the only proof it was used.
+  skillsUsed?: string[];
   // Token accounting for this child, read from its session once the run ends so
   // the tool result can carry the nested usage pi totals.
   usage?: RunUsage;
@@ -156,6 +144,10 @@ interface AgentRun {
 interface AntzDetails {
   mode: "single" | "tasks" | "chain" | "chains";
   runs: AgentRun[];
+  // The skills every child was handed, by name. Stated once because all of them
+  // share a cwd and agentDir — and in a foreign repo it is also the record of
+  // what antz found there.
+  skills?: string[];
 }
 
 // The child's events, as far as the panel cares about them.
@@ -203,14 +195,21 @@ function toolArg(args: unknown): string {
 }
 
 // Boundaries only — never `text_delta` — so a run costs a handful of repaints on
-// top of the caller's one-second tick, instead of one per token. Returns whether
-// anything the panel shows changed, which decides if the TUI is asked to repaint.
-function track(run: AgentRun, event: ChildEvent): boolean {
+// top of the caller's one-second tick, instead of one per token.
+function track(run: AgentRun, event: ChildEvent, skillOf?: (path: unknown) => string | undefined): boolean {
   switch (event.type) {
     case "tool_execution_start": {
       const step: ToolStep = { tool: String(event.toolName ?? "?"), arg: toolArg(event.args) };
       run.steps.push(step);
       run.open[String(event.toolCallId)] = step;
+      // pi puts a skill's name and path in the child's system prompt and stops
+      // there: the full instructions arrive only when the model reads the file.
+      // That `read` is the signal, and the path is what names the skill — a skill
+      // fetched another way (a `bash cat`, say) simply goes unnoticed.
+      if (event.toolName === "read") {
+        const skill = skillOf?.((event.args as Record<string, unknown> | undefined)?.path);
+        if (skill && !run.skillsUsed?.includes(skill)) run.skillsUsed = [...(run.skillsUsed ?? []), skill];
+      }
       return true;
     }
     case "tool_execution_end": {
@@ -258,8 +257,8 @@ function duration(run: AgentRun): string {
   return formatMs((run.endedAt ?? Date.now()) - run.startedAt);
 }
 
-// Wall clock of the whole call: from the first child to start until the last one
-// stopped, or until now while any is still going. The number a watcher checks.
+// Wall clock of the whole call, not the sum of the children: the number a
+// watcher checks.
 function elapsed(runs: AgentRun[]): string {
   const starts = runs.map((run) => run.startedAt).filter((at): at is number => at !== undefined);
   if (starts.length === 0) return "";
@@ -318,8 +317,7 @@ function sessionUsage(session: AgentSession): RunUsage {
 }
 
 // Every child's usage, summed into the one number the tool result carries, so
-// pi's session totals include the nested LLM calls. Undefined when no child
-// reported usage.
+// pi's session totals include the nested LLM calls.
 function totalUsage(runs: AgentRun[]): RunUsage | undefined {
   const present = runs.flatMap((run) => (run.usage ? [run.usage] : []));
   if (present.length === 0) return undefined;
@@ -335,6 +333,7 @@ function totalUsage(runs: AgentRun[]): RunUsage | undefined {
 
 async function runAgent(
   run: AgentRun,
+  details: AntzDetails,
   ctx: ExtensionContext,
   signal: AbortSignal | undefined,
   onUpdate: (() => void) | undefined,
@@ -355,6 +354,17 @@ async function runAgent(
       noExtensions: true,
     });
     await loader.reload();
+
+    // Read from the loader the session is built with, not from a second scan that
+    // could disagree with it. Named once for the whole call because every child
+    // shares this cwd and agentDir.
+    const { skills } = loader.getSkills();
+    details.skills = skills.map((skill) => skill.name);
+    const skillFiles = new Map(skills.map((skill) => [skill.filePath, skill.name]));
+    // The model is told the absolute path, but a relative one has to resolve to
+    // the same file: the child's cwd is the repo, not this process's.
+    const skillOf = (path: unknown): string | undefined =>
+      typeof path === "string" ? skillFiles.get(isAbsolute(path) ? path : join(ctx.cwd, path)) : undefined;
 
     const models = await modelRuntime();
     let model = ctx.model;
@@ -390,7 +400,7 @@ async function runAgent(
     onUpdate?.();
 
     unsubscribe = session.subscribe((event) => {
-      if (track(run, event as ChildEvent)) onUpdate?.();
+      if (track(run, event as ChildEvent, skillOf)) onUpdate?.();
     });
 
     if (signal?.aborted) abort();
@@ -499,7 +509,7 @@ export default function (pi: ExtensionAPI) {
             try {
               for (const run of runs) {
                 run.task = run.task.replaceAll("{previous}", previous);
-                previous = await runAgent(run, ctx, signal, update);
+                previous = await runAgent(run, details, ctx, signal, update);
               }
               return { runs, output: previous };
             } catch (error) {
@@ -538,7 +548,7 @@ export default function (pi: ExtensionAPI) {
           let previous = "";
           for (const run of runs) {
             run.task = run.task.replaceAll("{previous}", previous);
-            previous = await runAgent(run, ctx, signal, update);
+            previous = await runAgent(run, details, ctx, signal, update);
           }
           return { content: [{ type: "text", text: previous }], details, usage: totalUsage(runs) };
         }
@@ -549,7 +559,7 @@ export default function (pi: ExtensionAPI) {
           update();
           const results = await mapConcurrent(runs, MAX_CONCURRENCY, async (run) => {
             try {
-              return { run, output: await runAgent(run, ctx, signal, update) };
+              return { run, output: await runAgent(run, details, ctx, signal, update) };
             } catch (error) {
               return { run, output: error instanceof Error ? error.message : String(error) };
             }
@@ -571,7 +581,7 @@ export default function (pi: ExtensionAPI) {
           const run = newRun(params.agent, params.task);
           details.runs.push(run);
           update();
-          const output = await runAgent(run, ctx, signal, update);
+          const output = await runAgent(run, details, ctx, signal, update);
           return { content: [{ type: "text", text: capOutput(output, limit) }], details, usage: totalUsage(details.runs) };
         }
 
@@ -583,10 +593,8 @@ export default function (pi: ExtensionAPI) {
     },
 
     renderCall(args, theme, context) {
-      // A `chains` call is one line per chain, its agents joined by an arrow; the
-      // other shapes list one agent per line and `chain` one per step, which is
-      // also the order the panel numbers them in. A half-streamed `chains` can
-      // hold something that is not an array yet, and rendering must not throw.
+      // A half-streamed `chains` can hold something that is not an array yet, and
+      // rendering must not throw.
       const lines = (args.chains ?? []).map((steps) => (Array.isArray(steps) ? steps : []));
       const raw = args.chains?.length
         ? lines.map((steps) => ({
@@ -644,8 +652,7 @@ export default function (pi: ExtensionAPI) {
       };
       const count = (status: RunStatus) => details.runs.filter((run) => run.status === status).length;
       // Four testers in parallel are four identical names, so number them: the
-      // call's own list above uses the same order. A `chains` run numbers the
-      // chain and then the step inside it, which is how the call rendered.
+      // call's own list above uses the same order.
       const numbered = details.runs.length > 1;
       const label = (index: number, run: AgentRun) =>
         !numbered
@@ -665,6 +672,11 @@ export default function (pi: ExtensionAPI) {
       if (count("failed")) header += theme.fg("error", ` · ${count("failed")} failed`);
 
       const lines = [header];
+      if (details.skills?.length) {
+        const shown = details.skills.slice(0, MAX_SKILLS);
+        const rest = details.skills.length - shown.length;
+        lines.push(`  ${theme.fg("muted", `skills: ${shown.join(", ")}${rest > 0 ? ` +${rest} more` : ""}`)}`);
+      }
       for (const [index, run] of details.runs.entries()) {
         if (!expanded) {
           const detail =
@@ -696,6 +708,9 @@ export default function (pi: ExtensionAPI) {
                 ? theme.fg("error", " ✗")
                 : theme.fg("success", " ✓");
           lines.push(`     ${theme.fg("muted", "→")} ${theme.fg("text", step.tool)} ${theme.fg("dim", step.arg)}${mark}`);
+        }
+        if (run.skillsUsed?.length) {
+          lines.push(`     ${theme.fg("muted", `skills used: ${run.skillsUsed.join(", ")}`)}`);
         }
         if (run.lastText) {
           lines.push("");

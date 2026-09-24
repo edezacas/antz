@@ -161,7 +161,8 @@ half-done, waiting on a clarify answer, or under repair keeps it.
   several chains in parallel (max 4 in flight, one per task);
   each agent runs as its own session inside pi, not as a child process, and the tool is
   only offered during an `/antz` run. While it runs, a panel shows what each agent is
-  doing — the model and thinking level it actually runs with, files, commands, the last
+  doing — the model and thinking level it actually runs with, the skills the repo
+  offered and the ones that agent read, files, commands, the last
   thing it said — one line per agent collapsed with a live clock, the whole trail with
   ctrl+o. The panel is rendered from tool details, which never reach the model; what
   reaches the orchestrator is each agent's final text, capped at 16 KB — except in chain
@@ -172,7 +173,8 @@ half-done, waiting on a clarify answer, or under repair keeps it.
   `/antz` end to end, and reads the dispatch order back out of the session file — model
   judgement, so a rate over `RUNS` runs rather than a gate, grading what is installed.
   `dispatch.sh` checks the dispatch tool itself — the four shapes, the concurrency cap,
-  the per-chain handoff, the failure path and both renderers — with the pi SDK stubbed,
+  the per-chain handoff, the failure path, the skills a child is handed versus the one it
+  reads, and both renderers — with the pi SDK stubbed,
   so it is deterministic, free, and tests the working tree. See `eval/README.md`.
 
 ## Per target project

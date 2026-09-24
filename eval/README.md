@@ -268,6 +268,9 @@ judgement can be asserted on:
 - **the failure path**: one chain failing leaves its siblings' results intact,
   marks the steps behind it `not run` instead of leaving them queued, and sets
   the error;
+- **the skills a child is handed versus the ones it reads**: a `read` of a
+  discovered `SKILL.md` is marked as used, on the run that did it and not on its
+  siblings, and an ordinary read is not;
 - **both renderers**: chain-per-line in the call, `chain.step` numbering in the
   result, and a half-streamed call not throwing while it renders.
 
@@ -277,8 +280,9 @@ fail on demand. Everything else in the assertions is the tool's.
 **What it does not prove.** The SDK and the agents are fake, so it says nothing
 about how a real model uses the shapes, what a real subagent does with its task,
 or whether the flow works — that is `run.sh` and, above it, the manual run. A new
-import in the extension needs a new export in `stubs/node_modules/…/pi-coding-agent`;
-a missing name fails the harness by name rather than silently.
+import in the extension needs a new export in `stubs/node_modules/…/pi-coding-agent`,
+and a new SDK method it calls needs a method there too; a missing name fails the
+harness by name rather than silently.
 
 `run.sh` remains the only instrument that grades what is *installed*, and the two
 are allowed to disagree: this one exists so a change to the tool can be checked
