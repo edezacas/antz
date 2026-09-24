@@ -5,16 +5,18 @@ Portable workflow definitions for the pi coding agent: a vague prompt becomes a
 spec-clarified, TDD-built, verified feature, with one point of human contact (clarify). It
 ships markdown — five subagents, two skills, one slash command — plus the one extension that
 dispatches them. `install.sh` copies those four directories, not this file: antz is never the
-base, it runs inside foreign repos.
+base, it runs inside foreign repos. Clients with no installer get a guide instead:
+`INSTALL.md` plus one `adapters/<client>.md` each.
 
-`README.md` is the design of record; `TODO.md` holds the open gaps.
+`README.md` is the design of record; `INSTALL.md` is how a client other than pi gets antz.
 
 ## Design principle
 **Steps and a few rules. Nothing else.** A step ("chain antz-tester into antz-implementer")
 stays; a shape ("report exactly these three lines", a `Seam:` field) does not. Prefer a rule
 the model applies with judgement over a contract it satisfies literally, and ask whether a
 better model would make it unnecessary. Agent files stay 9–13 lines and `prompts/antz.md`
-~33; a change that pushes those up needs a reason, not a reflex.
+~33; a change that pushes those up needs a reason, not a reflex. An adapter is a guide —
+paths, blocks to paste, a check — never a rationale.
 
 ## Stack
 Markdown with YAML frontmatter — everything except `extensions/antz-subagent.ts`, the one
@@ -30,6 +32,8 @@ core.
   checkout it copies that tree, alone it clones `--ref` (default `master`). Smoke check it in
   a scratch dir with `./install.sh --dir "$(mktemp -d)"`, twice, then `--uninstall`.
 - Run it from inside a target repo: `/antz "<prompt>"`.
+- Install on Claude Code or OpenCode: read `INSTALL.md`, then `adapters/<client>.md`. Those
+  are guide markdown for the agent doing the install, never copied by `install.sh`.
 
 The artifacts are prompts: no build and no lint, and verification of the flow is manual —
 install, run `/antz` against a sandbox repo, read `.antz/` mid-flight and `docs/decisions/`
@@ -37,13 +41,17 @@ after. `extensions/antz-subagent.ts` is the one file of code that is not prompt 
 `eval/` has an instrument for each: `./eval/dispatch.sh` drives the tool with the pi SDK
 stubbed — four shapes, concurrency cap, per-chain handoff, failure path, panel — free, in a
 second, against the working tree; `./eval/run.sh` covers the repair loop as a rate over
-`RUNS` runs and grades what is installed in `~/.pi/agent` (`eval/README.md`).
+`RUNS` runs and grades what is installed in `~/.pi/agent` (`eval/README.md`). The adapters
+have no instrument: they are pi's copies seen through another client's frontmatter, so the
+check that they landed is a shell snippet in each adapter, run by hand once.
 
 ## Structure
 - `prompts/antz.md` — the slash command: routes on `.antz/` and runs every phase.
 - `agents/` — scout (recon) → planner (plan) → tester → implementer per task → verifier.
 - `skills/antz-clarify/` — the spec phase, the only one that talks to the user.
 - `skills/antz-tdd/` — red/green rules shared by antz-tester and antz-implementer.
+- `INSTALL.md`, `adapters/` — the install guide for clients with no installer, one file per
+  client; each holds the target paths and the frontmatter to paste per agent.
 - `extensions/antz-subagent.ts` — dispatch: single, parallel (max 4), chain, or several
   chains at once (max 4 in flight).
 

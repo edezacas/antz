@@ -2,7 +2,8 @@
 
 Autonomous dev workflow for the pi coding agent. Turns a vague prompt
 into a spec-clarified, TDD-built, verified feature — with a single point
-of human interaction (the clarify phase).
+of human interaction (the clarify phase). It runs on pi, and on Claude Code
+and OpenCode through the adapters in `adapters/` — see [Install](#install).
 
 ## Design principle
 
@@ -24,7 +25,9 @@ Before adding anything to `prompts/`, `agents/` or `skills/`, ask:
   is a script it executes.
 - **Would a better model make this unnecessary?** Then leave it out.
 
-## Install (user scope — available in every project, no per-repo setup)
+## Install
+
+pi, user scope, so it is available in every project with no per-repo setup:
 
 ```
 curl -fsSL https://raw.githubusercontent.com/edezacas/antz/master/install.sh | bash
@@ -44,6 +47,15 @@ agent dir survives both directions. Under a pipe the flags go through bash:
 ```
 curl -fsSL .../install.sh | bash -s -- --ref v1.0.0
 ```
+
+Claude Code and OpenCode have no installer — they follow a guide. [`INSTALL.md`](INSTALL.md)
+is the entry point, and [`adapters/`](adapters) has one file per client:
+[Claude Code](adapters/claude.md) and [OpenCode](adapters/opencode.md), plus
+[pi](adapters/pi.md), which just points back here. An adapter gives the target paths,
+the frontmatter to paste for each of the five agents, the one edit the dispatch step of
+`prompts/antz.md` needs, and the check that the bodies arrived byte for byte. Both are
+written from the vendors' docs and have not yet been run as a real install; the pi path
+above is the one exercised end to end.
 
 ## Use, from inside any repo
 
@@ -138,6 +150,9 @@ half-done, waiting on a clarify answer, or under repair keeps it.
 - `skills/antz-clarify/` — the inquiry phase
 - `skills/antz-tdd/` — red/green rules used by antz-tester and antz-implementer
 - `prompts/antz.md` — orchestration
+- `INSTALL.md`, `adapters/` — the install guide for the clients without an installer: pi,
+  Claude Code, OpenCode. Markdown for the agent doing the install; `install.sh` copies
+  neither.
 - `install.sh` — pi preflight, then a copy or clone into pi's agent dir, a verification
   pass, and `--uninstall`.
 - `extensions/antz-subagent.ts` — the dispatch tool: single, parallel (max 4), chain, or
@@ -156,7 +171,6 @@ half-done, waiting on a clarify answer, or under repair keeps it.
   `dispatch.sh` checks the dispatch tool itself — the four shapes, the concurrency cap,
   the per-chain handoff, the failure path and both renderers — with the pi SDK stubbed,
   so it is deterministic, free, and tests the working tree. See `eval/README.md`.
-- `TODO.md` — known gaps.
 
 ## Per target project
 
@@ -173,7 +187,8 @@ and fast, `antz-tester` and `antz-implementer` need a capable coding model, and
 `antz-verifier` should be a different model family from `antz-implementer` so the two
 don't share blind spots. The pin is resolved in process, so a model that does not exist or
 has no credentials fails that agent by name rather than silently running on the session's
-model.
+model. On Claude Code and OpenCode it goes in that client's frontmatter block instead; the
+adapter shows where, and the family rule is the same.
 
 What bounds the choice is auth, not the extension: only `nan/*` is usable in this
 environment (`~/.pi/agent/models.json` holds the only provider key), so any other pin
