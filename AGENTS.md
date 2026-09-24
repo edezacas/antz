@@ -3,7 +3,7 @@
 ## Overview
 Portable workflow definitions for the pi coding agent: a vague prompt becomes a
 spec-clarified, TDD-built, verified feature, with one point of human contact (clarify). It
-ships markdown — five subagents, two skills, one slash command — plus the one extension that
+ships markdown — five subagents, three skills, one slash command — plus the one extension that
 dispatches them. `install.sh` copies those four directories, not this file: antz is never the
 base, it runs inside foreign repos. Clients with no installer get a guide instead:
 `INSTALL.md` plus one `adapters/<client>.md` each.
@@ -40,7 +40,8 @@ install, run `/antz` against a sandbox repo, read `.antz/` mid-flight and `docs/
 after. `extensions/antz-subagent.ts` is the one file of code that is not prompt text, and
 `eval/` has an instrument for each: `./eval/dispatch.sh` drives the tool with the pi SDK
 stubbed — four shapes, concurrency cap, per-chain handoff, failure path, panel — free, in a
-second, against the working tree; `./eval/run.sh` covers the repair loop as a rate over
+second, against the working tree; `./eval/run.sh` covers the repair loop and the shape
+check as a rate over
 `RUNS` runs and grades what is installed in `~/.pi/agent` (`eval/README.md`). The adapters
 have no instrument: they are pi's copies seen through another client's frontmatter, so the
 check that they landed is a shell snippet in each adapter, run by hand once.
@@ -50,6 +51,8 @@ check that they landed is a shell snippet in each adapter, run by hand once.
 - `agents/` — scout (recon) → planner (plan) → tester → implementer per task → verifier.
 - `skills/antz-clarify/` — the spec phase, the only one that talks to the user.
 - `skills/antz-tdd/` — red/green rules shared by antz-tester and antz-implementer.
+- `skills/antz-architecture/` — where code belongs and how it is shaped, shared by
+  antz-tester, antz-implementer and antz-verifier.
 - `INSTALL.md`, `adapters/` — the install guide for clients with no installer, one file per
   client; each holds the target paths, the frontmatter to paste per agent and how that client
   dispatches.

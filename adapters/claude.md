@@ -38,7 +38,7 @@ tools: Read, Write, Grep, Glob
 name: antz-tester
 description: Writes the failing test for one task. Red, not green.
 tools: Read, Write, Edit, Bash
-skills: antz-tdd
+skills: antz-tdd, antz-architecture
 ---
 ```
 
@@ -48,7 +48,7 @@ skills: antz-tdd
 name: antz-implementer
 description: Makes one failing test pass. Nothing more.
 tools: Read, Write, Edit, Bash
-skills: antz-tdd
+skills: antz-tdd, antz-architecture
 ---
 ```
 
@@ -58,6 +58,7 @@ skills: antz-tdd
 name: antz-verifier
 description: Runs once per round, after every task is green. Checks the feature against the spec, not just that the tests pass.
 tools: Read, Write, Edit, Bash
+skills: antz-architecture
 ---
 ```
 
@@ -66,16 +67,18 @@ Rules for the blocks above:
 - `name:` must match the filename.
 - The tool map is `read→Read`, `write→Write`, `edit→Edit`, `bash→Bash`,
   `grep→Grep`, `find→Glob`; `ls` drops.
-- Keep `Skill` out of `tools:`. `skills: antz-tdd` on the tester and the
-  implementer is how those two get the skill; the other three need none.
+- Keep `Skill` out of `tools:`. `skills: antz-tdd, antz-architecture` on the tester
+  and the implementer, and `antz-architecture` on the verifier, is how those three
+  get the skills; the scout and the planner need none.
 - No `model:` line, so the agent inherits the session. To pin one, add
   `model: sonnet` (or `opus`, `haiku`, a model id) — the verifier should be a
   different family from the implementer.
-- Don't set `disable-model-invocation: true` on `antz-tdd`: it cancels the preload.
+- Don't set `disable-model-invocation: true` on `antz-tdd` or `antz-architecture`:
+  it cancels the preload.
 
 The command file installs as it comes. Claude Code reads `description:` and
 `argument-hint:`, takes the command name from the filename, and runs `$ARGUMENTS`
-the same way. The two skills install untouched.
+the same way. The three skills install untouched.
 
 ## Dispatch
 

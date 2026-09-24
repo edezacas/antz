@@ -12,16 +12,17 @@
 # the result is a rate over N runs, not a boolean. It costs money and minutes,
 # and one green run proves nothing.
 #
-#   ./run.sh                # the three scenarios, once each
+#   ./run.sh                # the four scenarios, once each
 #   ./run.sh A B            # only those
 #   RUNS=5 ./run.sh         # five repetitions of each
 #
-# A/B/C seed .antz/ with the plan already complete, so /antz enters at step 5
+# A/B/C/D seed .antz/ with the plan already complete, so /antz enters at step 5
 # (verification) instead of recon: about 3 dispatches per run.
 #
 #   A  test faithful to the criteria, implementation that violates them  -> implementation at fault
 #   B  implementation faithful, test that contradicts the criteria      -> test at fault
 #   C  A, plus a watcher that re-injects the fault every 2 s             -> the 3-attempt cap
+#   D  green tests, correct behaviour, and a needless abstraction        -> shape at fault
 #
 # M measures something else: it seeds recon, spec and a fixed plan, so /antz
 # enters at step 4 with the same tasks every run (tests -> verify), and it gives
@@ -197,7 +198,7 @@ run_once() {
 
   VERDICT=PASS
   case "$scenario" in
-    A|B)
+    A|B|D)
       local blame=antz-implementer expected extra reruns
       [ "$scenario" = "B" ] && blame=antz-tester
       expected="antz-verifier $blame antz-verifier"
@@ -214,9 +215,17 @@ run_once() {
         # The verifier wrote the fix itself and closed the run. The end state looks
         # right and the loop was bypassed: no blame was reported, so nothing was
         # routed, and the tester's red-before-green never ran.
-        VERDICT=FAIL; REASON="the verifier repaired and closed the run itself: the repair loop never ran"
+        if [ "$scenario" = "D" ]; then
+          VERDICT=FAIL; REASON="the verifier read the green suite and passed: it never judged the shape"
+        else
+          VERDICT=FAIL; REASON="the verifier repaired and closed the run itself: the repair loop never ran"
+        fi
       elif [ "$extra" = "__nomatch__" ]; then
-        VERDICT=FAIL; REASON="expected routing starting with '$expected', got '$SEQUENCE'"
+        if [ "$scenario" = "D" ]; then
+          VERDICT=FAIL; REASON="the verifier did not reject the shape: expected routing starting with '$expected', got '$SEQUENCE'"
+        else
+          VERDICT=FAIL; REASON="expected routing starting with '$expected', got '$SEQUENCE'"
+        fi
       elif [ -n "$extra" ] && printf '%s' "$extra" | tr ' ' '\n' | grep -qvx 'antz-verifier'; then
         VERDICT=FAIL; REASON="after the repair only verifier rounds are tolerated, got '$extra'"
       elif [ "$repairs" -ne 1 ]; then
@@ -226,7 +235,11 @@ run_once() {
       elif [ "$doc" -eq 0 ]; then
         VERDICT=FAIL; REASON="docs/decisions/$doc_name is missing, and only PASS writes it"
       else
-        REASON="blame routed to $blame, PASS on round 2, .antz/ deleted and the decision written"
+        if [ "$scenario" = "D" ]; then
+          REASON="the verifier failed the green change on shape, routed it to $blame, PASS on round 2: .antz/ deleted and the decision written"
+        else
+          REASON="blame routed to $blame, PASS on round 2, .antz/ deleted and the decision written"
+        fi
         [ "$reruns" -gt 0 ] && REASON="$REASON; the verifier needed $reruns extra round(s) to finish the PASS work"
       fi
       ;;
@@ -267,7 +280,7 @@ run_once() {
 }
 
 SCENARIOS=("$@")
-[ "${#SCENARIOS[@]}" -eq 0 ] && SCENARIOS=(A B C)
+[ "${#SCENARIOS[@]}" -eq 0 ] && SCENARIOS=(A B C D)
 mkdir -p "$OUT"
 RESULTS="$OUT/results.tsv"
 [ -f "$RESULTS" ] || printf 'scenario\trun\tverdict\tsequence\tdetail\tseconds\n' >"$RESULTS"

@@ -1,6 +1,6 @@
 # Install
 
-antz is five agents, two skills and one `/antz` command. Pick your client and
+antz is five agents, three skills and one `/antz` command. Pick your client and
 follow its adapter.
 
 | Client | Read |
@@ -20,7 +20,7 @@ To have an agent do it, hand it this:
 | Source | What it becomes |
 |---|---|
 | [`agents/*.md`](agents) | the five subagents |
-| [`skills/antz-clarify/`](skills/antz-clarify), [`skills/antz-tdd/`](skills/antz-tdd) | the two skills |
+| [`skills/antz-clarify/`](skills/antz-clarify), [`skills/antz-tdd/`](skills/antz-tdd), [`skills/antz-architecture/`](skills/antz-architecture) | the three skills |
 | [`prompts/antz.md`](prompts/antz.md) | the `/antz` command |
 | [`extensions/antz-subagent.ts`](extensions/antz-subagent.ts) | pi only — skip it on every other client |
 

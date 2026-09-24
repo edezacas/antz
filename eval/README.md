@@ -5,6 +5,10 @@ the repair loop. Everything else in this repo is prompt text, and the loop is
 prompt text too — `prompts/antz.md` steps 4 and 5 — so it cannot be asserted on
 like code. It can be *provoked*.
 
+`D` provokes a different part: the suite is green and the behaviour is right, so only
+the architecture check can reject the change — the one arm that measures whether
+`skills/antz-architecture` bites.
+
 `run.sh M` is the exception: it runs the per-task chain and records what each
 subagent spent, so the same harness measures prompt caching across agents.
 
@@ -31,13 +35,15 @@ write is kept as `scenarios/spec/antz.gitignore` and renamed on copy: as a real
 
 The trace is the dispatch order, read out of the session file (`pi --session`).
 The sequence of agents *is* the routing, and the routing is what a failure
-decides. Two different red test suites tell the loop apart:
+decides. The seeds differ in which side is at fault, and A/B are red where D is
+green:
 
 | Scenario | Seeded state | Contract asserted |
 |---|---|---|
 | **A** | test faithful to the criteria, implementation violating them | `verifier → implementer → verifier`, `.antz/` deleted, `docs/decisions/pagination.md` written |
 | **B** | implementation faithful, test contradicting the criteria | `verifier → tester → verifier`, same end state |
 | **C** | A, plus a watcher re-injecting the fault every 2 s | ≤ 3 repairs, then stop: `.antz/` untouched and no decision written |
+| **D** | green tests and correct behaviour, but a needless abstraction: a one-implementation policy class behind a wrapper and a factory | `verifier → implementer → verifier`, same end state: the shape is at fault, so the repair is an implementation fault |
 | **M** | fixed recon, spec and plan, no fault, and a realistic `AGENTS.md` | enters at step 4, dispatches the four independent per-task chains in one parallel dispatch, and verifies; the measurement is its usage row, not the routing |
 
 A and B are the same observable — one failing suite — and differ only in which
@@ -46,7 +52,13 @@ it isolates blame attribution from "make the red test go away". C is the only wa
 to reach the cap deterministically; without the watcher, hitting three attempts
 depends on the model failing three times on its own.
 
-A trailing extra `verifier` round is tolerated in A and B, because a verifier can
+D routes exactly like A and differs only in the observable: the suite is green, so a
+verifier that stops at "the tests pass" passes D too, and the contract records that as
+a failure. It is the one arm that measures the architecture check rather than the
+repair loop: it fails when the shape goes unjudged, and also when the verifier
+reopens a green change on taste it cannot demonstrate.
+
+A trailing extra `verifier` round is tolerated in A, B and D, because a verifier can
 return PASS without writing the decision document, and the orchestrator sends it
 back to finish. That is recovery, not a routing fault, and it is reported in the
 run's detail rather than counted as a failure. The opposite case is a failure: a
@@ -58,7 +70,7 @@ forgets costs a round rather than leaving a finished run on disk.
 
 ## Measuring cache reuse (`M`)
 
-A/B/C enter at step 5, so they exercise about three dispatches and cannot show a
+A/B/C/D enter at step 5, so they exercise about three dispatches and cannot show a
 caching change. `M` seeds recon, spec and a plan whose four tasks are unchecked:
 `/antz` enters at step 4, so every run does the same work — the four per-task
 tester → implementer chains and the verifier. The plan is fixed on purpose: a
@@ -102,7 +114,7 @@ when the change is correct.
 ## Running it
 
 ```bash
-./run.sh                       # A, B and C, once each
+./run.sh                       # A, B, C and D, once each
 ./run.sh A B                   # only those
 RUNS=5 ./run.sh                # five repetitions of each
 TAG=before RUNS=5 ./run.sh M   # the full chain, to measure usage
@@ -131,7 +143,8 @@ meaningless if the session's recorded `cwd` is anywhere else.
 ## What it does not prove
 
 - Not the happy path: recon, clarify and planning are out of both. A/B/C start
-  where a feature already exists and already fails; `M` skips planning too, so
+  where a feature already exists and already fails, and D where it already exists
+  and is green; `M` skips planning too, so
   its workload is identical run to run. Clarify is missing everywhere — `pi -p`
   cannot answer it.
 - Not a real repo. The fixture is one 8-line module with three tests, and `M`

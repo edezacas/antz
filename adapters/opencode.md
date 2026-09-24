@@ -78,6 +78,7 @@ mode: subagent
 permission:
   edit: allow
   bash: allow
+  skill: allow
   task: deny
   question: deny
 ---
@@ -89,8 +90,8 @@ Rules for the blocks above:
 - `mode: subagent` is required.
 - `edit` covers `write`, `edit` and `apply_patch`.
 - `task: deny` on all five — a child never dispatches. `question: deny` — only the
-  session asks the user. `bash: deny` only on the planner. `skill: allow` only on
-  the tester and the implementer.
+  session asks the user. `bash: deny` only on the planner. `skill: allow` on the
+  tester, the implementer and the verifier.
 - Anything not listed keeps OpenCode's permissive default.
 - If your version rejects `bash:`, write `shell:` instead.
 - No `model:` line, so the agent inherits the session. To pin one, add
@@ -99,7 +100,7 @@ Rules for the blocks above:
 
 The command file keeps `description:` and drops `argument-hint:`, which OpenCode
 does not read; the name comes from the filename and `$ARGUMENTS` works the same.
-The two skills install untouched.
+The three skills install untouched.
 
 ## Dispatch
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs antz as a user-scope pi workflow: five subagents, two skills, the
+# Installs antz as a user-scope pi workflow: five subagents, three skills, the
 # /antz prompt and the extension that dispatches them.
 #
 #   curl -fsSL https://raw.githubusercontent.com/edezacas/antz/master/install.sh | bash
@@ -25,7 +25,7 @@ DEST="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 
 # What antz owns. Anything else in these directories belongs to someone else.
 AGENTS=(antz-scout antz-planner antz-tester antz-implementer antz-verifier)
-SKILLS=(antz-clarify antz-tdd)
+SKILLS=(antz-clarify antz-tdd antz-architecture)
 PROMPT="antz"
 EXTENSION="antz-subagent.ts"
 

@@ -4,7 +4,7 @@ description: Makes one failing test pass. Nothing more.
 tools: read, write, edit, bash
 ---
 
-Follow test-driven development, and every available skill that covers it.
+Follow test-driven development and the architecture skill, and every available skill that covers them.
 
 You're given a failing test (its path, the command, the failure) and its task. Write the minimum code to make it pass. Nothing the test doesn't require, no refactoring, no anticipating later tasks.
 

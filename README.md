@@ -123,15 +123,15 @@ half-done, waiting on a clarify answer, or under repair keeps it.
 3. **Plan** — `antz-planner` writes `.antz/02-plan.md`: small tasks, each with its own
    test file, its `Depends on` and the files it touches (`Touches`).
 4. **Per task** — `antz-tester` → `antz-implementer`, chained: a failing test, then the
-   minimum code to pass it. Independent tasks are dispatched together as several chains
-   in one call, so they run in parallel (max 4 at once), never two that would touch the
-   same files.
+   minimum code to pass it, placed and shaped by the architecture skill. Independent tasks
+   are dispatched together as several chains in one call, so they run in parallel (max 4 at
+   once), never two that would touch the same files.
 5. **Verify** — `antz-verifier` runs once, with every task green. On PASS it writes
    `docs/decisions/<slug>.md`, and the orchestrator deletes `.antz/` once that document
    exists. On failure it names the failing task and whether the test or the implementation
-   is at fault, and the loop goes back to step 4 for that task alone — a test fault to the
-   tester, an implementation fault to the implementer, never both. Max 3 attempts per task,
-   then it stops and reports.
+   is at fault — a fault in shape is an implementation fault — and the loop goes back to
+   step 4 for that task alone: a test fault to the tester, an implementation fault to the
+   implementer, never both. Max 3 attempts per task, then it stops and reports.
 
    That last part is the only piece a normal run may never reach, because a normal run
    almost never fails. It has its own eval — `eval/run.sh` seeds a fault and reads the
@@ -149,6 +149,8 @@ half-done, waiting on a clarify answer, or under repair keeps it.
 - `agents/` — antz-scout, antz-planner, antz-tester, antz-implementer, antz-verifier
 - `skills/antz-clarify/` — the inquiry phase
 - `skills/antz-tdd/` — red/green rules used by antz-tester and antz-implementer
+- `skills/antz-architecture/` — where code belongs and how it is shaped, used by
+  antz-tester, antz-implementer and antz-verifier
 - `prompts/antz.md` — orchestration
 - `INSTALL.md`, `adapters/` — the install guide for the clients without an installer: pi,
   Claude Code, OpenCode. Markdown for the agent doing the install; `install.sh` copies
@@ -165,7 +167,8 @@ half-done, waiting on a clarify answer, or under repair keeps it.
   reaches the orchestrator is each agent's final text, capped at 16 KB — except in chain
   mode, where that text is the handoff between agents.
 - `eval/` — two instruments, neither part of the install. `run.sh` is the repair-loop
-  eval: it seeds `.antz/` with the plan already complete and a deliberate fault, runs
+  eval: it seeds `.antz/` with the plan already complete and a deliberate fault —
+  functional in A/B, a shape fault behind a green suite in D —, runs
   `/antz` end to end, and reads the dispatch order back out of the session file — model
   judgement, so a rate over `RUNS` runs rather than a gate, grading what is installed.
   `dispatch.sh` checks the dispatch tool itself — the four shapes, the concurrency cap,
