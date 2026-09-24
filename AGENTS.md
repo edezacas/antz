@@ -4,8 +4,9 @@
 Portable workflow definitions for the pi coding agent: a vague prompt becomes a
 spec-clarified, TDD-built, verified feature, with one point of human contact (clarify). It
 ships markdown — five subagents, three skills, one slash command — plus the one extension that
-dispatches them. `install.sh` copies those four directories, not this file: antz is never the
-base, it runs inside foreign repos. Clients with no installer get a guide instead:
+dispatches them. `install.sh` copies the pi artifacts, not this file: antz is never the base, it
+runs inside foreign repos. The three skills are a separate, global `npx skills` install shared
+with Claude Code and OpenCode. Clients with no installer get a guide instead:
 `INSTALL.md` plus one `adapters/<client>.md` each.
 
 `README.md` is the design of record; `INSTALL.md` is how a client other than pi gets antz.
@@ -20,7 +21,8 @@ paths, blocks to paste, a check — never a rationale.
 
 ## Stack
 Markdown with YAML frontmatter — everything except `extensions/antz-subagent.ts`, the one
-file of code, which imports pi's SDK only: no runtime, no build step. pi 0.85.x.
+file of code, which imports pi's SDK only: no runtime, no build step. pi 0.85.x, and
+`npx skills` (Node >= 22.20) only for the separate global skills install.
 `prompts/<name>.md` and `skills/<name>/SKILL.md` are pi built-ins and `extensions/*.ts` is
 pi's auto-discovery path, but `agents/<name>.md` is the extension's own convention, not pi
 core.
@@ -31,6 +33,10 @@ core.
   Uninstall with `--uninstall`. It never reads stdin, so every choice is a flag: from a
   checkout it copies that tree, alone it clones `--ref` (default `master`). Smoke check it in
   a scratch dir with `./install.sh --dir "$(mktemp -d)"`, twice, then `--uninstall`.
+- Install the skills, global and once: `npx skills add edezacas/antz -g`. The CLI detects
+  which clients are installed and links them to one shared copy in `~/.agents/skills`, with a
+  symlink per client that needs one. Outside `install.sh` on purpose: the skills are shared,
+  the pi artifacts are not.
 - Run it from inside a target repo: `/antz "<prompt>"`.
 - Install on Claude Code or OpenCode: read `INSTALL.md`, then `adapters/<client>.md`. Those
   are guide markdown for the agent doing the install, never copied by `install.sh`.
@@ -74,4 +80,6 @@ check that they landed is a shell snippet in each adapter, run by hand once.
   their `details` feed a panel the model never sees — `content` is what the orchestrator
   reads.
 - `install.sh` resolves its target the way `getAgentDir()` does — `--dir`, then
-  `$PI_CODING_AGENT_DIR`, then `~/.pi/agent` — and a reinstall preserves a local `model:`.
+  `$PI_CODING_AGENT_DIR`, then `~/.pi/agent` — and a reinstall preserves a local `model:`. It
+  installs no skills: `--uninstall` still removes the pi copy, but the shared one in
+  `~/.agents/skills` is `npx skills`' to remove.

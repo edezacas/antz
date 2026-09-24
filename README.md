@@ -25,6 +25,20 @@ Before adding anything to `prompts/`, `agents/` or `skills/`, ask:
   is a script it executes.
 - **Would a better model make this unnecessary?** Then leave it out.
 
+## Requirements
+
+| What | Needed for |
+|---|---|
+| `bash` and `curl` | the one-line install |
+| `git` | fetching antz when the script is piped; a checkout needs none |
+| pi on `PATH` | antz is a pi workflow, and `install.sh` refuses to run without it |
+| Node.js >= 22.20, with `npm`/`npx` | the three skills: they are not part of the installer but a one-time global install shared by every agent (see [Install](#install)) |
+| Network to `github.com` | the clone, when the script is piped |
+| Network to `registry.npmjs.org` and `skills.sh` | `npx skills`, which fetches itself and the skills |
+
+The repo itself has no build step and no `npm install`: `extensions/antz-subagent.ts` is the
+only file of code, and pi loads it as it is.
+
 ## Install
 
 pi, user scope, so it is available in every project with no per-repo setup:
@@ -37,12 +51,25 @@ Reload pi (`/reload`) or restart it. The `extensions/` copy is what makes the re
 pi core has no sub-agents, and `antz-subagent.ts` is the extension that provides the dispatch
 tool every agent is run through.
 
+The three skills are not installed here. They are a separate, global install, so every agent
+shares the same files:
+
+```
+npx skills add edezacas/antz -g
+```
+
+The CLI detects which clients you have and links them to a single shared copy in
+`~/.agents/skills`: pi and OpenCode read that directory directly, and Claude Code gets a
+symlink in `~/.claude/skills/`. Manage them with `npx skills list -g`, `npx skills update -g`,
+and `npx skills remove antz-clarify antz-tdd antz-architecture -g`.
+
 From a checkout, `./install.sh` copies that working tree instead of cloning — which is also how
 a change to the installer gets tried before it is pushed. It takes `--ref <branch|tag|commit>`
 to pick what to install, `--dir <path>` to override the target (default
-`$PI_CODING_AGENT_DIR`, else `~/.pi/agent`), and `--uninstall` to remove exactly antz's files.
-A reinstall is an upgrade: only antz's own paths are written, so anything else already in pi's
-agent dir survives both directions. Under a pipe the flags go through bash:
+`$PI_CODING_AGENT_DIR`, else `~/.pi/agent`), and `--uninstall` to remove exactly antz's pi
+files — the shared skills belong to `npx skills` and survive both. A reinstall is an upgrade:
+only antz's own paths are written, so anything else already in pi's agent dir survives both
+directions. Under a pipe the flags go through bash:
 
 ```
 curl -fsSL .../install.sh | bash -s -- --ref v1.0.0
@@ -54,8 +81,10 @@ is the entry point, and [`adapters/`](adapters) has one file per client:
 [pi](adapters/pi.md), which just points back here. An adapter gives the target paths,
 the frontmatter to paste for each of the five agents, and the check that the bodies
 arrived byte for byte — the `/antz` command included, since it names no client's
-dispatch tool. Both are written from the vendors' docs and have not yet been run as a
-real install; the pi path above is the one exercised end to end.
+dispatch tool. The three skills are not copied by hand either: the same global command from
+above installs them once for every client. Both are written from the
+vendors' docs and have not yet been run as a real install; the pi path above is the one
+exercised end to end.
 
 ## Use, from inside any repo
 
@@ -155,8 +184,9 @@ half-done, waiting on a clarify answer, or under repair keeps it.
 - `INSTALL.md`, `adapters/` — the install guide for the clients without an installer: pi,
   Claude Code, OpenCode. Markdown for the agent doing the install; `install.sh` copies
   neither.
-- `install.sh` — pi preflight, then a copy or clone into pi's agent dir, a verification
-  pass, and `--uninstall`.
+- `install.sh` — pi preflight, a copy or clone of the agents, prompt and extension into pi's
+  agent dir, a verification pass, and `--uninstall`. The three skills are not its business:
+  they are a global `npx skills` install shared with Claude Code and OpenCode.
 - `extensions/antz-subagent.ts` — the dispatch tool: single, parallel (max 4), chain, or
   several chains in parallel (max 4 in flight, one per task);
   each agent runs as its own session inside pi, not as a child process, and the tool is

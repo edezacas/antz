@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Installs antz as a user-scope pi workflow: five subagents, three skills, the
-# /antz prompt and the extension that dispatches them.
+# Installs antz's pi artifacts: five subagents, the /antz prompt and the extension
+# that dispatches them. The three skills are a separate, global install shared by
+# every agent-skills client (see README), so this script neither writes nor
+# verifies them.
 #
 #   curl -fsSL https://raw.githubusercontent.com/edezacas/antz/master/install.sh | bash
 #   curl -fsSL .../install.sh | bash -s -- --ref v1.0.0
@@ -9,10 +11,11 @@
 #
 # Nothing is ever read from stdin: under `curl | bash` stdin is this script.
 #
-# The script copies; it does not build. Only antz's own paths are touched, so a
-# reinstall is an upgrade and unrelated files in pi's agent dir survive both
-# directions. The one thing a copy would otherwise clobber is the `model:` line
-# the user pinned in an agent file, so that line survives a reinstall.
+# Nothing is built and nothing is fetched but the source tree. Only antz's own
+# paths are touched, so a reinstall is an upgrade and unrelated files in pi's
+# agent dir survive both directions. The one thing a plain copy would otherwise
+# clobber is the `model:` line the user pinned in an agent file, so that line
+# survives a reinstall.
 
 set -euo pipefail
 
@@ -20,7 +23,8 @@ REPO="edezacas/antz"
 REF="master"
 
 # pi's config dir. PI_CODING_AGENT_DIR is the variable getAgentDir() honours, so
-# ignoring it would install where the extension never looks.
+# ignoring it would install where the extension never looks. The skills are not
+# affected: they live outside this tree, in the shared ~/.agents/skills.
 DEST="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 
 # What antz owns. Anything else in these directories belongs to someone else.
@@ -150,10 +154,10 @@ install_antz() {
   step "Installing into $DEST"
   # mkdir -p first: ~/.pi/agent/agents/ does not exist by default and cp into a
   # missing directory fails.
-  mkdir -p "$DEST/agents" "$DEST/extensions" "$DEST/skills" "$DEST/prompts"
+  mkdir -p "$DEST/agents" "$DEST/extensions" "$DEST/prompts"
   local pins
   pins=$(local_pins)
-  for dir in agents extensions skills prompts; do
+  for dir in agents extensions prompts; do
     cp -R "$SOURCE/$dir/." "$DEST/$dir/"
     ok "$dir/"
   done
@@ -165,9 +169,6 @@ install_antz() {
   for name in "${AGENTS[@]}"; do
     [ -f "$DEST/agents/$name.md" ] || missing+=("agents/$name.md")
   done
-  for name in "${SKILLS[@]}"; do
-    [ -f "$DEST/skills/$name/SKILL.md" ] || missing+=("skills/$name/SKILL.md")
-  done
   [ -f "$DEST/prompts/$PROMPT.md" ] || missing+=("prompts/$PROMPT.md")
   [ -f "$DEST/extensions/$EXTENSION" ] || missing+=("extensions/$EXTENSION")
 
@@ -176,7 +177,7 @@ install_antz() {
     printf '  %s\n' "${missing[@]}" >&2
     exit 1
   fi
-  ok "${#AGENTS[@]} agents, ${#SKILLS[@]} skills, $PROMPT.md, $EXTENSION"
+  ok "${#AGENTS[@]} agents, $PROMPT.md, $EXTENSION"
   if [ -n "$pins" ]; then
     note "The rest of each agent file comes from $REPO. Drop a model: line and reinstall to reset it."
   fi
@@ -184,6 +185,10 @@ install_antz() {
   step "Done"
   say "  Reload pi (${BOLD}/reload${OFF}) or restart it, then from inside any repo:"
   say "    ${BOLD}/antz \"what you want built\"${OFF}"
+  if [ ! -f "$HOME/.agents/skills/${SKILLS[0]}/SKILL.md" ] && [ ! -f "$DEST/skills/${SKILLS[0]}/SKILL.md" ]; then
+    note "The three skills are not part of this install; they are global and shared:"
+    note "  npx skills add $REPO -g"
+  fi
   note "The only thing antz writes outside .antz/ is docs/decisions/<slug>.md."
 }
 
@@ -212,7 +217,7 @@ uninstall_antz() {
     say "  Nothing of antz's was there."
   else
     say "  Reload pi (${BOLD}/reload${OFF}) to drop the tool and the /antz command."
-    note "Left alone: anything else in $DEST, and every .antz/ and docs/decisions/ in your repos."
+    note "Left alone: anything else in $DEST, the shared skills in ~/.agents/skills, and every .antz/ and docs/decisions/ in your repos."
   fi
 }
 

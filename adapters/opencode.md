@@ -5,7 +5,7 @@ User scope, so it works in every repo.
 | antz source | Target |
 |---|---|
 | `agents/<name>.md` | `~/.config/opencode/agents/<name>.md` |
-| `skills/<name>/` | `~/.config/opencode/skills/<name>/` |
+| `skills/<name>/` | `~/.agents/skills/<name>/` — the shared global install; OpenCode reads it directly |
 | `prompts/antz.md` | `~/.config/opencode/commands/antz.md` |
 | `extensions/antz-subagent.ts` | skip — `task` replaces it |
 
@@ -100,7 +100,16 @@ Rules for the blocks above:
 
 The command file keeps `description:` and drops `argument-hint:`, which OpenCode
 does not read; the name comes from the filename and `$ARGUMENTS` works the same.
-The three skills install untouched.
+
+The three skills are not copied by hand: run once, anywhere:
+
+```
+npx skills add edezacas/antz -g
+```
+
+The CLI detects your clients and links them to one shared copy in `~/.agents/skills`,
+which OpenCode reads directly. Add `#<ref>` to pin a version (`edezacas/antz#v1.0.0`), and
+`npx skills update -g` to move the copy forward.
 
 ## Dispatch
 
@@ -138,6 +147,10 @@ for n in antz-scout antz-planner antz-tester antz-implementer antz-verifier; do
 done
 
 body ~/.config/opencode/commands/antz.md | diff -q - <(body prompts/antz.md) || echo "command body differs"
+
+for n in antz-clarify antz-tdd antz-architecture; do
+  test -f ~/.agents/skills/$n/SKILL.md || echo "missing skill $n"
+done
 ```
 
 Then check in OpenCode that the five agents are listed as subagents, `/antz`

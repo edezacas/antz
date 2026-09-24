@@ -5,7 +5,7 @@ User scope, so it works in every repo.
 | antz source | Target |
 |---|---|
 | `agents/<name>.md` | `~/.claude/agents/<name>.md` |
-| `skills/<name>/` | `~/.claude/skills/<name>/` |
+| `skills/<name>/` | `~/.claude/skills/<name>/` — a symlink to the shared `~/.agents/skills/<name>/`, from the global `npx skills` install |
 | `prompts/antz.md` | `~/.claude/commands/antz.md` |
 | `extensions/antz-subagent.ts` | skip — `Task` replaces it |
 
@@ -78,7 +78,18 @@ Rules for the blocks above:
 
 The command file installs as it comes. Claude Code reads `description:` and
 `argument-hint:`, takes the command name from the filename, and runs `$ARGUMENTS`
-the same way. The three skills install untouched.
+the same way.
+
+The three skills are not copied by hand: run once, anywhere:
+
+```
+npx skills add edezacas/antz -g
+```
+
+The CLI detects your clients and links them to one shared copy in `~/.agents/skills`, with
+a symlink in `~/.claude/skills/` for Claude Code, the one client that does not read the
+shared directory. Add `#<ref>` to pin a version (`edezacas/antz#v1.0.0`), and
+`npx skills update -g` to move the copy forward.
 
 ## Dispatch
 
@@ -108,6 +119,10 @@ for n in antz-scout antz-planner antz-tester antz-implementer antz-verifier; do
 done
 
 cmp -s prompts/antz.md ~/.claude/commands/antz.md || echo "command file differs"
+
+for n in antz-clarify antz-tdd antz-architecture; do
+  test -f ~/.claude/skills/$n/SKILL.md || echo "missing skill $n"
+done
 ```
 
 Then check in Claude Code that the five agents are listed, `/antz` exists, and a
