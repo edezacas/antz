@@ -24,10 +24,10 @@ To have an agent do it, hand it this:
 | [`prompts/antz.md`](prompts/antz.md) | the `/antz` command |
 | [`extensions/antz-subagent.ts`](extensions/antz-subagent.ts) | pi only — skip it on every other client |
 
-Copy the agent and skill **bodies byte for byte**. The only thing you write is the
-frontmatter, and each adapter has it ready to paste, one block per agent.
-`prompts/antz.md` is the one file whose text is edited per client, because it names
-the client's dispatch tool.
+Copy the agent, skill and command **bodies byte for byte**. The only thing you
+write is the frontmatter, and each adapter has it ready to paste, one block per
+agent. `prompts/antz.md` names no dispatch tool, so it is copied as it is: Claude
+Code takes the whole file, OpenCode drops only `argument-hint:`.
 
 `INSTALL.md` and [`adapters/`](adapters) are for the install. `install.sh` copies
 neither.
@@ -37,7 +37,7 @@ neither.
 - every file exists at the target path;
 - the agent name matches the filename — `name:` on pi and Claude Code, the
   filename itself on OpenCode;
-- the body is byte-identical to the source;
+- the body is byte-identical to the source, the `/antz` command included;
 - a `model:` line you pinned before a reinstall is still there;
 - the permissions in the installed file match the adapter's block.
 

@@ -52,10 +52,10 @@ Claude Code and OpenCode have no installer — they follow a guide. [`INSTALL.md
 is the entry point, and [`adapters/`](adapters) has one file per client:
 [Claude Code](adapters/claude.md) and [OpenCode](adapters/opencode.md), plus
 [pi](adapters/pi.md), which just points back here. An adapter gives the target paths,
-the frontmatter to paste for each of the five agents, the one edit the dispatch step of
-`prompts/antz.md` needs, and the check that the bodies arrived byte for byte. Both are
-written from the vendors' docs and have not yet been run as a real install; the pi path
-above is the one exercised end to end.
+the frontmatter to paste for each of the five agents, and the check that the bodies
+arrived byte for byte — the `/antz` command included, since it names no client's
+dispatch tool. Both are written from the vendors' docs and have not yet been run as a
+real install; the pi path above is the one exercised end to end.
 
 ## Use, from inside any repo
 

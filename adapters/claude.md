@@ -73,21 +73,16 @@ Rules for the blocks above:
   different family from the implementer.
 - Don't set `disable-model-invocation: true` on `antz-tdd`: it cancels the preload.
 
-The command file keeps `description:` and drops `name:` and `argument-hint:`.
-`$ARGUMENTS` works the same. The two skills install untouched.
+The command file installs as it comes. Claude Code reads `description:` and
+`argument-hint:`, takes the command name from the filename, and runs `$ARGUMENTS`
+the same way. The two skills install untouched.
 
-## Edit `prompts/antz.md`
+## Dispatch
 
-Steps 4 and 5 name pi's dispatch tool. In the copy you install, replace it with
-`Task`:
-
-- tester → implementer: two `Task` calls in that order, the second with the
-  tester's report in its prompt;
-- independent tasks: one `Task` call per task, in one message, max 4 at a time;
-- scout and verifier: one `Task` call each.
-
-Keep the rule at the end of step 4: never two tasks in flight that would touch the
-same files.
+The prompt names no tool: one agent is one `Task` call, a chain is two `Task`
+calls in that order with the tester's report in the second, and independent tasks
+are one `Task` call each in one message, max 4 at a time. Keep the rule at the
+end of step 4: never two tasks in flight that would touch the same files.
 
 ## Differences from pi
 
@@ -108,6 +103,8 @@ for n in antz-scout antz-planner antz-tester antz-implementer antz-verifier; do
   test "$(basename "$f" .md)" = "$(sed -n 's/^name:[[:space:]]*//p' "$f" | head -1)" || echo "name mismatch $n"
   body "$f" | diff -q - <(body agents/$n.md) || echo "body differs $n"
 done
+
+cmp -s prompts/antz.md ~/.claude/commands/antz.md || echo "command file differs"
 ```
 
 Then check in Claude Code that the five agents are listed, `/antz` exists, and a

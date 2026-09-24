@@ -97,21 +97,16 @@ Rules for the blocks above:
   `provider/model` — thinking is a variant, e.g. `anthropic/claude-sonnet-4-5#high`.
   The verifier should be a different family from the implementer.
 
-The command file keeps `description:` and drops `name:` and `argument-hint:`.
-`$ARGUMENTS` works the same. The two skills install untouched.
+The command file keeps `description:` and drops `argument-hint:`, which OpenCode
+does not read; the name comes from the filename and `$ARGUMENTS` works the same.
+The two skills install untouched.
 
-## Edit `prompts/antz.md`
+## Dispatch
 
-Steps 4 and 5 name pi's dispatch tool. In the copy you install, replace it with
-`task`:
-
-- tester → implementer: two `task` calls in that order, the second with the
-  tester's report in its prompt;
-- independent tasks: one `task` call per task, in one message, max 4 at a time;
-- scout and verifier: one `task` call each.
-
-Keep the rule at the end of step 4: never two tasks in flight that would touch the
-same files.
+The prompt names no tool: one agent is one `task` call, a chain is two `task`
+calls in that order with the tester's report in the second, and independent tasks
+are one `task` call each in one message, max 4 at a time. Keep the rule at the
+end of step 4: never two tasks in flight that would touch the same files.
 
 ## Differences from pi
 
@@ -140,6 +135,8 @@ for n in antz-scout antz-planner antz-tester antz-implementer antz-verifier; do
   grep -q '^  task: deny' "$f" || echo "missing task: deny on $n"
   body "$f" | diff -q - <(body agents/$n.md) || echo "body differs $n"
 done
+
+body ~/.config/opencode/commands/antz.md | diff -q - <(body prompts/antz.md) || echo "command body differs"
 ```
 
 Then check in OpenCode that the five agents are listed as subagents, `/antz`

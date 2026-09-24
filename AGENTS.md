@@ -51,13 +51,17 @@ check that they landed is a shell snippet in each adapter, run by hand once.
 - `skills/antz-clarify/` — the spec phase, the only one that talks to the user.
 - `skills/antz-tdd/` — red/green rules shared by antz-tester and antz-implementer.
 - `INSTALL.md`, `adapters/` — the install guide for clients with no installer, one file per
-  client; each holds the target paths and the frontmatter to paste per agent.
+  client; each holds the target paths, the frontmatter to paste per agent and how that client
+  dispatches.
 - `extensions/antz-subagent.ts` — dispatch: single, parallel (max 4), chain, or several
   chains at once (max 4 in flight).
 
 ## Gotchas
 - Intermediates are numbered and referenced by name: `00-recon.md`, `01-spec.md`,
   `02-plan.md`. Renaming one breaks the chain.
+- `prompts/antz.md` names no dispatch tool and carries no `name:` (pi takes the command name
+  from the file), so its body is byte-identical on every client and the adapters only rewrite
+  frontmatter. Naming a tool there puts the per-client edit back.
 - Artifacts are written in English; clarify asks its questions in the user's language.
 - The verifier's verdict lives in the orchestrator's context, never on disk, so a restart
   between the verdict and the repair re-runs the whole chain. Deliberate: the alternative is
