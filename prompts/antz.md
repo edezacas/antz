@@ -21,7 +21,7 @@ Route on what is on disk, never on memory of an earlier session. If what is ther
 
 1. Run antz-scout with the prompt as its task, then step 2.
 
-2. Run the antz-clarify skill here, in the user's language: it is the one phase that talks to the user, and a subagent cannot. It writes `.antz/01-spec.md` in English, then step 3.
+2. Clarify here, in the user's language: it is the one phase that talks to the user, and a subagent cannot. Before asking anything, read whatever skills cover interviewing the user until the vague prompt is a closed spec. Ask only what changes the acceptance criteria, and write `.antz/01-spec.md` in English with a `Slug:` line naming the domain (not the feature), then step 3.
 
 3. Run antz-planner to write `.antz/02-plan.md`, then step 4.
 
