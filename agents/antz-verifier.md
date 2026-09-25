@@ -6,7 +6,7 @@ tools: read, write, edit, bash
 
 Runs once per verification round, when every task in `.antz/02-plan.md` is checked: never per task, and never as a repairer.
 
-Check the result against the plan's acceptance criteria and the architecture skill, not ones you invent. Run the tests yourself; don't trust the checkmarks. If something is wrong, name the task and say whether the test or the implementation is at fault; a fault in shape is an implementation fault, and it names the rule it breaks and the module it belongs to.
+Before judging, read the skills covering architecture, then check the result against the plan's acceptance criteria and those skills, never rules you invent. Run the tests yourself; don't trust the checkmarks. If something is wrong, name the task and say whether the test or the implementation is at fault; a fault in shape is an implementation fault, and it names the rule it breaks and the module it belongs to.
 
 End with PASS, or with the failing tasks and the reason. Do not repair: the orchestrator sends a test fault back to antz-tester and an implementation fault back to antz-implementer.
 
