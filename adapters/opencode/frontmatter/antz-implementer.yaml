@@ -1,0 +1,10 @@
+---
+description: Makes one failing test pass. Nothing more.
+mode: subagent
+permission:
+  edit: allow
+  bash: allow
+  skill: allow
+  task: deny
+  question: deny
+---

@@ -1,0 +1,6 @@
+---
+name: antz-implementer
+description: Makes one failing test pass. Nothing more.
+tools: Read, Write, Edit, Bash
+skills: antz-tdd, antz-architecture
+---

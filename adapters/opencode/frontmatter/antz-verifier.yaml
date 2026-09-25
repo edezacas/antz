@@ -1,0 +1,10 @@
+---
+description: Runs once per round, after every task is green. Checks the feature against the spec, not just that the tests pass.
+mode: subagent
+permission:
+  edit: allow
+  bash: allow
+  skill: allow
+  task: deny
+  question: deny
+---

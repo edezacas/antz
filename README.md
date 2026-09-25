@@ -1,9 +1,9 @@
 # antz
 
-Autonomous dev workflow for the pi coding agent. Turns a vague prompt
-into a spec-clarified, TDD-built, verified feature — with a single point
-of human interaction (the clarify phase). It runs on pi, and on Claude Code
-and OpenCode through the adapters in `adapters/` — see [Install](#install).
+Autonomous dev workflow for the pi coding agent. A vague prompt becomes a spec-clarified,
+TDD-built, verified feature, with a single point of human interaction — the clarify phase.
+It runs on pi, and on Claude Code and OpenCode through the adapters in
+[`adapters/`](adapters).
 
 ## Design principle
 
@@ -30,61 +30,30 @@ Before adding anything to `prompts/`, `agents/` or `skills/`, ask:
 | What | Needed for |
 |---|---|
 | `bash` and `curl` | the one-line install |
-| `git` | fetching antz when the script is piped; a checkout needs none |
-| pi on `PATH` | antz is a pi workflow, and `install.sh` refuses to run without it |
-| Node.js >= 22.20, with `npm`/`npx` | the three skills: they are not part of the installer but a one-time global install shared by every agent (see [Install](#install)) |
-| Network to `github.com` | the clone, when the script is piped |
-| Network to `registry.npmjs.org` and `skills.sh` | `npx skills`, which fetches itself and the skills |
+| `git` | fetching antz when an installer is piped rather than run from a clone |
+| pi, Claude Code or OpenCode | the client antz is installed into; pi's installer checks that `pi` is on `PATH` |
+| Node.js >= 22.20, with `npx` | the one-time global skills install |
 
-The repo itself has no build step and no `npm install`: `extensions/antz-subagent.ts` is the
-only file of code, and pi loads it as it is.
+There is no build step and no `npm install`.
 
 ## Install
 
-pi, user scope, so it is available in every project with no per-repo setup:
+Pick your client. Its guide is the install and nothing else:
 
-```
-curl -fsSL https://raw.githubusercontent.com/edezacas/antz/master/install.sh | bash
-```
+| Client | Guide |
+|---|---|
+| pi | [adapters/pi](adapters/pi/README.md) |
+| Claude Code | [adapters/claude](adapters/claude/README.md) |
+| OpenCode | [adapters/opencode](adapters/opencode/README.md) |
 
-Reload pi (`/reload`) or restart it. The `extensions/` copy is what makes the rest work:
-pi core has no sub-agents, and `antz-subagent.ts` is the extension that provides the dispatch
-tool every agent is run through.
+The five agents and the `/antz` command install at user scope, so antz is available in every
+project with no per-repo setup, and `--uninstall` takes them back out. The three skills come
+next, in the same guide — one global copy every client shares.
 
-The three skills are not installed here. They are a separate, global install, so every agent
-shares the same files:
+To have an agent do the install, hand it this:
 
-```
-npx skills add edezacas/antz -g
-```
-
-The CLI detects which clients you have and links them to a single shared copy in
-`~/.agents/skills`: pi and OpenCode read that directory directly, and Claude Code gets a
-symlink in `~/.claude/skills/`. Manage them with `npx skills list -g`, `npx skills update -g`,
-and `npx skills remove antz-clarify antz-tdd antz-architecture -g`.
-
-From a checkout, `./install.sh` copies that working tree instead of cloning — which is also how
-a change to the installer gets tried before it is pushed. It takes `--ref <branch|tag|commit>`
-to pick what to install, `--dir <path>` to override the target (default
-`$PI_CODING_AGENT_DIR`, else `~/.pi/agent`), and `--uninstall` to remove exactly antz's pi
-files — the shared skills belong to `npx skills` and survive both. A reinstall is an upgrade:
-only antz's own paths are written, so anything else already in pi's agent dir survives both
-directions. Under a pipe the flags go through bash:
-
-```
-curl -fsSL .../install.sh | bash -s -- --ref v1.0.0
-```
-
-Claude Code and OpenCode have no installer — they follow a guide. [`INSTALL.md`](INSTALL.md)
-is the entry point, and [`adapters/`](adapters) has one file per client:
-[Claude Code](adapters/claude.md) and [OpenCode](adapters/opencode.md), plus
-[pi](adapters/pi.md), which just points back here. An adapter gives the target paths,
-the frontmatter to paste for each of the five agents, and the check that the bodies
-arrived byte for byte — the `/antz` command included, since it names no client's
-dispatch tool. The three skills are not copied by hand either: the same global command from
-above installs them once for every client. Both are written from the
-vendors' docs and have not yet been run as a real install; the pi path above is the one
-exercised end to end.
+> Clone https://github.com/edezacas/antz and run `adapters/<your client>/install.sh` from
+> that clone.
 
 ## Use, from inside any repo
 
@@ -94,11 +63,10 @@ exercised end to end.
 
 ## Flow
 
-`/antz "<prompt>"` routes on what is already in `.antz/`, so a run can be resumed
-mid-flight. `antz-scout`, `antz-planner`, `antz-tester`, `antz-implementer` and
-`antz-verifier` are subagents; the routing, the spec phase, the `[x]` marking and the
-reporting happen in the session. Clarify has to run there — a subagent is an isolated
-session with no UI, so it could not ask the user anything.
+`/antz "<prompt>"` routes on what is already in `.antz/`, so a run can be resumed mid-flight.
+The five agents are subagents, while routing, clarify, the `[x]` marking and the reporting
+happen in the session you are in. Clarify has to: a subagent has no UI, so it could not ask
+the user anything.
 
 ```
                     /antz "<prompt>"       routes on what .antz/ already holds
@@ -141,11 +109,6 @@ session with no UI, so it could not ask the user anything.
          per task, then it stops and reports.
 ```
 
-The `antz_subagent` tool belongs to antz and nowhere else: a normal session is never
-offered it. `/antz` makes it available, and it disappears again once a run ends with
-`.antz/` gone — the orchestrator deletes it once the decision is written. A run left
-half-done, waiting on a clarify answer, or under repair keeps it.
-
 1. **Recon** — `antz-scout` scans the repo and writes `.antz/00-recon.md`.
 2. **Spec** — clarify (the `antz-clarify` skill when installed, any inquiry skill otherwise)
    asks only what changes the acceptance criteria; antz writes `.antz/01-spec.md`. This is the
@@ -157,81 +120,29 @@ half-done, waiting on a clarify answer, or under repair keeps it.
    are dispatched together as several chains in one call, so they run in parallel (max 4 at
    once), never two that would touch the same files.
 5. **Verify** — `antz-verifier` runs once, with every task green. On PASS it writes
-   `docs/decisions/<slug>.md`, and the orchestrator deletes `.antz/` once that document
-   exists. On failure it names the failing task and whether the test or the implementation
-   is at fault — a fault in shape is an implementation fault — and the loop goes back to
-   step 4 for that task alone: a test fault to the tester, an implementation fault to the
-   implementer, never both. Max 3 attempts per task, then it stops and reports.
+   `docs/decisions/<slug>.md` and the orchestrator deletes `.antz/`. On FAIL it names the
+   failing task and whether the test or the implementation is at fault — a fault in shape is
+   an implementation fault — and only that side goes back: a test fault to the tester, an
+   implementation fault to the implementer. Max 3 attempts per task, then it stops and
+   reports.
 
-   That last part is the only piece a normal run may never reach, because a normal run
-   almost never fails. It has its own eval — `eval/run.sh` seeds a fault and reads the
-   dispatch order back out of the session — and it is a rate, not a gate.
+The dispatch tool exists only during a run: `/antz` offers it, and it is gone again once the
+decision is written and `.antz/` is deleted.
 
-   Both arms have since been watched on a real run (2026-09-21, a small Node checkout
-   project entered at step 5 with one fault seeded): an implementation that ignored a
-   discount cap gave `verifier → implementer → verifier`, and a test that contradicted
-   the spec gave `verifier → tester → verifier`. Each named the failing task and the side
-   at fault, sent it only there, and closed in PASS with `docs/decisions/checkout.md`
-   written and `.antz/` deleted.
+## What it leaves behind
 
-## Structure
-
-- `agents/` — antz-scout, antz-planner, antz-tester, antz-implementer, antz-verifier
-- `skills/antz-clarify/` — the inquiry phase
-- `skills/antz-tdd/` — red/green rules used by antz-tester and antz-implementer
-- `skills/antz-architecture/` — where code belongs and how it is shaped, used by
-  antz-tester, antz-implementer and antz-verifier
-- `prompts/antz.md` — orchestration
-- `INSTALL.md`, `adapters/` — the install guide for the clients without an installer: pi,
-  Claude Code, OpenCode. Markdown for the agent doing the install; `install.sh` copies
-  neither.
-- `install.sh` — pi preflight, a copy or clone of the agents, prompt and extension into pi's
-  agent dir, a verification pass, and `--uninstall`. The three skills are not its business:
-  they are a global `npx skills` install shared with Claude Code and OpenCode.
-- `extensions/antz-subagent.ts` — the dispatch tool: single, parallel (max 4), chain, or
-  several chains in parallel (max 4 in flight, one per task);
-  each agent runs as its own session inside pi, not as a child process, and the tool is
-  only offered during an `/antz` run. While it runs, a panel shows what each agent is
-  doing — the model and thinking level it actually runs with, the skills the repo
-  offered and the ones that agent read, files, commands, the last
-  thing it said — one line per agent collapsed with a live clock, the whole trail with
-  ctrl+o. The panel is rendered from tool details, which never reach the model; what
-  reaches the orchestrator is each agent's final text, capped at 16 KB — except in chain
-  mode, where that text is the handoff between agents.
-- `eval/` — two instruments, neither part of the install. `run.sh` is the repair-loop
-  eval: it seeds `.antz/` with the plan already complete and a deliberate fault —
-  functional in A/B, a shape fault behind a green suite in D —, runs
-  `/antz` end to end, and reads the dispatch order back out of the session file — model
-  judgement, so a rate over `RUNS` runs rather than a gate, grading what is installed.
-  `dispatch.sh` checks the dispatch tool itself — the four shapes, the concurrency cap,
-  the per-chain handoff, the failure path, the skills a child is handed versus the one it
-  reads, and both renderers — with the pi SDK stubbed,
-  so it is deterministic, free, and tests the working tree. See `eval/README.md`.
-
-## Per target project
-
-Nothing to set up. `antz-scout` creates `.antz/` with a `.gitignore` inside it containing
-`*`, so the scratch space never shows up in `git status` and your repo's `.gitignore` is
-never touched. The only artifact meant to survive a run is `docs/decisions/<slug>.md` —
-one living document per domain — written by `antz-verifier` on PASS.
+`antz-scout` creates `.antz/` with a `.gitignore` inside it holding `*`, so the scratch space
+never shows up in `git status` and your repo's `.gitignore` is never touched. The only
+artifact meant to survive a run is `docs/decisions/<slug>.md`, one living document per
+domain, written by `antz-verifier` on PASS.
 
 ## Models
 
-Agents inherit the session's model. Pinning one means adding a `model:` line to an agent
-file — `provider/model`, with an optional `:thinking` suffix: `antz-scout` can run cheap
-and fast, `antz-tester` and `antz-implementer` need a capable coding model, and
-`antz-verifier` should be a different model family from `antz-implementer` so the two
-don't share blind spots. The pin is resolved in process, so a model that does not exist or
-has no credentials fails that agent by name rather than silently running on the session's
-model. On Claude Code and OpenCode it goes in that client's frontmatter block instead; the
-adapter shows where, and the family rule is the same.
+Agents inherit the session's model. A `model:` line in an installed agent file pins one — on
+pi `provider/model` with an optional `:thinking` suffix, on Claude Code and OpenCode that
+client's syntax. `antz-scout` can run cheap and fast, `antz-tester` and `antz-implementer`
+need a capable coding model, and `antz-verifier` should be a different model family from the
+implementer so the two don't share blind spots.
 
-What bounds the choice is auth, not the extension: only `nan/*` is usable in this
-environment (`~/.pi/agent/models.json` holds the only provider key), so any other pin
-needs a `/login` for that provider first.
-
-A reinstall keeps your pin. `install.sh` copies upstream's file over the one you edited
-and then puts the `model:` line back — the file is antz's, that line is yours, so
-upgrading never silently re-points an agent at another model. To go back to upstream's
-value (or to none), delete the line and reinstall; with the line gone there is nothing to
-put back.
+A reinstall keeps the pin: the installer overwrites the file it ships and writes your
+`model:` line back. Delete the line and reinstall to reset it.

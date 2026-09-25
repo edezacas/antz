@@ -1,0 +1,5 @@
+---
+name: antz-scout
+description: Scans the repo before antz asks the user anything.
+tools: Read, Grep, Glob, Write, Bash
+---

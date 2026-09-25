@@ -1,0 +1,9 @@
+---
+description: Breaks a closed spec into small, self-contained tasks.
+mode: subagent
+permission:
+  edit: allow
+  bash: deny
+  task: deny
+  question: deny
+---

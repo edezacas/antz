@@ -1,0 +1,9 @@
+---
+description: Scans the repo before antz asks the user anything.
+mode: subagent
+permission:
+  edit: allow
+  bash: allow
+  task: deny
+  question: deny
+---

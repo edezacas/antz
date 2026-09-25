@@ -34,8 +34,8 @@
 # contract.
 #
 # It measures what is INSTALLED (~/.pi/agent), not the working tree, and checks
-# that the two agree: a prompts/ edit without ./install.sh would grade the old
-# antz.
+# that the two agree: a prompts/ edit without ./adapters/pi/install.sh would grade
+# the old antz.
 
 set -uo pipefail
 
@@ -74,7 +74,7 @@ freshness() {
 if [ "${SKIP_FRESHNESS:-0}" != "1" ]; then
   drift="$(freshness)"
   if [ -n "$drift" ]; then
-    printf 'the working tree and the install in %s disagree:\n%s\nrun ./install.sh (and /reload if pi is open), or SKIP_FRESHNESS=1 to grade the install knowingly.\n' \
+    printf 'the working tree and the install in %s disagree:\n%s\nrun ./adapters/pi/install.sh (and /reload if pi is open), or SKIP_FRESHNESS=1 to grade the install knowingly.\n' \
       "$AGENT_DIR" "$drift" >&2
     exit 1
   fi

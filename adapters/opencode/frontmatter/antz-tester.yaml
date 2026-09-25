@@ -1,0 +1,10 @@
+---
+description: Writes the failing test for one task. Red, not green.
+mode: subagent
+permission:
+  edit: allow
+  bash: allow
+  skill: allow
+  task: deny
+  question: deny
+---

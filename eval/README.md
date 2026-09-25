@@ -68,6 +68,12 @@ routed — the loop never ran. Deleting `.antz/` is not the verifier's job at al
 on PASS the orchestrator removes it once the document exists, so a verifier that
 forgets costs a round rather than leaving a finished run on disk.
 
+Both arms have also been watched on a real run (2026-09-21, a small Node checkout project
+entered at step 5 with one fault seeded): an implementation that ignored a discount cap gave
+`verifier → implementer → verifier`, and a test that contradicted the spec gave
+`verifier → tester → verifier`. Each named the failing task and the side at fault, sent it
+only there, and closed in PASS with the decision written and `.antz/` deleted.
+
 ## Measuring cache reuse (`M`)
 
 A/B/C/D enter at step 5, so they exercise about three dispatches and cannot show a
@@ -99,7 +105,7 @@ measured either side of a change:
 
 ```bash
 TAG=before RUNS=5 ./run.sh M
-# apply the change, then ./install.sh
+# apply the change, then ./adapters/pi/install.sh
 TAG=after  RUNS=5 ./run.sh M
 ```
 
@@ -135,7 +141,7 @@ find out -mindepth 1 -maxdepth 1 ! -name '*.tsv' -exec rm -rf {} +
 
 It measures **what is installed** in `~/.pi/agent`, not the working tree, and
 refuses to run when the two disagree — editing `prompts/antz.md` and forgetting
-`./install.sh` would otherwise grade the previous antz. The `model:` line is
+`./adapters/pi/install.sh` would otherwise grade the previous antz. The `model:` line is
 excluded from that check on purpose: the installer preserves a local pin.
 `pi` is also run from inside each sandbox, and the run is discarded as
 meaningless if the session's recorded `cwd` is anywhere else.

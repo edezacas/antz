@@ -1,0 +1,5 @@
+---
+name: antz-planner
+description: Breaks a closed spec into small, self-contained tasks.
+tools: Read, Write, Grep, Glob
+---
