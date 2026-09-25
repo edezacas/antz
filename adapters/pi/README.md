@@ -6,7 +6,8 @@ Install the five agents, the `/antz` command and the dispatch extension:
 curl -fsSL https://raw.githubusercontent.com/edezacas/antz/master/adapters/pi/install.sh | bash
 ```
 
-Then the three skills — once, global, shared with every client:
+Then the three skills, optional but recommended. They are one global copy every client
+shares.
 
 ```sh
 npx skills add edezacas/antz -g

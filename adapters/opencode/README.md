@@ -6,7 +6,8 @@ Install the five agents and the `/antz` command:
 curl -fsSL https://raw.githubusercontent.com/edezacas/antz/master/adapters/opencode/install.sh | bash
 ```
 
-Then the three skills — once, global, shared with every client:
+Then the three skills, optional but recommended. They are one global copy every client
+shares.
 
 ```sh
 npx skills add edezacas/antz -g
