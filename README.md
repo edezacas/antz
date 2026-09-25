@@ -113,9 +113,10 @@ ask you anything.
    file, its `Depends on` and the files it touches (`Touches`).
 4. **Per task.** `antz-tester` runs first and `antz-implementer` after it, chained. One writes
    the failing test, the other the minimum code to pass it, placed and shaped by the
-   architecture skill. Independent tasks are dispatched together as several chains in one
-   call, so they run in parallel, up to 4 at once and never two that would touch the same
-   files.
+   architecture skill, and both stay on the one command that proves that task. Wider suites
+   belong to step 5, not to the chain. Independent tasks are dispatched together as
+   several chains in one call, so they run in parallel, up to 4 at once and never two that
+   would touch the same files.
 5. **Verify.** Once every task is green, `antz-verifier` runs one time. If it passes, it writes
    `docs/decisions/<slug>.md` and `.antz/` is deleted. If it fails, it names the task and
    whether the test or the implementation is at fault, and only that side goes back to work. A
