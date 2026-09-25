@@ -1,10 +1,10 @@
 ---
 name: antz-clarify
-description: antz's inquiry phase. Turns a vague prompt into a closed business spec by asking only what the user must decide.
+description: antz's inquiry phase. Interviews the user, asking only what must be decided, until a vague prompt is a closed business spec. Activate on requirements, scope, ambiguity or an unclosed spec.
 license: Apache-2.0
 metadata:
   author: edezacas
-  version: "1.0"
+  version: "1.1"
 ---
 
 Read `.antz/00-recon.md`. Ask in batches, not one at a time. Group what you can ask now, wait for answers, then ask what those answers unblocked.

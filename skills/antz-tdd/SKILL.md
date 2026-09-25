@@ -1,10 +1,10 @@
 ---
 name: antz-tdd
-description: antz's mandatory red-green loop. Activate ALWAYS before writing a test or the minimum code that makes it pass.
+description: antz's mandatory red-green loop for test-driven development, covering test-first, the seam the plan names, public interfaces and no mocking internals. Activate ALWAYS before writing a test or the minimum code that makes it pass.
 license: Apache-2.0
 metadata:
   author: edezacas
-  version: "1.0"
+  version: "1.1"
 ---
 
 The seam is the one the plan names, agreed before this session; there is no user here to ask.

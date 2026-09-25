@@ -1,10 +1,10 @@
 ---
 name: antz-architecture
-description: Where code belongs, how it is shaped, and how a finished change is judged. Activate before writing a test or implementation code, and when reviewing a change that is already green. Apply SoC, SOLID, DRY and KISS pragmatically.
+description: Where code belongs, how it is shaped, and how a finished change is judged. Activate before writing a test or implementation code, when reviewing a change that is already green, and whenever architecture, layering, placement, coupling, abstraction, duplication, refactoring or over-engineering comes up. Apply SoC, SOLID, DRY and KISS pragmatically.
 license: Apache-2.0
 metadata:
   author: edezacas
-  version: "1.4"
+  version: "1.5"
 ---
 
 Ask these in order, and treat each answer as judgement rather than a checklist to satisfy.
