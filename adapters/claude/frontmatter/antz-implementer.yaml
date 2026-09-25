@@ -1,5 +1,5 @@
 ---
 name: antz-implementer
-description: Makes one failing test pass. Nothing more.
+description: Confirms the test is red, then makes it pass.
 tools: Read, Write, Edit, Bash, Skill
 ---

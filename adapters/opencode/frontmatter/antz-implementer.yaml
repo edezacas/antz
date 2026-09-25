@@ -1,5 +1,5 @@
 ---
-description: Makes one failing test pass. Nothing more.
+description: Confirms the test is red, then makes it pass.
 mode: subagent
 permission:
   edit: allow
