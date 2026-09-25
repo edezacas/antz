@@ -1,28 +1,24 @@
 # antz
 
-Autonomous dev workflow for the pi coding agent. A vague prompt becomes a spec-clarified,
-TDD-built, verified feature, with a single point of human interaction — the clarify phase.
-It runs on pi, and on Claude Code and OpenCode through the adapters in
-[`adapters/`](adapters).
+Autonomous dev workflow for coding agents. A vague prompt becomes a spec-clarified,
+TDD-built, verified feature, and it only asks you questions once, during the clarify phase.
+It runs on pi, Claude Code and OpenCode, one adapter each in [`adapters/`](adapters).
 
 ## Design principle
 
 **Give the model steps and a few rules. Nothing else.**
 
-The flow says *what* happens in each phase and *which rules are not negotiable*. It never
-prescribes the shape of what a model writes: no output formats, no required fields, no
-"emit exactly these lines". Those buy a little determinism at parse time and pay for it
-with a straitjacket — the moment the model's judgement is better than the contract, the
-contract still wins. Models improve every few months; a fixed format is a bet that they
-won't.
+The prompts say what each phase must achieve, never the shape of the answer. There are no
+required output formats and no "reply with exactly these three lines". Formats are easy to
+parse, but they replace the model's judgement, and when it has a better answer than the
+format allows, the format still wins.
 
 Before adding anything to `prompts/`, `agents/` or `skills/`, ask:
 
-- **Step or shape?** "Chain the tester into the implementer" is a step. "Report exactly
-  these three lines" is a shape. Keep the step, drop the shape.
-- **Rule or routine?** A rule ("`[x]` means done, not verified"; "never send a task back
-  to the tester and the implementer at once") is judgement the model applies. A routine
-  is a script it executes.
+- **A step or a shape?** "Write the test, then the code" is a step, so keep it. "Reply with
+  exactly these three lines" is a shape, so drop it.
+- **A rule or a routine?** A rule is judgement the model applies, like `[x]` meaning done
+  but not yet verified. A routine is a script it follows.
 - **Would a better model make this unnecessary?** Then leave it out.
 
 ## Requirements
@@ -38,7 +34,7 @@ There is no build step and no `npm install`.
 
 ## Install
 
-Pick your client. Its guide is the install and nothing else:
+Pick your client. Its guide is the install and nothing else.
 
 | Client | Guide |
 |---|---|
@@ -48,7 +44,7 @@ Pick your client. Its guide is the install and nothing else:
 
 The five agents and the `/antz` command install at user scope, so antz is available in every
 project with no per-repo setup, and `--uninstall` takes them back out. The three skills come
-next, in the same guide — one global copy every client shares.
+next, in the same guide, and they are one global copy every client shares.
 
 To have an agent do the install, hand it this:
 
@@ -63,10 +59,10 @@ To have an agent do the install, hand it this:
 
 ## Flow
 
-`/antz "<prompt>"` routes on what is already in `.antz/`, so a run can be resumed mid-flight.
-The five agents are subagents, while routing, clarify, the `[x]` marking and the reporting
-happen in the session you are in. Clarify has to: a subagent has no UI, so it could not ask
-the user anything.
+`/antz "<prompt>"` reads what is already in `.antz/`, so a run can be resumed mid-flight. The
+five agents are subagents, while routing, clarify, the `[x]` marking and the reporting happen
+in the session you are in. Clarify has to run there because a subagent has no UI and could not
+ask you anything.
 
 ```
                     /antz "<prompt>"       routes on what .antz/ already holds
@@ -109,24 +105,24 @@ the user anything.
          per task, then it stops and reports.
 ```
 
-1. **Recon** — `antz-scout` scans the repo and writes `.antz/00-recon.md`.
-2. **Spec** — clarify (the `antz-clarify` skill when installed, any inquiry skill otherwise)
-   asks only what changes the acceptance criteria; antz writes `.antz/01-spec.md`. This is the
-   only phase that talks to the user.
-3. **Plan** — `antz-planner` writes `.antz/02-plan.md`: small tasks, each with its own
-   test file, its `Depends on` and the files it touches (`Touches`).
-4. **Per task** — `antz-tester` → `antz-implementer`, chained: a failing test, then the
-   minimum code to pass it, placed and shaped by the architecture skill. Independent tasks
-   are dispatched together as several chains in one call, so they run in parallel (max 4 at
-   once), never two that would touch the same files.
-5. **Verify** — `antz-verifier` runs once, with every task green. On PASS it writes
-   `docs/decisions/<slug>.md` and the orchestrator deletes `.antz/`. On FAIL it names the
-   failing task and whether the test or the implementation is at fault — a fault in shape is
-   an implementation fault — and only that side goes back: a test fault to the tester, an
-   implementation fault to the implementer. Max 3 attempts per task, then it stops and
-   reports.
+1. **Recon.** `antz-scout` scans the repo and writes `.antz/00-recon.md`.
+2. **Spec.** Clarify asks only what changes the acceptance criteria, using the `antz-clarify`
+   skill when it is installed and any inquiry skill otherwise. antz writes `.antz/01-spec.md`.
+   This is the only phase that talks to you.
+3. **Plan.** `antz-planner` writes `.antz/02-plan.md` with small tasks, each with its own test
+   file, its `Depends on` and the files it touches (`Touches`).
+4. **Per task.** `antz-tester` runs first and `antz-implementer` after it, chained. One writes
+   the failing test, the other the minimum code to pass it, placed and shaped by the
+   architecture skill. Independent tasks are dispatched together as several chains in one
+   call, so they run in parallel, up to 4 at once and never two that would touch the same
+   files.
+5. **Verify.** Once every task is green, `antz-verifier` runs one time. If it passes, it writes
+   `docs/decisions/<slug>.md` and `.antz/` is deleted. If it fails, it names the task and
+   whether the test or the implementation is at fault, and only that side goes back to work. A
+   fault in shape counts as an implementation fault. After 3 attempts on the same task it
+   stops and reports.
 
-The dispatch tool exists only during a run: `/antz` offers it, and it is gone again once the
+The dispatch tool exists only during a run. `/antz` offers it, and it is gone again once the
 decision is written and `.antz/` is deleted.
 
 ## What it leaves behind
@@ -134,15 +130,15 @@ decision is written and `.antz/` is deleted.
 `antz-scout` creates `.antz/` with a `.gitignore` inside it holding `*`, so the scratch space
 never shows up in `git status` and your repo's `.gitignore` is never touched. The only
 artifact meant to survive a run is `docs/decisions/<slug>.md`, one living document per
-domain, written by `antz-verifier` on PASS.
+domain, written by `antz-verifier` when a run passes.
 
 ## Models
 
-Agents inherit the session's model. A `model:` line in an installed agent file pins one — on
-pi `provider/model` with an optional `:thinking` suffix, on Claude Code and OpenCode that
-client's syntax. `antz-scout` can run cheap and fast, `antz-tester` and `antz-implementer`
-need a capable coding model, and `antz-verifier` should be a different model family from the
-implementer so the two don't share blind spots.
+Agents inherit the session's model. To pin one, add a `model:` line to an installed agent
+file. On pi it is `provider/model` with an optional `:thinking` suffix, and on Claude Code and
+OpenCode it is that client's own syntax. `antz-scout` can run cheap and fast, `antz-tester`
+and `antz-implementer` need a capable coding model, and `antz-verifier` should be a different
+model family from the implementer so the two don't share blind spots.
 
-A reinstall keeps the pin: the installer overwrites the file it ships and writes your
+A reinstall keeps the pin. The installer overwrites the file it ships and writes your
 `model:` line back. Delete the line and reinstall to reset it.
