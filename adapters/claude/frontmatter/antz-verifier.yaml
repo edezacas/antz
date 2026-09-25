@@ -1,6 +1,5 @@
 ---
 name: antz-verifier
 description: Runs once per round, after every task is green. Checks the feature against the spec, not just that the tests pass.
-tools: Read, Write, Edit, Bash
-skills: antz-architecture
+tools: Read, Write, Edit, Bash, Skill
 ---

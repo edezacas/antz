@@ -63,9 +63,10 @@ extension's own convention, not pi core.
 - The per-client frontmatter is data, not prose: `adapters/<client>/frontmatter/<agent>.yaml`,
   spliced onto everything after the second `---` of `agents/<agent>.md`, which pi copies whole
   because it is already pi's. Editing a block means keeping its traps: `ls` drops from
-  Claude's tool map, `Skill` never appears in its `tools:` — the `skills:` key is the preload,
-  and `disable-model-invocation: true` cancels it — and OpenCode's `bash:` is `shell:` on
-  versions that reject it.
+  Claude's tool map, its `Skill` tool is there instead of a `skills:` list naming the three
+  antz skills (they are optional, and a missing name is only a debug warning), and
+  `disable-model-invocation: true` on a skill keeps it out of the model's context, so no agent
+  can discover or invoke it. OpenCode's `bash:` is `shell:` on versions that reject it.
 - Every installer resolves its target the way its client does — pi `--dir`, then
   `$PI_CODING_AGENT_DIR`, then `~/.pi/agent`; Claude Code `$CLAUDE_CONFIG_DIR`, then
   `~/.claude`; OpenCode `$XDG_CONFIG_HOME/opencode` — and `--ref` (default `master`) and
