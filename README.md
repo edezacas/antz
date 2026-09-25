@@ -147,8 +147,9 @@ offered it. `/antz` makes it available, and it disappears again once a run ends 
 half-done, waiting on a clarify answer, or under repair keeps it.
 
 1. **Recon** — `antz-scout` scans the repo and writes `.antz/00-recon.md`.
-2. **Spec** — the `antz-clarify` skill asks the user only what changes the acceptance
-   criteria, and writes `.antz/01-spec.md`. This is the only phase that talks to the user.
+2. **Spec** — clarify (the `antz-clarify` skill when installed, any inquiry skill otherwise)
+   asks only what changes the acceptance criteria; antz writes `.antz/01-spec.md`. This is the
+   only phase that talks to the user.
 3. **Plan** — `antz-planner` writes `.antz/02-plan.md`: small tasks, each with its own
    test file, its `Depends on` and the files it touches (`Touches`).
 4. **Per task** — `antz-tester` → `antz-implementer`, chained: a failing test, then the
