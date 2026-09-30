@@ -15,7 +15,7 @@ Route on what is on disk, never on memory of an earlier session. If what is ther
 - `.antz/00-recon.md` → step 2
 - `.antz/01-spec.md` → step 3
 - `.antz/02-plan.md` → step 4
-- `.antz/02-plan.md` with every task checked → step 5
+- `.antz/02-plan.md` with every task checked, or `.antz/03-verdict.md` → step 5, acting on the verdict when there is one
 
 `antz-scout`, `antz-planner`, `antz-tester`, `antz-implementer` and `antz-verifier` all run as subagents. Everything else (routing, clarify, marking `[x]`, sending repairs back, reporting) happens here, in this session.
 
@@ -27,6 +27,6 @@ Route on what is on disk, never on memory of an earlier session. If what is ther
 
 4. For each unchecked task, respecting `Depends on`, chain antz-tester → antz-implementer, the implementer getting the tester's report, and mark the task `[x]` when the chain is done. The chain proves the task with the one command the tester names, the narrowest that shows the test red and then green. Wider suites belong to step 5. Independent tasks run at the same time, up to 4, never two that would touch the same files (`Touches` is the hint). When every task is checked, step 5.
 
-5. Once every task is checked, run antz-verifier. It returns PASS, or the failing tasks and whether the test or the implementation is at fault. A test fault goes back to antz-tester, an implementation fault to antz-implementer, never both. The verifier runs again for the whole plan, once per round, never per task. On PASS, once `docs/decisions/<slug>.md` exists, delete `.antz/`, then step 6. After 3 failed attempts on the same task, stop, leave `.antz/` in place, and report.
+5. Once every task is checked, run antz-verifier. It writes its verdict to `.antz/03-verdict.md` — PASS, or the failing tasks and whether the test or the implementation is at fault — so an interrupted run resumes here instead of redoing the work. A test fault goes back to antz-tester, an implementation fault to antz-implementer, never both. The verifier runs again for the whole plan, once per round, never per task. On PASS, once `docs/decisions/<slug>.md` exists, delete `.antz/`, then step 6. After 3 failed attempts on the same task, stop, leave `.antz/` in place, and report.
 
 6. Report to the user, in their language.

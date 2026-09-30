@@ -59,9 +59,10 @@ To have an agent do the install, hand it this:
 
 ## Flow
 
-`/antz "<prompt>"` reads what is already in `.antz/`, so a run can be resumed mid-flight. The
-five agents are subagents, while routing, clarify, the `[x]` marking and the reporting happen
-in the session you are in. Clarify has to run there because a subagent has no UI and could not
+`/antz "<prompt>"` reads what is already in `.antz/`, so a run can be resumed mid-flight — a
+round writes its verdict to `.antz/03-verdict.md` before returning, so an interrupted run
+resumes at the verification instead of re-running the chain. The five agents are subagents,
+while routing, clarify, the `[x]` marking and the reporting happen in the session you are in. Clarify has to run there because a subagent has no UI and could not
 ask you anything.
 
 ```
@@ -117,11 +118,12 @@ ask you anything.
    stay on the one command that proves that task. Wider suites belong to step 5, not to the
    chain. Independent tasks are dispatched together as several chains in one call, so they run
    in parallel, up to 4 at once and never two that would touch the same files.
-5. **Verify.** Once every task is green, `antz-verifier` runs one time. If it passes, it writes
-   `docs/decisions/<slug>.md` and `.antz/` is deleted. If it fails, it names the task and
-   whether the test or the implementation is at fault, and only that side goes back to work. A
-   fault in shape counts as an implementation fault. After 3 attempts on the same task it
-   stops and reports.
+5. **Verify.** Once every task is green, `antz-verifier` runs one time. It writes its verdict to
+   `.antz/03-verdict.md` — that is what survives a round, PASS or the failing tasks — and if it
+   passes it writes `docs/decisions/<slug>.md`, after which `.antz/` is deleted. If it fails, it
+   names the task and whether the test or the implementation is at fault, and only that side goes
+   back to work. A fault in shape counts as an implementation fault. After 3 attempts on the same
+   task it stops and reports.
 
 The dispatch tool exists only during a run. `/antz` offers it, and it is gone again once the
 decision is written and `.antz/` is deleted.
