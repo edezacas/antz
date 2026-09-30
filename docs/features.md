@@ -164,6 +164,11 @@ cumulatively, installed with `measure.sh` and read back with `agents.sh`:
 | 6 | reads under `.antz/`, `N` | testers 1.14, implementers 1.33 per run — 16 in 13 agent runs | none, in 10 runs |
 | net | `A`, `B`, `D`, `C` at the tip | — | all PASS, blame routed to the right side, `D` rejecting the shape, `C` stopping at three attempts |
 
+The prompt text was rewritten afterwards for concision: no dashes as punctuation, one idea per
+sentence, same rules and the same line budget (9-13 per agent, 32 for `prompts/antz.md`). The
+numbers above predate that rewording, and `TAG=reword RUNS=1 ./run.sh A B D C` is the guard
+that the net still holds with the new wording.
+
 **Demonstrated:** item 6, and item 1 where it matters most. **Not demonstrated, and not
 demonstrable here:** items 2 and 3, because the fixture has no discovery cost to remove,
 and items 4 and 5, because nothing in it provokes a task big enough to grind or plans at
