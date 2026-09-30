@@ -55,6 +55,9 @@ TIMEOUT="${TIMEOUT:-1800}"
 
 PROMPT='paginate() must respect the spec limit: asking for limit 1000 has to return 100 elements, not 1000'
 PROMPT_M='add range, chunk, unique and sum helpers under src/, each with its own test file'
+# N and H seed their own spec, so the prompt has to name that feature: /antz refuses to
+# resume a plan that belongs to another one, which is the guard working as intended.
+PROMPT_N='the store has to report its capacity and round-trip through JSON, and the browser needs a duration formatter and a grid span helper, each with its own test file'
 
 usage() { sed -n '3,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 for arg in "$@"; do [ "$arg" = "-h" ] || [ "$arg" = "--help" ] && usage; done
@@ -188,6 +191,7 @@ run_once() {
 
   local prompt="$PROMPT"
   [ "$scenario" = "M" ] && prompt="$PROMPT_M"
+  case "$scenario" in N|H) prompt="$PROMPT_N" ;; esac
   start="$(date +%s)"
   # From inside the sandbox: `/antz` routes on what is in the cwd, so launching
   # it anywhere else would measure another repo — or none.
@@ -349,13 +353,20 @@ if [ -f "$AGENTS" ]; then
     END { for (k in n) printf "  %s: %d run(s), %.1f turns, %.1f reads (%.1f under .antz), input %.0f, cacheRead %.0f, output %.0f, %.0fs\n",
       k, n[k], turns[k]/n[k], reads[k]/n[k], ar[k]/n[k], inp[k]/n[k], cr[k]/n[k], outp[k]/n[k], sec[k]/n[k] }' "$AGENTS" | sort
   # The two files read the same sessions by different paths — the dispatch totals
-  # pi reports against the per-agent rows — so they have to agree. A dispatch that
-  # errored has no agent rows at all, which is the usual reason they do not.
+  # pi reports against the per-agent rows — so they have to agree for every run that
+  # has rows on both sides. A dispatch that errored has no agent rows, and so has any
+  # row written before this file existed, which is what the count at the end is for.
   printf '\n== reconcile (dispatch totals vs agent rows) ==\n'
   awk -F'\t' '
     FNR == NR { if (FNR > 1) d[$1"/"$2] += $6 + $7 + $8 + $9; next }
-    FNR > 1 { a[$1"/"$2] += $9 + $10 + $11 + $12 }
-    END { for (k in d) printf "  %s: dispatch %.0f, agents %.0f%s\n", k, d[k], a[k], (a[k] == d[k] ? "" : "  <- mismatch") }
+    FNR > 1 { a[$1"/"$2] += $9 + $10 + $11 + $12; has[$1"/"$2] = 1 }
+    END {
+      for (k in d) {
+        if (has[k]) printf "  %s: dispatch %.0f, agents %.0f%s\n", k, d[k], a[k], (a[k] == d[k] ? "" : "  <- mismatch")
+        else n++
+      }
+      if (n) printf "  (%d dispatch row(s) without agent rows: a failed dispatch, or a row older than agents.tsv)\n", n
+    }
   ' "$USAGE" "$AGENTS" | sort
 fi
 [ "$failures" -eq 0 ] || printf '\n%d run(s) outside the contract\n' "$failures"
