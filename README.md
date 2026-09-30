@@ -59,11 +59,11 @@ To have an agent do the install, hand it this:
 
 ## Flow
 
-`/antz "<prompt>"` reads what is already in `.antz/`, so a run can be resumed mid-flight — a
+`/antz "<prompt>"` reads what is already in `.antz/`, so a run can be resumed mid-flight. A
 round writes its verdict to `.antz/03-verdict.md` before returning, so an interrupted run
 resumes at the verification instead of re-running the chain. The five agents are subagents,
-while routing, clarify, the `[x]` marking and the reporting happen in the session you are in. Clarify has to run there because a subagent has no UI and could not
-ask you anything.
+while routing, clarify, the `[x]` marking and the reporting happen in the session you are in.
+Clarify has to run there because a subagent has no UI and could not ask you anything.
 
 ```
                     /antz "<prompt>"       routes on what .antz/ already holds
@@ -119,12 +119,12 @@ ask you anything.
    chain. Independent tasks are dispatched together as several chains in one call, so they run
    in parallel, up to 4 at once and never two that would touch the same files.
 5. **Verify.** Once every task is green, `antz-verifier` runs one time. It writes its verdict to
-   `.antz/03-verdict.md` — that is what survives a round, PASS or the failing tasks — and if it
-   passes it writes `docs/decisions/<slug>.md`, after which `.antz/` is deleted. If it fails, it
-   names the task and whether the test or the implementation is at fault, and only that side goes
-   back to work. A task an agent stopped on is cut or sent with a different approach, never resent
-   unchanged. A fault in shape counts as an implementation fault. After 3 attempts on the same
-   task it stops and reports.
+   `.antz/03-verdict.md`, which is what survives a round: PASS, or the failing tasks. If it
+   passes it writes `docs/decisions/<slug>.md`, after which `.antz/` is deleted. If it fails,
+   it names the task and whether the test or the implementation is at fault, and only that
+   side goes back to work. A task an agent stopped on is cut or sent with a different
+   approach, never resent unchanged. A fault in shape counts as an implementation fault.
+   After 3 attempts on the same task it stops and reports.
 
 The dispatch tool exists only during a run. `/antz` offers it, and it is gone again once the
 decision is written and `.antz/` is deleted.

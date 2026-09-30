@@ -35,10 +35,13 @@ extension's own convention, not pi core.
   symlink per client that needs one.
 - Run it from inside a target repo: `/antz "<prompt>"`.
 - No build and no lint: the flow is verified by hand — install, run `/antz` against a sandbox
-  repo, read `.antz/` mid-flight and `docs/decisions/` after — and by two instruments:
+  repo, read `.antz/` mid-flight and `docs/decisions/` after — and by four instruments:
   `./eval/dispatch.sh`, the dispatch tool with the pi SDK stubbed, free and deterministic
-  against the working tree, and `./eval/run.sh`, the repair loop and the shape check as a rate
-  over `RUNS` runs, grading what is installed in `~/.pi/agent` (`eval/README.md`).
+  against the working tree; `./eval/prompts.sh`, the line budgets and the artifact wiring of
+  the prompt files, also free; `./eval/agents.sh`, what each subagent spent from any session,
+  a real one included; and `./eval/run.sh`, the repair loop and the shape check as a rate over
+  `RUNS` runs, grading what is installed in `~/.pi/agent` (`eval/README.md`). `eval/measure.sh`
+  is the loop around that last one: one state, one install, one batch.
 
 ## Structure
 - `prompts/antz.md` — the slash command: routes on `.antz/` and runs every phase.
