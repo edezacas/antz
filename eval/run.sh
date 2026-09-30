@@ -23,6 +23,8 @@
 #   B  implementation faithful, test that contradicts the criteria      -> test at fault
 #   C  A, plus a watcher that re-injects the fault every 2 s             -> the 3-attempt cap
 #   D  green tests, correct behaviour, and a needless abstraction        -> shape at fault
+#   N  two packages with different runners, a fixed plan with rich criteria
+#   H  N, with a recon that already names the exact commands
 #
 # The dispatch totals in usage.tsv hide the agent: a `chains` call of eight is one
 # row. agents.tsv keeps one row per agent run, from the same session by a second
@@ -149,12 +151,22 @@ run_once() {
   rm -f "$session" "$broken"
   rm -rf "$sandbox"
   mkdir -p "$sandbox/.antz" "$sandbox/src"
-  cp -R "$HERE/fixture/." "$sandbox/"
+  # The tree the run starts from. N and H bring their own: two packages, two runners and
+  # no package at the root, so finding out how to run a suite costs turns — the thing the
+  # one-module fixture cannot charge for.
+  local base="$HERE/fixture"
+  case "$scenario" in N|H) base="$HERE/scenarios/mono/tree" ;; esac
+  cp -R "$base/." "$sandbox/"
   if [ "$scenario" = "M" ]; then
     # Fixed recon, spec and plan: /antz enters at step 4 with the same tasks every
     # run, and a bigger AGENTS.md than the fixture so the shared prefix is real.
     cp "$HERE/scenarios/M/seed/"*.md "$sandbox/.antz/"
     cp "$HERE/scenarios/M/AGENTS.md" "$sandbox/AGENTS.md"
+  elif [ "$scenario" = "N" ] || [ "$scenario" = "H" ]; then
+    # One fixed plan both times. H differs in one file: its recon names the commands,
+    # which is the control for what a recon that did its job is worth.
+    cp "$HERE/scenarios/mono/seed/"*.md "$sandbox/.antz/"
+    [ "$scenario" = "H" ] && cp "$HERE/scenarios/mono/seed-hint/00-recon.md" "$sandbox/.antz/00-recon.md"
   else
     cp "$HERE/scenarios/spec/"*.md "$sandbox/.antz/"
   fi
@@ -198,6 +210,7 @@ run_once() {
   local gone=1; [ -d "$sandbox/.antz" ] || gone=0
   local doc_name="pagination.md"
   [ "$scenario" = "M" ] && doc_name="collection-helpers.md"
+  case "$scenario" in N|H) doc_name="store-helpers.md" ;; esac
   local doc=0; [ -f "$sandbox/docs/decisions/$doc_name" ] && doc=1
   local repairs; repairs=$(( $(count_of "$SEQUENCE" antz-implementer) + $(count_of "$SEQUENCE" antz-tester) ))
 
@@ -259,14 +272,17 @@ run_once() {
         VERDICT=FAIL; REASON="it gave up after $repairs attempts, so the cap was never exercised"
       elif [ "${SEQUENCE%% *}" != "antz-verifier" ]; then
         VERDICT=FAIL; REASON="the run did not enter at step 5: '${SEQUENCE%% *}' ran first"
+      elif [ ! -s "$sandbox/.antz/03-verdict.md" ]; then
+        # The verdict is what survives a round that dies before its repair.
+        VERDICT=FAIL; REASON=".antz/03-verdict.md is missing or empty: the verdict has to outlive the round"
       else
         REASON="3 attempts, then it stopped: .antz/ untouched and no decision written"
       fi
       ;;
-    M)
-      # Not a routing contract: the measurement is the usage row. This only says
-      # the run reached the end as the parallel shape, so a broken run is visible
-      # instead of a zero row.
+    M|N|H)
+      # Not a routing contract: the measurement is the usage row, and per agent in
+      # agents.tsv. This only says the run reached the end as the parallel shape, so a
+      # broken run is visible instead of a zero row.
       if [ "$gone" -eq 1 ]; then
         VERDICT=FAIL; REASON="the run did not finish: .antz/ is still there"
       elif [ "$doc" -eq 0 ]; then

@@ -42,9 +42,11 @@ green:
 |---|---|---|
 | **A** | test faithful to the criteria, implementation violating them | `verifier → implementer → verifier`, `.antz/` deleted, `docs/decisions/pagination.md` written |
 | **B** | implementation faithful, test contradicting the criteria | `verifier → tester → verifier`, same end state |
-| **C** | A, plus a watcher re-injecting the fault every 2 s | ≤ 3 repairs, then stop: `.antz/` untouched and no decision written |
+| **C** | A, plus a watcher re-injecting the fault every 2 s | ≤ 3 repairs, then stop: `.antz/` untouched, `.antz/03-verdict.md` written, no decision |
 | **D** | green tests and correct behaviour, but a needless abstraction: a one-implementation policy class behind a wrapper and a factory | `verifier → implementer → verifier`, same end state: the shape is at fault, so the repair is an implementation fault |
 | **M** | fixed recon, spec and plan, no fault, and a realistic `AGENTS.md` | enters at step 4, dispatches the four independent per-task chains in one parallel dispatch, and verifies; the measurement is its usage row, not the routing |
+| **N** | two packages with different runners, no package at the root, and a fixed plan whose criteria are too specific to guess | like `M`, four chains dispatched together and verified. What it adds is the two costs the one-module fixture cannot charge for: finding out how to run a suite, and a tester that wants the plan enough to open `.antz/` |
+| **H** | N, with a recon that names the exact commands | the control for N: what a recon that did its job is worth in the verifier's turns |
 
 A and B are the same observable — one failing suite — and differ only in which
 side respects the acceptance criteria. That difference is the whole experiment:
@@ -284,6 +286,44 @@ Add `scenarios/<X>/src/…` with the files that differ from `fixture/`, plus a
 comment, filename or seed text may hint at which side is at fault, or the eval
 measures the hint instead of the loop. C is the example of a scenario that
 borrows another's files and adds a perturbation, rather than restating them.
+
+## Running a ladder of states (`measure.sh`)
+
+run.sh grades what is installed, so comparing two states is a loop: check out the state,
+install it, run the batch, and keep the harness itself constant. `measure.sh` does exactly
+that — only `prompts`, `agents`, `skills` and `extensions` come from the state under test,
+and the tree is put back on its branch on the way out:
+
+```bash
+./measure.sh before master  N:2 B:1 D:1    # the baseline
+./measure.sh item2  d7dad3c N:2             # one change on top of it
+TAG=before RUNS=5 ./run.sh M                # or install a state by hand and do it yourself
+```
+
+The tag labels the rows in `results.tsv`, `usage.tsv` and `agents.tsv`, which is what makes
+the two batches comparable afterwards. A scenario outside its contract does not stop the
+ladder: a FAIL is a result.
+
+## The prompt harness (`prompts.sh`)
+
+```bash
+./prompts.sh
+```
+
+Free, deterministic, about a second. `run.sh` can only tell you a prompt is broken by
+paying for a flow run, which is the wrong instrument for the two ways a prompt edit
+usually breaks — an agent file over its line budget, or `/antz` routing on an artifact
+nobody writes. This checks what the design already declares:
+
+- the budgets in `AGENTS.md`: 9–13 lines per agent, 32 for `prompts/antz.md`;
+- every `.antz/NN-name.md` `prompts/antz.md` routes on is one an agent is told to write,
+  and every artifact an agent writes is routed on — in both directions;
+- `prompts/antz.md` names no dispatch tool, which is what keeps its body byte-identical on
+  all three clients;
+- every agent declares the `name`, `description` and `tools` pi needs.
+
+It says nothing about prose or judgement. It exists so a wiring mistake costs a second
+instead of a paid batch.
 
 ## The dispatch harness (`dispatch.sh`)
 
