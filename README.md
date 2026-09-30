@@ -122,7 +122,8 @@ ask you anything.
    `.antz/03-verdict.md` — that is what survives a round, PASS or the failing tasks — and if it
    passes it writes `docs/decisions/<slug>.md`, after which `.antz/` is deleted. If it fails, it
    names the task and whether the test or the implementation is at fault, and only that side goes
-   back to work. A fault in shape counts as an implementation fault. After 3 attempts on the same
+   back to work. A task an agent stopped on is cut or sent with a different approach, never resent
+   unchanged. A fault in shape counts as an implementation fault. After 3 attempts on the same
    task it stops and reports.
 
 The dispatch tool exists only during a run. `/antz` offers it, and it is gone again once the
