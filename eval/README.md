@@ -283,26 +283,30 @@ an alternation, and `verifier, implementer ×3` with no closing verification, be
 the last attempt was the last one allowed. The assertions do not pin that shape: the
 cap is on attempts, and re-verifying between them is left to the orchestrator.
 
-### What six changes measured (2026-09-30)
+### Why these changes exist, and what each one measured (2026-09-30)
 
 A queue of prompt changes, one commit each, installed one state at a time with `measure.sh`
-and read back with `agents.sh`. One run per state, so these are counts, not rates:
+and read back with `agents.sh`. One run per state, so these are counts, not rates. The
+verifier's five jobs are what the assertions hold it to: independence, integration, the test
+judged against the spec, the shape, and the decision document.
 
-| Change | Metric | Before | After |
-|---|---|---|---|
-| the verdict on disk | `.antz/03-verdict.md` after `C`, and one live recovery | no file | the file, 35 lines, naming the failing task; and a verifier call that died on a proxy timeout had its verdict read back from disk and its repairs routed |
-| a bounded verifier round | verifier turns per round, `A`/`B`/`D` | 11.8 / 13.5 / 15.0 | 13.5 / 11.0 / 14.5 |
-| the recon names the commands | verifier turns and run time, `N` against its control `H` | `N`: 22 turns per round, 1765 s per run | `H`: 25 turns, 483 s — the fixture's discovery cost is two `package.json`, so there was nothing to save |
-| never grind | whether it fires | — | no run reached it, and `C` still spent its three attempts |
-| small tasks | — | not reachable: the eval never plans, it seeds a plan | — |
-| the task handed over whole | reads under `.antz/`, `N` | testers 1.14 and implementers 1.33 per run: 16 in 13 agent runs | 0.00 and 0.00: none in 10 runs |
+| Change | Why it exists | What it measured |
+|---|---|---|
+| the verdict on disk | a round that died before its repair took the verdict with it, and finishing by hand cost a real run 2 hours and 36.7 M tokens | `C` asserts the file: 35 lines naming the failing task. A verifier call that died on a proxy timeout had its verdict read back from disk and its repairs routed |
+| a bounded verifier round | a real round spent 102 turns and 31 minutes, most of its commands spent working out how to run two suites | verifier turns per round in `A`/`B`/`D`, 11.8 / 13.5 / 15.0 → 13.5 / 11.0 / 14.5: no reduction the fixture can show |
+| the recon names the commands | the phase whose job is to read the repo should write down how to run it | `N` against its control `H`: 22 turns per round against 25, because here the discovery cost is two `package.json` |
+| never grind, and a stopped task cut or reframed rather than resent | one implementer spent 147 steps and 70 minutes on one task, 31 % of a run, with nothing saying when to stop | nothing: no run reached it, and `C` still spends its three attempts. The case it exists for is not reachable here |
+| a task is one capability and one seam | that same plan's T8 held three capabilities and 18 tests | not reachable: the eval seeds a plan, it never plans |
+| the task handed over whole | that run's testers opened `.antz/` 34 times, a 21 KB recon read each time | reads under `.antz/` in `agents.tsv`: 1.14 and 1.33 per run, 16 in 13 agent runs, → none in 10 |
+| one row per agent | a `chains` call of eight agents was a single usage row, and the role is what a cost question is about | `dispatch.sh`, and the reconcile line in the summary |
+| the panel names the file | `…/.antz/01-spec.md` and `…/src/pagination.js` rendered alike, so an audit misread which file an agent had read | `dispatch.sh`, one assertion |
 
-What it says. One change is demonstrated where it was designed to bite — the scratch
-directory is out of the testers' and implementers' hands, and the count going to zero is a
-change of kind, not of mean — and one is demonstrated where it matters most, because the
-verdict on disk is precisely what a dead round leaves behind. Two are **not reachable
-here**: the fixture has no discovery cost to remove, and nothing in it can provoke a task
-big enough to grind. Those two rest on the real run that motivated them.
+What it says. Two changes are demonstrated: the scratch directory is out of the testers' and
+implementers' hands, where the count going to zero is a change of kind rather than of mean, and
+the verdict on disk, which is precisely what a dead round leaves behind. Four are **not
+reachable here**: the fixture has no discovery cost to remove, nothing in it can provoke a task
+big enough to grind, and it never plans. Those four rest on the real run that motivated them,
+and the eval cannot confirm them — which is worth knowing before it is asked to.
 
 A fourth change came after the measurement: a task an agent stopped on is cut or sent with a
 different approach, never resent unchanged. `TAG=cortes RUNS=1 ./run.sh A B D C` checked it:
