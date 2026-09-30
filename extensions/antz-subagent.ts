@@ -183,12 +183,26 @@ function oneLine(text: unknown, max: number): string {
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
+// A path is read from its end: it is the file name that says which file a run is
+// working on, and two long paths in the same tree are otherwise identical in the
+// panel. `…/.antz/01-spec.md` and `…/src/pagination.js` must not render alike,
+// or the panel cannot be used to audit what an agent actually read.
+function onePath(path: string, max: number): string {
+  if (path.length <= max) return path;
+  const tail = path.slice(1 - max);
+  const cut = tail.indexOf("/");
+  return `…${cut === -1 ? tail : tail.slice(cut)}`;
+}
+
 // The one argument worth a line in the panel: which file, which command.
 function toolArg(args: unknown): string {
   if (!args || typeof args !== "object") return "";
   const record = args as Record<string, unknown>;
   for (const key of ["command", "path", "pattern", "query", "url"]) {
-    if (typeof record[key] === "string") return oneLine(record[key], 64);
+    if (typeof record[key] === "string") {
+      const value = record[key] as string;
+      return key === "path" ? onePath(value, 64) : oneLine(value, 64);
+    }
   }
   const first = Object.values(record).find((value) => typeof value === "string");
   return typeof first === "string" ? oneLine(first, 64) : "";

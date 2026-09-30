@@ -238,5 +238,14 @@ try {
 }
 check("a half-streamed chains does not throw while rendering", !rendered.startsWith("threw:"), rendered);
 
+// A long path has to stay identifiable, or the panel cannot answer the first
+// question a watcher has: which file is this agent reading.
+const LONG_READ = "/home/someone/Projects/bluplanet/bluplat/bluplat-client/src/app/dashboard/components/layout/layout.component.spec.ts";
+reset({ read: LONG_READ });
+const longPath = await dispatch({ agent: "antz-tester", task: "TASK: long-path" });
+const longRow = renderResult(longPath, true).split("\n").find((line) => line.includes("read")) ?? "";
+check("a long path keeps its file name", /layout\.component\.spec\.ts/.test(longRow), longRow.trim());
+check("and does not keep the head that hides it", !longRow.includes("/home/someone/Projects/bluplanet"), longRow.trim());
+
 console.log(failed === 0 ? `\nall checks passed` : `\n${failed} check(s) failed`);
 process.exit(failed === 0 ? 0 : 1);
