@@ -300,6 +300,15 @@ verdict on disk is precisely what a dead round leaves behind. Two are **not reac
 here**: the fixture has no discovery cost to remove, and nothing in it can provoke a task
 big enough to grind. Those two rest on the real run that motivated them.
 
+A fourth change came after the measurement: a task an agent stopped on is cut or sent with a
+different approach, never resent unchanged. `TAG=cortes RUNS=1 ./run.sh A B D C` checked it:
+`A`, `B` and `C` PASS with the blame routed as ever, and `C` still spends its three attempts.
+`D` came back `verifier → implementer → implementer → verifier` in 534 s, which the harness
+fails on shape although the verifier did reject the shape and the run ended right (`.antz/`
+gone, the decision written). Two more runs of `D` gave the canonical `verifier → implementer →
+verifier`, so the deviation is the round shape varying, not a regression — and it is the one
+place where the assertion is stricter than the paragraph above says it is.
+
 The net held. `A`, `B` and `D` PASS at the tip with the blame routed to the right side
 (`verifier → implementer → verifier`, `verifier → tester → verifier`, and the shape fault
 rejected), and `C` stops at three attempts with `.antz/` and its verdict still on disk.
