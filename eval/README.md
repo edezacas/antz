@@ -117,6 +117,38 @@ without pricing in `models.json` reports `cost: 0`, so compare tokens, not money
 Runs with long gaps between agents can miss the provider's cache window even
 when the change is correct.
 
+## What each agent spent
+
+`usage.tsv` totals a dispatch, so a `chains` call of eight agents is one row and the role
+disappears — which is exactly what has to be visible when the question is whether a verifier
+is spending its turns on judgement or a tester on re-reading the plan. `agents.tsv` keeps one
+row per agent run, read from the same session by a second path: agent, status, turns, reads,
+`antzReads`, input, cacheRead, cacheWrite, output, seconds, skills, tools.
+
+`eval/agents.sh` is the same reader standalone, and it works on any session — a real one
+included, because every run in `details.runs[]` carries its own `usage` and its own `steps`:
+
+```bash
+./agents.sh out/M-1.session.jsonl            # one row per agent run
+./agents.sh --summary out/M-1.session.jsonl  # means per agent
+./agents.sh --summary ~/.pi/agent/sessions/<cwd>/<session>.jsonl
+```
+
+What to look for:
+
+- **`turns`** is the tool calls, which is also the LLM round trips. It is the cost driver a token
+  total hides: the fixture's verifier spends 20, the same role on a real repository spent 102,
+  and a round that size is the one a provider cuts short.
+- **`antzReads`** is how many of its reads opened a file under `.antz/`. The flow wants it at
+  zero for a tester and an implementer — they are handed their task — and a real run's testers
+  spent 34 of them.
+- **`seconds`**, against the wall clock of the whole dispatch, says whether the time went into
+  the model or into a suite that takes 40 s to boot.
+
+The two files read the same sessions by different paths, so the summary closes with a reconcile
+line: the dispatch totals against the sum of the agent rows. They agree; a dispatch that errored
+has no agent rows, which is the usual reason they would not.
+
 ## Running it
 
 ```bash
@@ -129,8 +161,9 @@ SKIP_FRESHNESS=1 ./run.sh
 
 Roughly 2–15 minutes per run depending on how many repair rounds happen; `M` is
 at the top of that range because it runs the whole chain. Every run appends a row
-to `out/results.tsv` and a usage row to `out/usage.tsv`, and leaves the sandbox,
-the log and the session trace in `out/`, all of it gitignored.
+to `out/results.tsv`, a usage row to `out/usage.tsv` and one row per agent run to
+`out/agents.tsv`, and leaves the sandbox, the log and the session trace in `out/`,
+all of it gitignored.
 
 The `.tsv` files are the record; the rest is only there to inspect a past run and
 costs a few megabytes a batch. To reclaim it without losing the numbers:
@@ -277,6 +310,8 @@ judgement can be asserted on:
 - **the skills a child is handed versus the ones it reads**: a `read` of a
   discovered `SKILL.md` is marked as used, on the run that did it and not on its
   siblings, and an ordinary read is not;
+- **the panel does not hide which file**: a long path still renders its file name, so a run's
+  reads are identifiable instead of two identical truncated paths;
 - **both renderers**: chain-per-line in the call, `chain.step` numbering in the
   result, and a half-streamed call not throwing while it renders.
 

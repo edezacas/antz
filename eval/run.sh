@@ -24,6 +24,11 @@
 #   C  A, plus a watcher that re-injects the fault every 2 s             -> the 3-attempt cap
 #   D  green tests, correct behaviour, and a needless abstraction        -> shape at fault
 #
+# The dispatch totals in usage.tsv hide the agent: a `chains` call of eight is one
+# row. agents.tsv keeps one row per agent run, from the same session by a second
+# path, so a change that moves one role and not another is visible — and it is
+# checked against the dispatch totals, which must agree.
+#
 # M measures something else: it seeds recon, spec and a fixed plan, so /antz
 # enters at step 4 with the same tasks every run (tests -> verify), and it gives
 # the sandbox a realistic AGENTS.md so the shared context a caching change
@@ -288,6 +293,11 @@ RESULTS="$OUT/results.tsv"
 # from before this measurement stay aligned.
 USAGE="$OUT/usage.tsv"
 [ -f "$USAGE" ] || printf 'tag\tscenario\trun\tcalls\twithUsage\tinput\tcacheRead\tcacheWrite\toutput\n' >"$USAGE"
+# One row per agent run, written by agents.sh, which is also the standalone
+# auditor for any session — a real one included, since every run in
+# `details.runs[]` carries its own usage and its own steps.
+AGENTS="$OUT/agents.tsv"
+[ -f "$AGENTS" ] || printf 'tag\tscenario\trun\tagent\tstatus\tturns\treads\tantzReads\tinput\tcacheRead\tcacheWrite\toutput\tseconds\tskills\ttools\n' >"$AGENTS"
 
 failures=0
 for scenario in "${SCENARIOS[@]}"; do
@@ -298,6 +308,8 @@ for scenario in "${SCENARIOS[@]}"; do
     printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$scenario" "$run" "$VERDICT" "$SEQUENCE" "$REASON" "$SECONDS_TAKEN" >>"$RESULTS"
     if [ -n "${SESSION_FILE:-}" ] && [ -f "$SESSION_FILE" ]; then
       printf '%s\t%s\t%s\t%s\n' "${TAG:-}" "$scenario" "$run" "$(usage_of "$SESSION_FILE")" >>"$USAGE"
+      "$HERE/agents.sh" "$SESSION_FILE" \
+        | awk -F'\t' -v OFS='\t' -v tag="${TAG:-}" -v sc="$scenario" -v rn="$run" '{ print tag, sc, rn, $0 }' >>"$AGENTS"
     fi
     [ "$VERDICT" = PASS ] || failures=$((failures + 1))
   done
@@ -313,6 +325,22 @@ if [ -f "$USAGE" ]; then
       calls[k]+=$4; wu[k]+=$5; inp[k]+=$6; cr[k]+=$7; cw[k]+=$8; outp[k]+=$9 }
     END { for (k in n) printf "  %s: %d run(s), %.1f calls (%.1f reported usage), input %.0f, cacheRead %.0f, cacheWrite %.0f, output %.0f\n",
       k, n[k], calls[k]/n[k], wu[k]/n[k], inp[k]/n[k], cr[k]/n[k], cw[k]/n[k], outp[k]/n[k] }' "$USAGE" | sort
+fi
+if [ -f "$AGENTS" ]; then
+  printf '\n== agents (mean per tag/scenario/agent) ==\n'
+  awk -F'\t' 'NR>1 { k=($1=="" ? "-" : $1)"/"$2"/"$4; n[k]++
+      turns[k]+=$6; reads[k]+=$7; ar[k]+=$8; inp[k]+=$9; cr[k]+=$10; outp[k]+=$12; sec[k]+=$13 }
+    END { for (k in n) printf "  %s: %d run(s), %.1f turns, %.1f reads (%.1f under .antz), input %.0f, cacheRead %.0f, output %.0f, %.0fs\n",
+      k, n[k], turns[k]/n[k], reads[k]/n[k], ar[k]/n[k], inp[k]/n[k], cr[k]/n[k], outp[k]/n[k], sec[k]/n[k] }' "$AGENTS" | sort
+  # The two files read the same sessions by different paths — the dispatch totals
+  # pi reports against the per-agent rows — so they have to agree. A dispatch that
+  # errored has no agent rows at all, which is the usual reason they do not.
+  printf '\n== reconcile (dispatch totals vs agent rows) ==\n'
+  awk -F'\t' '
+    FNR == NR { if (FNR > 1) d[$1"/"$2] += $6 + $7 + $8 + $9; next }
+    FNR > 1 { a[$1"/"$2] += $9 + $10 + $11 + $12 }
+    END { for (k in d) printf "  %s: dispatch %.0f, agents %.0f%s\n", k, d[k], a[k], (a[k] == d[k] ? "" : "  <- mismatch") }
+  ' "$USAGE" "$AGENTS" | sort
 fi
 [ "$failures" -eq 0 ] || printf '\n%d run(s) outside the contract\n' "$failures"
 exit "$([ "$failures" -eq 0 ] && echo 0 || echo 1)"
