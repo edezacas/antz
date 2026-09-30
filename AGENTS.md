@@ -76,9 +76,11 @@ extension's own convention, not pi core.
   `tools:` is enforced, `model:` is pinned. They load no extensions, so nothing recurses, and
   their `details` feed a panel the model never sees — `content` is what the orchestrator
   reads, capped at 16 KB (in chain mode that content is the handoff to the next agent).
-- The verifier's verdict lives in the orchestrator's context, never on disk, so a restart
-  between the verdict and the repair re-runs the whole chain. Deliberate: the alternative is
-  an on-disk verdict format.
+- The verifier writes its verdict to `.antz/03-verdict.md` before returning, so a run that dies
+  between the verdict and the repair resumes at step 5 instead of re-running the chain — the
+  failure a real run paid 2 hours and 36.7 M tokens for, by hand. It is a report, not a format:
+  only the orchestrator reads it. The cap on attempts does not survive a resume, which buys
+  three more on purpose.
 - Artifacts are written in English; clarify asks its questions in the user's language.
 - Claude Code and OpenCode are verified in a scratch dir, which is as far as "the body
   arrived byte for byte" goes; only pi's install has run for real.
