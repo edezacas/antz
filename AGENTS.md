@@ -90,3 +90,26 @@ extension's own convention, not pi core.
 - OpenCode: a subagent waiting on approval hangs with no output, because `external_directory`
   and `doom_loop` default to `ask`. `opencode --auto` approves everything not explicitly
   denied; where a subagent's own rules are ignored, put the `allow`s in `opencode.json`.
+
+## Open
+
+What is left to decide or to confirm, none of it blocking a run.
+
+- **The attempt cap does not cover a task that gets cut.** It counts attempts on the same task,
+  so splitting one turns it into new tasks that the cap has never seen. Counting per test file
+  would close it, at the cost of one more number for the orchestrator to carry.
+- **A stopped agent is a decision point, not a retry.** The prompt forbids resending a task
+  unchanged, so the orchestrator has to cut it or reframe it. No scenario provokes a blocker,
+  which is why the rule is unmeasured.
+- **Four changes rest on one real run** (2026-09-29, 12 tasks, 5 h 30, followed by 2 h of repair
+  by hand): a bounded verifier round, the recon naming the run commands, "never grind", and a
+  task of one capability and one seam. The fixture cannot provoke any of them, and `eval/README.md`
+  says so next to what it did measure. To close them, run `/antz` in a real repo and read the
+  session back with `./eval/agents.sh --summary <session.jsonl>`: the verifier well under 102
+  turns, no reads under `.antz/` from a tester or an implementer, and `.antz/03-verdict.md`
+  written when a round fails.
+- **Judged against, and left alone**: merging `antz-tester` into `antz-implementer` (the split is
+  what makes the test's independence a fact rather than a discipline) and a cheaper verifier
+  model (its problem was the size of the round, not its price).
+- The `description:` line in `prompts/antz.md` still separates with ` - `, out of scope when the
+  dashes as punctuation were removed.
