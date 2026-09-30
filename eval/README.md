@@ -45,7 +45,7 @@ green:
 | **C** | A, plus a watcher re-injecting the fault every 2 s | ≤ 3 repairs, then stop: `.antz/` untouched, `.antz/03-verdict.md` written, no decision |
 | **D** | green tests and correct behaviour, but a needless abstraction: a one-implementation policy class behind a wrapper and a factory | `verifier → implementer → verifier`, same end state: the shape is at fault, so the repair is an implementation fault |
 | **M** | fixed recon, spec and plan, no fault, and a realistic `AGENTS.md` | enters at step 4, dispatches the four independent per-task chains in one parallel dispatch, and verifies; the measurement is its usage row, not the routing |
-| **N** | two packages with different runners, no package at the root, and a fixed plan whose criteria are too specific to guess | like `M`, four chains dispatched together and verified. What it adds is the two costs the one-module fixture cannot charge for: finding out how to run a suite, and a tester that wants the plan enough to open `.antz/` |
+| **N** | two packages with different runners, no package at the root, and a fixed plan whose criteria are too specific to guess | like `M`, four chains dispatched together and verified. What it adds is the two costs the one-module fixture cannot charge for: finding out how to run a suite, and a tester that wants the plan enough to open `.antz/`. It is the slowest scenario: a run that needs two repair rounds can outlast the default `TIMEOUT` of 1800 s — one of them was cut off there — so give it `TIMEOUT=3000` |
 | **H** | N, with a recon that names the exact commands | the control for N: what a recon that did its job is worth in the verifier's turns |
 
 A and B are the same observable — one failing suite — and differ only in which
