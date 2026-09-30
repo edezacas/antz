@@ -279,13 +279,40 @@ an alternation, and `verifier, implementer ×3` with no closing verification, be
 the last attempt was the last one allowed. The assertions do not pin that shape: the
 cap is on attempts, and re-verifying between them is left to the orchestrator.
 
+### What six changes measured (2026-09-30)
+
+A queue of prompt changes, one commit each, installed one state at a time with `measure.sh`
+and read back with `agents.sh`. One run per state, so these are counts, not rates:
+
+| Change | Metric | Before | After |
+|---|---|---|---|
+| the verdict on disk | `.antz/03-verdict.md` after `C`, and one live recovery | no file | the file, 35 lines, naming the failing task; and a verifier call that died on a proxy timeout had its verdict read back from disk and its repairs routed |
+| a bounded verifier round | verifier turns per round, `A`/`B`/`D` | 11.8 / 13.5 / 15.0 | 13.5 / 11.0 / 14.5 |
+| the recon names the commands | verifier turns and run time, `N` against its control `H` | `N`: 22 turns per round, 1765 s per run | `H`: 25 turns, 483 s — the fixture's discovery cost is two `package.json`, so there was nothing to save |
+| never grind | whether it fires | — | no run reached it, and `C` still spent its three attempts |
+| small tasks | — | not reachable: the eval never plans, it seeds a plan | — |
+| the task handed over whole | reads under `.antz/`, `N` | testers 1.14 and implementers 1.33 per run: 16 in 13 agent runs | 0.00 and 0.00: none in 10 runs |
+
+What it says. One change is demonstrated where it was designed to bite — the scratch
+directory is out of the testers' and implementers' hands, and the count going to zero is a
+change of kind, not of mean — and one is demonstrated where it matters most, because the
+verdict on disk is precisely what a dead round leaves behind. Two are **not reachable
+here**: the fixture has no discovery cost to remove, and nothing in it can provoke a task
+big enough to grind. Those two rest on the real run that motivated them.
+
+The net held. `A`, `B` and `D` PASS at the tip with the blame routed to the right side
+(`verifier → implementer → verifier`, `verifier → tester → verifier`, and the shape fault
+rejected), and `C` stops at three attempts with `.antz/` and its verdict still on disk.
+
 ## Adding a scenario
 
 Add `scenarios/<X>/src/…` with the files that differ from `fixture/`, plus a
 `case` in `run_once` that asserts the contract. Keep the fixture *blind*: no
 comment, filename or seed text may hint at which side is at fault, or the eval
 measures the hint instead of the loop. C is the example of a scenario that
-borrows another's files and adds a perturbation, rather than restating them.
+borrows another's files and adds a perturbation, rather than restating them. A
+scenario whose seeded plan belongs to another feature needs its own prompt: `/antz` refuses
+to resume a plan that is not the one it was asked for, which is the guard working.
 
 ## Running a ladder of states (`measure.sh`)
 

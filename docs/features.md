@@ -148,3 +148,24 @@ out and installed on its own, which is how the numbers below are taken:
 The per-item batch is `M` because it is the cheapest scenario that reaches every role with
 the same workload every run; `A B C D` is the net and is run at the start and at the end,
 not between every item. One run proves nothing — these are rates.
+
+### What the ladder showed (2026-09-30)
+
+One run per state, so counts rather than rates. `before` on `master`, then the branch
+cumulatively, installed with `measure.sh` and read back with `agents.sh`:
+
+| Item | Metric | Before | After |
+|---|---|---|---|
+| 1 | `.antz/03-verdict.md` after `C`, plus one live recovery | no file | 35 lines naming the failing task, and a verifier call that died on a proxy timeout had its verdict read from disk and its repairs routed |
+| 2 | verifier turns per round, `A`/`B`/`D` | 11.8 / 13.5 / 15.0 | 13.5 / 11.0 / 14.5 — no reduction the fixture can show |
+| 3 | verifier turns, `N` against its control `H` | `N`: 22 per round, 1765 s | `H`: 25 turns, 483 s — the fixture's discovery cost is two `package.json` |
+| 4 | whether it fires | — | no run reached it; `C` still spent its three attempts |
+| 5 | — | not reachable: the eval seeds a plan, it never plans | — |
+| 6 | reads under `.antz/`, `N` | testers 1.14, implementers 1.33 per run — 16 in 13 agent runs | none, in 10 runs |
+| net | `A`, `B`, `D`, `C` at the tip | — | all PASS, blame routed to the right side, `D` rejecting the shape, `C` stopping at three attempts |
+
+**Demonstrated:** item 6, and item 1 where it matters most. **Not demonstrated, and not
+demonstrable here:** items 2 and 3, because the fixture has no discovery cost to remove,
+and items 4 and 5, because nothing in it provokes a task big enough to grind or plans at
+all. Those four keep the real-run evidence they were written from; the eval cannot confirm
+them, and now says so instead of implying otherwise.
