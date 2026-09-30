@@ -63,6 +63,10 @@ extension's own convention, not pi core.
   from the file), so its body is byte-identical on every client and only the frontmatter
   changes. Each client maps the tool in its own frontmatter: `Task` on Claude Code, `task` on
   OpenCode, `antz_subagent` on pi. Naming a tool there puts the per-client edit back.
+- `prompts/`, `agents/`, `skills/` and `extensions/` are the only things that reach a client, so
+  they are the only places a run's behaviour is decided. `AGENTS.md`, `README.md` and `eval/` never
+  leave this repo: a rule written only in them has changed nothing. So a change to the flow names
+  which of the four it edits, and why, before anything is installed or paid for.
 - The per-client frontmatter is data, not prose: `adapters/<client>/frontmatter/<agent>.yaml`,
   spliced onto everything after the second `---` of `agents/<agent>.md`, which pi copies whole
   because it is already pi's. Editing a block means keeping its traps: `ls` drops from
