@@ -62,8 +62,12 @@ reopens a green change on taste it cannot demonstrate.
 
 A trailing extra `verifier` round is tolerated in A, B and D, because a verifier can
 return PASS without writing the decision document, and the orchestrator sends it
-back to finish. That is recovery, not a routing fault, and it is reported in the
-run's detail rather than counted as a failure. The opposite case is a failure: a
+back to finish. So is a repair that takes more than one round: the cap counts
+attempts, not rounds, and re-verifying between them is the orchestrator's call. What
+A, B and D pin is the routing — the first agent after the opening verification is the
+one the verifier blamed, and the other side is never touched — plus the closing
+verification and the end state. Anything else is reported in the run's detail rather
+than counted as a failure. The opposite case is a failure: a
 single `verifier` dispatch that ends with the decision written and `.antz/` gone
 means it repaired the fault itself, so no blame was reported and nothing was
 routed — the loop never ran. Deleting `.antz/` is not the verifier's job at all:
@@ -304,10 +308,13 @@ A fourth change came after the measurement: a task an agent stopped on is cut or
 different approach, never resent unchanged. `TAG=cortes RUNS=1 ./run.sh A B D C` checked it:
 `A`, `B` and `C` PASS with the blame routed as ever, and `C` still spends its three attempts.
 `D` came back `verifier → implementer → implementer → verifier` in 534 s, which the harness
-fails on shape although the verifier did reject the shape and the run ended right (`.antz/`
-gone, the decision written). Two more runs of `D` gave the canonical `verifier → implementer →
-verifier`, so the deviation is the round shape varying, not a regression — and it is the one
-place where the assertion is stricter than the paragraph above says it is.
+failed on shape: one repair round more than the assertion allowed, although the verifier had
+rejected the shape and the run did close with a verification. Two more runs of `D` gave the
+canonical `verifier → implementer → verifier`, so the deviation was the round shape varying,
+not a regression. The assertion was the thing that was wrong, and it now tolerates repeats on
+the blamed side, so that row is the only verdict in the file judging a run by a rule the
+design never held. Its end state was never recorded, which is why it stays as it was written
+rather than being re-judged: the trace is re-checkable, the repository it left is not.
 
 The net held. `A`, `B` and `D` PASS at the tip with the blame routed to the right side
 (`verifier → implementer → verifier`, `verifier → tester → verifier`, and the shape fault

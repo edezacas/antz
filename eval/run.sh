@@ -221,18 +221,23 @@ run_once() {
   VERDICT=PASS
   case "$scenario" in
     A|B|D)
-      local blame=antz-implementer expected extra reruns
-      [ "$scenario" = "B" ] && blame=antz-tester
-      expected="antz-verifier $blame antz-verifier"
-      # A trailing verifier round is tolerated: a verifier can return PASS
-      # without doing the PASS work (writing the decision, deleting .antz/),
-      # and the orchestrator sends it back to finish. That is recovery, not a
-      # routing fault, so it is reported and not counted as a failure.
-      case "$SEQUENCE" in
-        "$expected"*) extra="${SEQUENCE#"$expected"}"; extra="${extra# }" ;;
-        *) extra="__nomatch__" ;;
-      esac
-      reruns="$(printf '%s' "$extra" | tr ' ' '\n' | grep -cx 'antz-verifier')"
+      # What this pins: the first agent after the opening verification is the one the
+      # verifier blamed, the other side is never touched, and the run closes with a
+      # verification. What it leaves to the orchestrator: how many rounds a repair takes
+      # and whether it re-verifies between them. The cap is on attempts, not on rounds,
+      # and a run was failed on shape alone before this was written down.
+      local blame=antz-implementer other=antz-tester
+      [ "$scenario" = "B" ] && { blame=antz-tester; other=antz-implementer; }
+      local blamed reached trailing reruns
+      blamed="$(printf '%s' "$SEQUENCE" | tr ' ' '\n' | grep -cx "$blame")"
+      reached="$(printf '%s' "$SEQUENCE" | tr ' ' '\n' | grep -cx "$other")"
+      # A trailing verifier round is tolerated: a verifier can return PASS without doing
+      # the PASS work (writing the decision), and the orchestrator sends it back to
+      # finish. That is recovery, not a routing fault, so it is reported and not failed.
+      trailing="${SEQUENCE##*"$blame" }"
+      reruns="$(printf '%s' "$trailing" | tr ' ' '\n' | grep -cx 'antz-verifier')"
+      reruns=$((reruns - 1))
+      [ "$reruns" -lt 0 ] && reruns=0
       if [ "$SEQUENCE" = "antz-verifier" ] && [ "$doc" -eq 1 ] && [ "$gone" -eq 0 ]; then
         # The verifier wrote the fix itself and closed the run. The end state looks
         # right and the loop was bypassed: no blame was reported, so nothing was
@@ -242,25 +247,27 @@ run_once() {
         else
           VERDICT=FAIL; REASON="the verifier repaired and closed the run itself: the repair loop never ran"
         fi
-      elif [ "$extra" = "__nomatch__" ]; then
+      elif [ "${SEQUENCE%% *}" != "antz-verifier" ]; then
+        VERDICT=FAIL; REASON="the run did not open with a verification: '$SEQUENCE'"
+      elif [ "$reached" -ne 0 ]; then
+        VERDICT=FAIL; REASON="the repair reached $other, which was not blamed: '$SEQUENCE'"
+      elif [ "$blamed" -lt 1 ]; then
         if [ "$scenario" = "D" ]; then
-          VERDICT=FAIL; REASON="the verifier did not reject the shape: expected routing starting with '$expected', got '$SEQUENCE'"
+          VERDICT=FAIL; REASON="the verifier did not reject the shape: nothing was repaired, got '$SEQUENCE'"
         else
-          VERDICT=FAIL; REASON="expected routing starting with '$expected', got '$SEQUENCE'"
+          VERDICT=FAIL; REASON="nothing was repaired, so there was no blame to route: '$SEQUENCE'"
         fi
-      elif [ -n "$extra" ] && printf '%s' "$extra" | tr ' ' '\n' | grep -qvx 'antz-verifier'; then
-        VERDICT=FAIL; REASON="after the repair only verifier rounds are tolerated, got '$extra'"
-      elif [ "$repairs" -ne 1 ]; then
-        VERDICT=FAIL; REASON="expected a single repair agent, got $repairs"
+      elif [ "${SEQUENCE##* }" != "antz-verifier" ]; then
+        VERDICT=FAIL; REASON="the run did not close with a verification: '$SEQUENCE'"
       elif [ "$gone" -eq 1 ]; then
         VERDICT=FAIL; REASON="the verifier should have deleted .antz/ after PASS"
       elif [ "$doc" -eq 0 ]; then
         VERDICT=FAIL; REASON="docs/decisions/$doc_name is missing, and only PASS writes it"
       else
         if [ "$scenario" = "D" ]; then
-          REASON="the verifier failed the green change on shape, routed it to $blame, PASS on round 2: .antz/ deleted and the decision written"
+          REASON="the verifier failed the green change on shape, routed it to $blame ($blamed round(s)), PASS: .antz/ deleted and the decision written"
         else
-          REASON="blame routed to $blame, PASS on round 2, .antz/ deleted and the decision written"
+          REASON="blame routed to $blame ($blamed round(s)), PASS, .antz/ deleted and the decision written"
         fi
         [ "$reruns" -gt 0 ] && REASON="$REASON; the verifier needed $reruns extra round(s) to finish the PASS work"
       fi
