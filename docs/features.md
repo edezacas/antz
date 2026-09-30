@@ -39,14 +39,14 @@ The verifier's five jobs, which every item below is judged against:
 
 ## P0 — the run has to close, and the verdict has to survive
 
-- [ ] **1. The verdict on disk.** Today it lives only in the orchestrator's context, so a round that
+- [x] **1. The verdict on disk.** Today it lives only in the orchestrator's context, so a round that
   dies takes its work with it. Writing it to `.antz/03-verdict.md` lets `/antz` resume at step 5.
   *Cost of not doing it, measured:* the second session re-did the verification and the repair by
   hand — 213 turns, 36.7 M tokens, no tester, no verifier, `.antz/` still on disk today.
   *Touches:* `prompts/antz.md` step 5, `agents/antz-verifier.md`, and the gotcha in `AGENTS.md`
   that rejects an on-disk verdict on purpose. That decision now has a price attached.
 
-- [ ] **2. Bound the verifier's round.** Four rules, all judgement, no format:
+- [x] **2. Bound the verifier's round.** Four rules, all judgement, no format:
   judge the change (`git diff`) rather than the tree, cross-checking what the plan said each task
   would touch (`Touches`) against what the diff shows; do not discover how to run the suite;
   run the suite first and let it narrow the scope; and on a repair round judge the repaired task
@@ -56,14 +56,14 @@ The verifier's five jobs, which every item below is judged against:
   *Constraint:* `agents/antz-verifier.md` is 13 lines, the ceiling in `AGENTS.md`. This has to
   condense what is there, not add to it.
 
-- [ ] **3. The suite and build commands belong to the recon.** `antz-scout` records how to run one
+- [x] **3. The suite and build commands belong to the recon.** `antz-scout` records how to run one
   spec, the whole suite and the build for each subproject, exact command included.
   *Returns:* the verifier stops spending turns being a build engineer — it spent most of its 80
   `bash` calls discovering `venv`, `phpunit` and `karma`.
 
 ## P1 — no agent running away
 
-- [ ] **4. A turn budget that reports rather than kills.** Past a threshold the agent stops and
+- [x] **4. A turn budget that reports rather than kills.** Past a threshold the agent stops and
   names its blocker, and the orchestrator decides: split the task, change the approach, ask the
   user. Not a hard cap — in the real case the task *converged*, and cutting it would have been
   wrong. The agents already do this unprompted ("the test is not red, I'm stopping here"); the
@@ -72,7 +72,7 @@ The verifier's five jobs, which every item below is judged against:
   a verifier at 102.
   *Touches:* `agents/antz-implementer.md`, `agents/antz-tester.md`, `agents/antz-verifier.md`.
 
-- [ ] **5. Tasks that are actually small.** T8 held 18 tests and three separate capabilities
+- [x] **5. Tasks that are actually small.** T8 held 18 tests and three separate capabilities
   (edit mode, drag gating, dimension persistence) and shares `layout.component.ts` with T7. Split,
   it is three parallel chains of ~25 turns instead of one of 147.
   *Returns:* it attacks the 42 % of the run that the implementers cost, which is more than the
@@ -82,7 +82,7 @@ The verifier's five jobs, which every item below is judged against:
 
 ## P2 — context that buys nothing, and being able to see it
 
-- [ ] **6. The task handed to an agent has to be self-sufficient.** Acceptance criteria, seam, owned
+- [x] **6. The task handed to an agent has to be self-sufficient.** Acceptance criteria, seam, owned
   test file and `Touches` copied out of the plan verbatim, and no reopening `.antz/` unless
   something is missing.
   *Returns:* on the real run the testers read `.antz/` 34 times (recon 11, spec 10, plan 13) and the
@@ -91,13 +91,13 @@ The verifier's five jobs, which every item below is judged against:
   *Touches:* `prompts/antz.md` step 4, one line each in `agents/antz-tester.md` and
   `agents/antz-implementer.md`.
 
-- [ ] **7. Per-agent numbers as an instrument.** A row per agent in `out/agents.tsv`: tag, scenario,
+- [x] **7. Per-agent numbers as an instrument.** A row per agent in `out/agents.tsv`: tag, scenario,
   agent, turns, input, cacheRead, output, seconds. The data already exists in
   `details.runs[].usage`; today it takes a hand-written `jq`. About ten lines in `eval/run.sh` and
   a paragraph in `eval/README.md`.
   *Returns:* every other item here becomes a number instead of an impression.
 
-- [ ] **8. The panel must not hide the file name.** `toolArg` truncates to 64 characters from the
+- [x] **8. The panel must not hide the file name.** `toolArg` truncates to 64 characters from the
   end, so `…/.antz/01-spe…` and `…/src/paginati…` render identically — which is how a real
   observation got misread as "every agent re-reads the plan". The `path` case should keep the tail.
   *Touches:* `extensions/antz-subagent.ts`.
@@ -130,3 +130,21 @@ anything got cheaper. Item 8 and the tool itself: `./eval/dispatch.sh`. Every ba
 `RUNS` before and after, and one green run proves nothing — this is a rate, not a boolean.
 
 **Order of work:** 7 → 1 and 2 → 4 and 5 → 6 and 8 → 9 and 10 only with data.
+
+## Status
+
+Items 1–8 are implemented, one commit each, on the branch `feat/features-01-08`; the
+per-item changes to `eval/run.sh` (the two-package scenario, and the verdict assertion in
+`C`) land with the measurement they belong to. Each commit is a state that can be checked
+out and installed on its own, which is how the numbers below are taken:
+
+| Batch | State | What it answers |
+|---|---|---|
+| `TAG=before RUNS=5 ./run.sh A B C D M` | `master` | the baseline every later number is compared against |
+| `TAG=item1 RUNS=5 ./run.sh M` … one per commit | the branch, cumulatively | which change moved turns, tokens and `.antz/` reads, per agent in `agents.tsv` |
+| `TAG=before RUNS=5 ./run.sh N H` | `master` | what a recon that names the commands is worth (item 3), and how often testers open `.antz/` (item 6) |
+| `TAG=after RUNS=5 ./run.sh A B C D M` | the tip | the quality net: blame routing, `D`, the cap in `C`, and the end state |
+
+The per-item batch is `M` because it is the cheapest scenario that reaches every role with
+the same workload every run; `A B C D` is the net and is run at the start and at the end,
+not between every item. One run proves nothing — these are rates.
