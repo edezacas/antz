@@ -103,7 +103,7 @@ Clarify has to run there because a subagent has no UI and could not ask you anyt
       +-------------------+
          on FAIL: the failing task alone — a test fault to the tester, an
          implementation fault to the implementer, never both. Max 3 attempts
-         per task, then it stops and reports.
+         per test file, then it stops and reports.
 ```
 
 1. **Recon.** `antz-scout` scans the repo and writes `.antz/00-recon.md`.
@@ -117,14 +117,19 @@ Clarify has to run there because a subagent has no UI and could not ask you anyt
    needs, and runs it again to watch it pass, placed and shaped by the architecture skill. Both
    stay on the one command that proves that task. Wider suites belong to step 5, not to the
    chain. Independent tasks are dispatched together as several chains in one call, so they run
-   in parallel, up to 4 at once and never two that would touch the same files.
+   in parallel, up to 4 at once and never two that would touch the same files. Two agents and not
+   one on purpose: the split is what makes the test's independence a fact rather than a discipline.
 5. **Verify.** Once every task is green, `antz-verifier` runs one time. It writes its verdict to
    `.antz/03-verdict.md`, which is what survives a round: PASS, or the failing tasks. If it
    passes it writes `docs/decisions/<slug>.md`, after which `.antz/` is deleted. If it fails,
    it names the task and whether the test or the implementation is at fault, and only that
    side goes back to work. A task an agent stopped on is cut or sent with a different
    approach, never resent unchanged. A fault in shape counts as an implementation fault.
-   After 3 attempts on the same task it stops and reports.
+   After 3 attempts on the same test file — a task cut or reframed counts against it too — it
+   stops and reports. The count travels with the test file and not the task, so a cut or a
+   reframe in place keeps spending the same three attempts. A reframe that renames or splits the
+   file starts a fresh count, which is accepted: counting per task is the version a cut escapes,
+   and the planner gives each task its own file.
 
 The dispatch tool exists only during a run. `/antz` offers it, and it is gone again once the
 decision is written and `.antz/` is deleted.
@@ -142,7 +147,8 @@ Agents inherit the session's model. To pin one, add a `model:` line to an instal
 file. On pi it is `provider/model` with an optional `:thinking` suffix, and on Claude Code and
 OpenCode it is that client's own syntax. `antz-scout` can run cheap and fast, `antz-tester`
 and `antz-implementer` need a capable coding model, and `antz-verifier` should be a different
-model family from the implementer so the two don't share blind spots.
+model family from the implementer so the two don't share blind spots. A cheaper verifier was
+judged against and left alone: its problem was the size of the round, not its price.
 
 A reinstall keeps the pin. The installer overwrites the file it ships and writes your
 `model:` line back. Delete the line and reinstall to reset it.
