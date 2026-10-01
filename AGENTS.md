@@ -52,16 +52,8 @@ its `frontmatter/<agent>.yaml` — plus its target and preflight in `adapters/in
 
 What is left to decide or to confirm, none of it blocking a run.
 
-- **The attempt cap does not cover a task that gets cut.** It counts attempts on the same task,
-  so splitting one turns it into new tasks that the cap has never seen. Counting per test file
-  would close it, at the cost of one more number for the orchestrator to carry.
-- **Four changes rest on one real run** (2026-09-29, 12 tasks, 5 h 30, followed by 2 h of repair
-  by hand): a bounded verifier round, the recon naming the run commands, "never grind", and a
-  task of one capability and one seam. The fixture cannot provoke any of them, and `eval/README.md`
-  says so next to what it did measure. To close them, run `/antz` in a real repo and read the
-  session back with `./eval/agents.sh --summary <session.jsonl>`: the verifier well under 102
-  turns, no reads under `.antz/` from a tester or an implementer, and `.antz/03-verdict.md`
-  written when a round fails.
-- **Judged against, and left alone**: merging `antz-tester` into `antz-implementer` (the split is
-  what makes the test's independence a fact rather than a discipline) and a cheaper verifier
-  model (its problem was the size of the round, not its price).
+- **Three changes from one real run** (2026-09-29, 12 tasks, 5 h 30, then 2 h of repair by hand) still
+  need a real repo to close: the verifier round, the recon naming its commands, and a plan of one
+  capability and one seam. "Never grind" no longer does. Close them by running `/antz` in a real repo
+  and reading the session back with `./eval/agents.sh --summary <session.jsonl>`; the verifier round
+  that motivated them spent 102 turns.
