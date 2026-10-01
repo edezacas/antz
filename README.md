@@ -75,8 +75,8 @@ Clarify has to run there because a subagent has no UI and could not ask you anyt
                                 |
                                 v
    you <--- asks --->  .-----------------.  asks only what changes the acceptance criteria
-  (the run's only      |   antz-clarify  |  -> .antz/01-spec.md
-   question)           '-----------------'
+  (the run's only      |  this session   |  using the antz-clarify skill
+   question)           '-----------------'  -> .antz/01-spec.md
                                 |
                                 v
                        .-----------------.  cuts the spec into small tasks, one test file each
