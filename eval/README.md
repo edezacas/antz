@@ -31,7 +31,9 @@ running the earlier phases. Each sandbox gets `.antz/` with `00-recon.md`,
 `/antz` straight to step 5, verification. One run is therefore about three
 dispatches, not six phases. (The `.gitignore` holding `*` that `antz-scout` would
 write is kept as `scenarios/spec/antz.gitignore` and renamed on copy: as a real
-`.gitignore` it would hide the seed — itself included — from this repo.)
+`.gitignore` it would hide the seed — itself included — from this repo.) `S` is the
+exception: its one task is unchecked, so `/antz` enters at step 4 and the
+tester → implementer chain runs before anything is verified.
 
 The trace is the dispatch order, read out of the session file (`pi --session`).
 The sequence of agents *is* the routing, and the routing is what a failure
@@ -47,12 +49,16 @@ green:
 | **M** | fixed recon, spec and plan, no fault, and a realistic `AGENTS.md` | enters at step 4, dispatches the four independent per-task chains in one parallel dispatch, and verifies; the measurement is its usage row, not the routing |
 | **N** | two packages with different runners, no package at the root, and a fixed plan whose criteria are too specific to guess | like `M`, four chains dispatched together and verified. What it adds is the two costs the one-module fixture cannot charge for: finding out how to run a suite, and a tester that wants the plan enough to open `.antz/`. It is the slowest scenario: a run that needs two repair rounds can outlast the default `TIMEOUT` of 1800 s — one of them was cut off there — so give it `TIMEOUT=3000` |
 | **H** | N, with a recon that names the exact commands | the control for N: what a recon that did its job is worth in the verifier's turns |
+| **S** | one task whose acceptance cannot be met: with `{ limit: 1000 }` the same call has to return 100 elements *and* throw a `RangeError`, and the seeded spec carries both | enters at step 4: the tester writes a red test, the implementer cannot take it green and stops, and the run may not close in PASS. What is asserted is the trace — no `(agent, task)` payload dispatched twice, so the task was cut or reframed rather than resent unchanged — plus the end state and a `TIMEOUT` that was not reached. It can burn the whole `TIMEOUT` when the rule fails, which is the failure it exists to catch |
 
 A and B are the same observable — one failing suite — and differ only in which
 side respects the acceptance criteria. That difference is the whole experiment:
 it isolates blame attribution from "make the red test go away". C is the only way
 to reach the cap deterministically; without the watcher, hitting three attempts
-depends on the model failing three times on its own.
+depends on the model failing three times on its own. `S` is the opposite and the
+other scenario that cannot converge: in C the fault is re-injected into a fix
+that would otherwise work, so the same task may legitimately go out again; in `S`
+nothing can work, and the question is whether the orchestrator resends it anyway.
 
 D routes exactly like A and differs only in the observable: the suite is green, so a
 verifier that stops at "the tests pass" passes D too, and the contract records that as
@@ -160,6 +166,7 @@ has no agent rows, which is the usual reason they would not.
 ```bash
 ./run.sh                       # A, B, C and D, once each
 ./run.sh A B                   # only those
+./run.sh S                     # the stopped task in front of the orchestrator
 RUNS=5 ./run.sh                # five repetitions of each
 TAG=before RUNS=5 ./run.sh M   # the full chain, to measure usage
 SKIP_FRESHNESS=1 ./run.sh
@@ -204,6 +211,16 @@ meaningless if the session's recorded `cwd` is anywhere else.
   actually overlapped is in the run's own `details` — each agent's `startedAt`
   and `endedAt` are persisted with the session — so it is checkable by hand and
   not checked here.
+- Not the stop itself. `S` reads a stop off the shape of the trace — the chain ran,
+  nothing went out twice, the run did not converge — and not off the subagent's
+  report. A run that stopped silently and one that explained what blocked it are the
+  same row, because nothing here reads the message that carries the explanation.
+- Not that the reframe was the right one. A task cut in two and a task nudged by one
+  word both count as "not resent unchanged": the assertion is the rule's letter, not
+  the judgement behind it. `S` also cannot tell a task cut at the first stop from one
+  reframed until the attempt cap — both leave the same trace — so its reason carries the
+  dispatch and repair counts instead of claiming which happened, and the per-agent step
+  counts in `agents.tsv` are what a reader checks by hand when it matters.
 
 ## What it has shown so far
 
@@ -295,7 +312,7 @@ judged against the spec, the shape, and the decision document.
 | the verdict on disk | a round that died before its repair took the verdict with it, and finishing by hand cost a real run 2 hours and 36.7 M tokens | `C` asserts the file: 35 lines naming the failing task. A verifier call that died on a proxy timeout had its verdict read back from disk and its repairs routed |
 | a bounded verifier round | a real round spent 102 turns and 31 minutes, most of its commands spent working out how to run two suites | verifier turns per round in `A`/`B`/`D`, 11.8 / 13.5 / 15.0 → 13.5 / 11.0 / 14.5: no reduction the fixture can show |
 | the recon names the commands | the phase whose job is to read the repo should write down how to run it | `N` against its control `H`: 22 turns per round against 25, because here the discovery cost is two `package.json` |
-| never grind, and a stopped task cut or reframed rather than resent | one implementer spent 147 steps and 70 minutes on one task, 31 % of a run, with nothing saying when to stop | nothing: no run reached it, and `C` still spends its three attempts. The case it exists for is not reachable here |
+| never grind, and a stopped task cut or reframed rather than resent | one implementer spent 147 steps and 70 minutes on one task, 31 % of a run, with nothing saying when to stop | nothing: no run reached it, and `C` still spends its three attempts. The fixture had nothing to stop an agent on, and still does not; a stopped task is reachable since, via `S`, which was added after this batch |
 | a task is one capability and one seam | that same plan's T8 held three capabilities and 18 tests | not reachable: the eval seeds a plan, it never plans |
 | the task handed over whole | that run's testers opened `.antz/` 34 times, a 21 KB recon read each time | reads under `.antz/` in `agents.tsv`: 1.14 and 1.33 per run, 16 in 13 agent runs, → none in 10 |
 | one row per agent | a `chains` call of eight agents was a single usage row, and the role is what a cost question is about | `dispatch.sh`, and the reconcile line in the summary |
@@ -324,10 +341,17 @@ The net held. `A`, `B` and `D` PASS at the tip with the blame routed to the righ
 (`verifier → implementer → verifier`, `verifier → tester → verifier`, and the shape fault
 rejected), and `C` stops at three attempts with `.antz/` and its verdict still on disk.
 
+Two of those five cases can be measured since, neither for free. `S` puts a stopped
+task in front of the orchestrator, and `C` now names in its reason how many payloads it
+dispatched twice — the same rule read from its two sides, one grinding to the cap and
+one cutting the task. Neither is measured yet: `./run.sh S` has not been paid for.
+
 ## Adding a scenario
 
 Add `scenarios/<X>/src/…` with the files that differ from `fixture/`, plus a
-`case` in `run_once` that asserts the contract. Keep the fixture *blind*: no
+`case` in `run_once` that asserts the contract. A scenario that seeds its own plan
+puts it in `scenarios/<name>/seed/` and gets its own branch in `run_once`, the way
+`stop` and `mono` do. Keep the fixture *blind*: no
 comment, filename or seed text may hint at which side is at fault, or the eval
 measures the hint instead of the loop. C is the example of a scenario that
 borrows another's files and adds a perturbation, rather than restating them. A
