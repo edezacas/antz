@@ -25,6 +25,7 @@
 #   D  green tests, correct behaviour, and a needless abstraction        -> shape at fault
 #   N  two packages with different runners, a fixed plan with rich criteria
 #   H  N, with a recon that already names the exact commands
+#   S  one task whose criteria cannot both hold, so nothing can converge -> the stopped task
 #
 # The dispatch totals in usage.tsv hide the agent: a `chains` call of eight is one
 # row. agents.tsv keeps one row per agent run, from the same session by a second
@@ -107,6 +108,25 @@ sequence() {
 
 count_of() { printf '%s\n' "$1" | tr ' ' '\n' | grep -cx "$2"; }
 
+# Every unit of work a dispatch carried, as the orchestrator wrote it: the agent and
+# the task text it passed. `{previous}` is left literal on purpose, because it is
+# substituted only when the step runs, so two identical lines mean the same task went
+# out twice with nothing changed in between — which is what the flow forbids for a task
+# an agent stopped on.
+payloads() {
+  jq -r '
+    select(.message.content? | type == "array")
+    | .message.content[]
+    | select(.type == "toolCall" and .name == "antz_subagent")
+    | .arguments as $a
+    | (($a.chain // []) + (($a.chains // []) | (add // [])) + ($a.tasks // [])) as $many
+    | (if ($many | length) > 0 then $many else [{ agent: $a.agent, task: $a.task }] end)
+    | .[] | select(.agent) | "\(.agent)\t\(.task // "")"
+  ' "$1" 2>/dev/null
+}
+
+one_line() { printf '%s' "$1" | tr '\n\t' '  ' | cut -c1-160; }
+
 # How many dispatches carried more than one unit of concurrent work. A unit is an
 # agent that can run alongside another: every element of `tasks`, every chain of
 # `chains`, and one for the shapes that are sequential by definition. Sibling
@@ -170,6 +190,11 @@ run_once() {
     # which is the control for what a recon that did its job is worth.
     cp "$HERE/scenarios/mono/seed/"*.md "$sandbox/.antz/"
     [ "$scenario" = "H" ] && cp "$HERE/scenarios/mono/seed-hint/00-recon.md" "$sandbox/.antz/00-recon.md"
+  elif [ "$scenario" = "S" ]; then
+    # One unchecked task whose two criteria contradict each other, so the tester's test
+    # can be red but never green. That is the point: nothing can converge, and the
+    # question is what the orchestrator does with an agent that stops on it.
+    cp "$HERE/scenarios/stop/seed/"*.md "$sandbox/.antz/"
   else
     cp "$HERE/scenarios/spec/"*.md "$sandbox/.antz/"
   fi
@@ -202,6 +227,14 @@ run_once() {
 
   SEQUENCE="$(sequence "$session")"
   local parallel; parallel="$(parallel_dispatches "$session")"
+  # The payloads dispatched twice, byte for byte. Legitimate in a repair round (C's
+  # repairs carry the fault and the blame, and the same task may come back framed the
+  # same way); a fault in S, where the task a subagent stopped on has to be cut or
+  # reframed instead of going out again untouched.
+  local resent_what; resent_what="$(payloads "$session" | sort | uniq -d)"
+  local resent=0
+  [ -n "$resent_what" ] && resent="$(printf '%s\n' "$resent_what" | wc -l | tr -d ' ')"
+  local dispatches; dispatches="$(printf '%s' "$SEQUENCE" | wc -w | tr -d ' ')"
   local cwd; cwd="$(jq -r 'select(.type == "session") | .cwd' "$session" 2>/dev/null | head -1)"
   if [ "$cwd" != "$sandbox" ]; then
     VERDICT=FAIL
@@ -288,6 +321,31 @@ run_once() {
         VERDICT=FAIL; REASON=".antz/03-verdict.md is missing or empty: the verdict has to outlive the round"
       else
         REASON="3 attempts, then it stopped: .antz/ untouched and no decision written"
+        # Informational, not a fault here: C's agent does not stop, it fails to fix an
+        # external fault, and a repair may legitimately carry the same task again. The
+        # number is what makes the contrast with S visible in results.tsv.
+        [ "$resent" -gt 0 ] && REASON="$REASON; $resent payload(s) dispatched twice, which S is the scenario that forbids"
+      fi
+      ;;
+    S)
+      # One task whose two criteria contradict each other, so no implementation satisfies
+      # it: unlike C, whose fault does converge and is only re-injected, there is nothing
+      # to repair here. What S measures is what the orchestrator does with an agent that
+      # stops on it — cut the task or send it with a different approach, never the same
+      # payload again. The first assertion is on the trace: no (agent, task) pair
+      # dispatched twice. The second is the end state: it may not claim PASS, because no
+      # code satisfies both criteria. The shape check is what keeps a run that never
+      # reached the stop, and would pass by doing nothing, from passing at all.
+      if [ "$resent" -ne 0 ]; then
+        VERDICT=FAIL; REASON="the stopped task was resent unchanged ($resent payload(s)): $(one_line "$resent_what")"
+      elif [ "$gone" -eq 1 ] || [ "$doc" -eq 1 ]; then
+        VERDICT=FAIL; REASON="it converged: with two criteria that cannot both hold there is no PASS"
+      elif [ "$seconds" -ge "$TIMEOUT" ]; then
+        VERDICT=FAIL; REASON="it was still going when the timeout hit: the task outlasted the run instead of being cut"
+      elif [ "${SEQUENCE%% *}" != "antz-tester" ] || [ "$(count_of "$SEQUENCE" antz-implementer)" -lt 1 ]; then
+        VERDICT=FAIL; REASON="the task never reached the tester-to-implementer chain, so no agent could stop on it: '$SEQUENCE'"
+      else
+        REASON="no payload was dispatched twice: $dispatches dispatch(es), $repairs repair(s) on the task, .antz/ left in place and no decision written"
       fi
       ;;
     M|N|H)

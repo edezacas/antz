@@ -103,8 +103,11 @@ What is left to decide or to confirm, none of it blocking a run.
   so splitting one turns it into new tasks that the cap has never seen. Counting per test file
   would close it, at the cost of one more number for the orchestrator to carry.
 - **A stopped agent is a decision point, not a retry.** The prompt forbids resending a task
-  unchanged, so the orchestrator has to cut it or reframe it. No scenario provokes a blocker,
-  which is why the rule is unmeasured.
+  unchanged, so the orchestrator has to cut it or reframe it. `eval/scenarios/stop/` seeds a task
+  whose two criteria cannot both hold, and `./run.sh S` measures the rule off the trace — no
+  `(agent, task)` payload twice — rather than off the report. Unmeasured until that batch is paid
+  for; `C` now says in its reason how many payloads it sent twice, which is the same rule from
+  the other side.
 - **Four changes rest on one real run** (2026-09-29, 12 tasks, 5 h 30, followed by 2 h of repair
   by hand): a bounded verifier round, the recon naming the run commands, "never grind", and a
   task of one capability and one seam. The fixture cannot provoke any of them, and `eval/README.md`
