@@ -110,10 +110,12 @@ count_of() { printf '%s\n' "$1" | tr ' ' '\n' | grep -cx "$2"; }
 
 # Every unit of work a dispatch carried, as the orchestrator wrote it: the agent and
 # the task text it passed. `{previous}` is left literal on purpose, because it is
-# substituted only when the step runs, so two identical lines mean the same task went
+# substituted only when the step runs, so two identical records mean the same task went
 # out twice with nothing changed in between — which is what the flow forbids for a task
-# an agent stopped on.
-payloads() {
+# an agent stopped on. `@json` keeps one line per record: a task carries newlines, so
+# without it a line-wise `uniq -d` would count the boilerplate every task shares
+# (`{previous}`, the criteria block) as a resend.
+payload_keys() {
   jq -r '
     select(.message.content? | type == "array")
     | .message.content[]
@@ -121,7 +123,7 @@ payloads() {
     | .arguments as $a
     | (($a.chain // []) + (($a.chains // []) | (add // [])) + ($a.tasks // [])) as $many
     | (if ($many | length) > 0 then $many else [{ agent: $a.agent, task: $a.task }] end)
-    | .[] | select(.agent) | "\(.agent)\t\(.task // "")"
+    | .[] | select(.agent) | "\(.agent)\t\(.task // "")" | @json
   ' "$1" 2>/dev/null
 }
 
@@ -231,7 +233,7 @@ run_once() {
   # repairs carry the fault and the blame, and the same task may come back framed the
   # same way); a fault in S, where the task a subagent stopped on has to be cut or
   # reframed instead of going out again untouched.
-  local resent_what; resent_what="$(payloads "$session" | sort | uniq -d)"
+  local resent_what; resent_what="$(payload_keys "$session" | sort | uniq -d)"
   local resent=0
   [ -n "$resent_what" ] && resent="$(printf '%s\n' "$resent_what" | wc -l | tr -d ' ')"
   local dispatches; dispatches="$(printf '%s' "$SEQUENCE" | wc -w | tr -d ' ')"
@@ -329,23 +331,24 @@ run_once() {
       ;;
     S)
       # One task whose two criteria contradict each other, so no implementation satisfies
-      # it: unlike C, whose fault does converge and is only re-injected, there is nothing
-      # to repair here. What S measures is what the orchestrator does with an agent that
-      # stops on it — cut the task or send it with a different approach, never the same
-      # payload again. The first assertion is on the trace: no (agent, task) pair
-      # dispatched twice. The second is the end state: it may not claim PASS, because no
-      # code satisfies both criteria. The shape check is what keeps a run that never
-      # reached the stop, and would pass by doing nothing, from passing at all.
+      # it. What S measures is what the orchestrator does with an agent that stops on it —
+      # cut the task or send it with a different approach, never the same payload again.
+      # The assertion is the trace: no (agent, task) pair dispatched twice, the chain was
+      # reached, and the run ended under its own steam. The end state is reported and not
+      # asserted, because a task reframed by dropping the criterion that contradicts the
+      # prompt is satisfiable: a run that honours the rule legitimately closes in PASS, and
+      # the harness cannot tell that reframe from a task cut and left undone — which is why
+      # the per-agent turns in agents.tsv are read by hand when it matters.
       if [ "$resent" -ne 0 ]; then
         VERDICT=FAIL; REASON="the stopped task was resent unchanged ($resent payload(s)): $(one_line "$resent_what")"
-      elif [ "$gone" -eq 1 ] || [ "$doc" -eq 1 ]; then
-        VERDICT=FAIL; REASON="it converged: with two criteria that cannot both hold there is no PASS"
       elif [ "$seconds" -ge "$TIMEOUT" ]; then
         VERDICT=FAIL; REASON="it was still going when the timeout hit: the task outlasted the run instead of being cut"
       elif [ "${SEQUENCE%% *}" != "antz-tester" ] || [ "$(count_of "$SEQUENCE" antz-implementer)" -lt 1 ]; then
         VERDICT=FAIL; REASON="the task never reached the tester-to-implementer chain, so no agent could stop on it: '$SEQUENCE'"
       else
-        REASON="no payload was dispatched twice: $dispatches dispatch(es), $repairs repair(s) on the task, .antz/ left in place and no decision written"
+        local end="left .antz/ in place and no decision written"
+        { [ "$gone" -eq 1 ] || [ "$doc" -eq 1 ]; } && end="closed in PASS anyway, .antz/ deleted and the decision written"
+        REASON="no payload was dispatched twice: $dispatches dispatch(es), $repairs repair(s) on the task, $end"
       fi
       ;;
     M|N|H)

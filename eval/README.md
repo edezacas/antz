@@ -49,16 +49,18 @@ green:
 | **M** | fixed recon, spec and plan, no fault, and a realistic `AGENTS.md` | enters at step 4, dispatches the four independent per-task chains in one parallel dispatch, and verifies; the measurement is its usage row, not the routing |
 | **N** | two packages with different runners, no package at the root, and a fixed plan whose criteria are too specific to guess | like `M`, four chains dispatched together and verified. What it adds is the two costs the one-module fixture cannot charge for: finding out how to run a suite, and a tester that wants the plan enough to open `.antz/`. It is the slowest scenario: a run that needs two repair rounds can outlast the default `TIMEOUT` of 1800 s — one of them was cut off there — so give it `TIMEOUT=3000` |
 | **H** | N, with a recon that names the exact commands | the control for N: what a recon that did its job is worth in the verifier's turns |
-| **S** | one task whose acceptance cannot be met: with `{ limit: 1000 }` the same call has to return 100 elements *and* throw a `RangeError`, and the seeded spec carries both | enters at step 4: the tester writes a red test, the implementer cannot take it green and stops, and the run may not close in PASS. What is asserted is the trace — no `(agent, task)` payload dispatched twice, so the task was cut or reframed rather than resent unchanged — plus the end state and a `TIMEOUT` that was not reached. It can burn the whole `TIMEOUT` when the rule fails, which is the failure it exists to catch |
+| **S** | one task whose acceptance cannot be met: with `{ limit: 1000 }` the same call has to return 100 elements *and* throw a `RangeError`, and the seeded spec carries both | enters at step 4: the tester writes a red test, the implementer cannot take it green and stops. What is asserted is the trace — no `(agent, task)` payload dispatched twice, so the task was cut or reframed rather than resent unchanged — that the chain was reached, and a `TIMEOUT` that was not reached. It can burn the whole `TIMEOUT` when the rule fails, which is the failure it exists to catch. The end state is reported and not asserted: a task reframed by dropping the criterion the prompt contradicts is satisfiable, so a run that honours the rule closes in PASS, as all three measured runs did |
 
 A and B are the same observable — one failing suite — and differ only in which
 side respects the acceptance criteria. That difference is the whole experiment:
 it isolates blame attribution from "make the red test go away". C is the only way
 to reach the cap deterministically; without the watcher, hitting three attempts
-depends on the model failing three times on its own. `S` is the opposite and the
-other scenario that cannot converge: in C the fault is re-injected into a fix
-that would otherwise work, so the same task may legitimately go out again; in `S`
-nothing can work, and the question is whether the orchestrator resends it anyway.
+depends on the model failing three times on its own. `S` is the opposite: its task
+cannot be met as written, and the question is whether the orchestrator resends it
+anyway, cuts it or sends it with a different approach. It is not the reverse of `C` on
+the end state: C's fault is re-injected so no repair can hold, and the run stops with
+`.antz/` in place, while a task reframed to drop the criterion the prompt contradicts is
+satisfiable and closes in PASS — which is why `S` asserts the trace and not the ending.
 
 D routes exactly like A and differs only in the observable: the suite is green, so a
 verifier that stops at "the tests pass" passes D too, and the contract records that as
@@ -212,7 +214,7 @@ meaningless if the session's recorded `cwd` is anywhere else.
   and `endedAt` are persisted with the session — so it is checkable by hand and
   not checked here.
 - Not the stop itself. `S` reads a stop off the shape of the trace — the chain ran,
-  nothing went out twice, the run did not converge — and not off the subagent's
+  nothing went out twice, the `TIMEOUT` was not hit — and not off the subagent's
   report. A run that stopped silently and one that explained what blocked it are the
   same row, because nothing here reads the message that carries the explanation.
 - Not that the reframe was the right one. A task cut in two and a task nudged by one
@@ -220,7 +222,11 @@ meaningless if the session's recorded `cwd` is anywhere else.
   the judgement behind it. `S` also cannot tell a task cut at the first stop from one
   reframed until the attempt cap — both leave the same trace — so its reason carries the
   dispatch and repair counts instead of claiming which happened, and the per-agent step
-  counts in `agents.tsv` are what a reader checks by hand when it matters.
+  counts in `agents.tsv` are what a reader checks by hand when it matters. Nor can it
+  tell a reframe that resolves the contradiction from a task cut and left undone: a task
+  reframed by dropping the criterion the prompt contradicts is satisfiable, so a run that
+  honours the rule closes in PASS. That is why `S` asserts the trace and reports the end
+  state instead of pinning it.
 
 ## What it has shown so far
 
@@ -341,10 +347,23 @@ The net held. `A`, `B` and `D` PASS at the tip with the blame routed to the righ
 (`verifier → implementer → verifier`, `verifier → tester → verifier`, and the shape fault
 rejected), and `C` stops at three attempts with `.antz/` and its verdict still on disk.
 
-Two of those five cases can be measured since, neither for free. `S` puts a stopped
-task in front of the orchestrator, and `C` now names in its reason how many payloads it
-dispatched twice — the same rule read from its two sides, one grinding to the cap and
-one cutting the task. Neither is measured yet: `./run.sh S` has not been paid for.
+`S` has been paid for since: three runs, and the first measurement of the rule from the
+other side of `C`. Under the contract it was written with all three FAIL, and not one of
+the failures was the rule's. Two were a resend count of 11 and 16 that was never a
+payload count — `payloads()` compared the trace a line at a time while a task carries
+newlines, so `{previous}` and the criteria block every task shares read as a resend; per
+record the count is zero in all three runs. The third was `S/1` converging: the
+orchestrator read the contradiction and amended `.antz/01-spec.md` and `02-plan.md`
+*before* the first dispatch, so no agent ever stopped on it. The other two did stop —
+`S/2`'s implementer at 9 turns ("not fixable by any coherent implementation, so I stopped
+rather than grind"), `S/3`'s at 12, reverting `src/pagination.js` and proving the block by
+runs — and the orchestrator cut the `RangeError` criterion, re-dispatched a reframed
+tester → implementer chain (6/7 and 6/7 turns) and closed in PASS with the decision
+written. No run resent a payload, none spent more than 4 repairs, none came near the
+`TIMEOUT`, and no implementer ground: 7, 9→7, 12→7 turns. What the batch proves is the
+rule's letter, 3/3; that `S` could not say so was two faults in `S` itself, the line-wise
+comparison and the end-state assertion, both fixed after it. The same three traces
+re-judge as 3/3.
 
 ## Adding a scenario
 
