@@ -50,6 +50,10 @@ set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
 OUT="$HERE/out"
+# The sandbox sits outside the repo. Inside `eval/`, one directory up is the harness that
+# seeds the fault and the comments that name it: an agent read exactly that in one run, so
+# the run was no longer blind. Sessions, logs and the tsv stay in `out/`.
+SANDBOX="${ANTZ_EVAL_SANDBOX:-${TMPDIR:-/tmp}/antz-eval}"
 AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 RUNS="${RUNS:-1}"
 TIMEOUT="${TIMEOUT:-1800}"
@@ -164,7 +168,7 @@ usage_of() {
 # One scenario, one run. Leaves the verdict in VERDICT/REASON/SEQUENCE/SECONDS_TAKEN.
 run_once() {
   local scenario="$1" run="$2" seed="$1"
-  local sandbox="$OUT/$scenario-$run" broken="$OUT/$scenario-$run.broken.js"
+  local sandbox="$SANDBOX/$scenario-$run" broken="$OUT/$scenario-$run.broken.js"
   # The session file stays outside the sandbox: inside it, an agent poking at the
   # repo would find the orchestrator's own transcript and the harness's intent.
   local session="$OUT/$scenario-$run.session.jsonl" watcher="" start seconds
@@ -309,20 +313,27 @@ run_once() {
       ;;
     C)
       # The cap is on attempts, not on verifier rounds: the orchestrator may
-      # re-verify between them (it usually does) or not.
+      # re-verify between them (it usually does) or not. ≤ 3, and not exactly 3: the
+      # watcher cannot be repaired away, so an agent that judges the environment and
+      # stops — which is what "never grind" asks for — closes the round before the cap
+      # is spent. Four runs took 1, 2, 3 and 3 attempts. Both endings are the design
+      # working; what still fails is a run that goes past the cap, converges, or repairs
+      # nothing at all.
       if [ "$doc" -eq 1 ] || [ "$gone" -eq 0 ]; then
         VERDICT=FAIL; REASON="it converged: with the fault re-injected there can be no PASS"
       elif [ "$repairs" -gt 3 ]; then
         VERDICT=FAIL; REASON="it went past the cap: $repairs repairs"
-      elif [ "$repairs" -lt 3 ]; then
-        VERDICT=FAIL; REASON="it gave up after $repairs attempts, so the cap was never exercised"
+      elif [ "$repairs" -lt 1 ]; then
+        VERDICT=FAIL; REASON="nothing was repaired, so no attempt could stop on the fault: '$SEQUENCE'"
       elif [ "${SEQUENCE%% *}" != "antz-verifier" ]; then
         VERDICT=FAIL; REASON="the run did not enter at step 5: '${SEQUENCE%% *}' ran first"
       elif [ ! -s "$sandbox/.antz/03-verdict.md" ]; then
         # The verdict is what survives a round that dies before its repair.
         VERDICT=FAIL; REASON=".antz/03-verdict.md is missing or empty: the verdict has to outlive the round"
       else
-        REASON="3 attempts, then it stopped: .antz/ untouched and no decision written"
+        local spent="$repairs attempt(s), then it stopped"
+        [ "$repairs" -lt 3 ] && spent="$repairs attempt(s) and an agent stopped on the unfixable fault"
+        REASON="$spent: .antz/ untouched, no decision written"
         # Informational, not a fault here: C's agent does not stop, it fails to fix an
         # external fault, and a repair may legitimately carry the same task again. The
         # number is what makes the contrast with S visible in results.tsv.
@@ -347,7 +358,8 @@ run_once() {
         VERDICT=FAIL; REASON="the task never reached the tester-to-implementer chain, so no agent could stop on it: '$SEQUENCE'"
       else
         local end="left .antz/ in place and no decision written"
-        { [ "$gone" -eq 1 ] || [ "$doc" -eq 1 ]; } && end="closed in PASS anyway, .antz/ deleted and the decision written"
+        # `gone` is 1 when `.antz/` is still there, naming the opposite of what it says.
+        { [ "$gone" -eq 0 ] || [ "$doc" -eq 1 ]; } && end="closed in PASS anyway, .antz/ deleted and the decision written"
         REASON="no payload was dispatched twice: $dispatches dispatch(es), $repairs repair(s) on the task, $end"
       fi
       ;;
@@ -374,7 +386,7 @@ run_once() {
 
 SCENARIOS=("$@")
 [ "${#SCENARIOS[@]}" -eq 0 ] && SCENARIOS=(A B C D)
-mkdir -p "$OUT"
+mkdir -p "$OUT" "$SANDBOX"
 RESULTS="$OUT/results.tsv"
 [ -f "$RESULTS" ] || printf 'scenario\trun\tverdict\tsequence\tdetail\tseconds\n' >"$RESULTS"
 # Usage lives in its own file so results.tsv keeps its fixed columns and rows

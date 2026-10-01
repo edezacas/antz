@@ -53,9 +53,10 @@ green:
 
 A and B are the same observable — one failing suite — and differ only in which
 side respects the acceptance criteria. That difference is the whole experiment:
-it isolates blame attribution from "make the red test go away". C is the only way
-to reach the cap deterministically; without the watcher, hitting three attempts
-depends on the model failing three times on its own. `S` is the opposite: its task
+it isolates blame attribution from "make the red test go away". C is the scenario that
+reaches the cap, but whether it is reached is a rate: the watcher cannot be repaired away, so
+an agent that judges the environment unfixable and stops — which "never grind" asks for —
+closes the round first. Four runs took 1, 2, 3 and 3 attempts. `S` is the opposite: its task
 cannot be met as written, and the question is whether the orchestrator resends it
 anyway, cuts it or sends it with a different approach. It is not the reverse of `C` on
 the end state: C's fault is re-injected so no repair can hold, and the run stops with
@@ -177,14 +178,18 @@ SKIP_FRESHNESS=1 ./run.sh
 Roughly 2–15 minutes per run depending on how many repair rounds happen; `M` is
 at the top of that range because it runs the whole chain. Every run appends a row
 to `out/results.tsv`, a usage row to `out/usage.tsv` and one row per agent run to
-`out/agents.tsv`, and leaves the sandbox, the log and the session trace in `out/`,
-all of it gitignored.
+`out/agents.tsv`, and leaves the log and the session trace in `out/`, all of it
+gitignored. The sandbox is not there: it is built under
+`${ANTZ_EVAL_SANDBOX:-${TMPDIR:-/tmp}/antz-eval}`, outside the repo, because from inside
+`eval/` the harness and the seed comments that name the fault are one directory up, and an
+agent read them.
 
 The `.tsv` files are the record; the rest is only there to inspect a past run and
 costs a few megabytes a batch. To reclaim it without losing the numbers:
 
 ```bash
 find out -mindepth 1 -maxdepth 1 ! -name '*.tsv' -exec rm -rf {} +
+rm -rf "${ANTZ_EVAL_SANDBOX:-${TMPDIR:-/tmp}/antz-eval}"
 ```
 
 It measures **what is installed** in `~/.pi/agent`, not the working tree, and
@@ -364,6 +369,32 @@ written. No run resent a payload, none spent more than 4 repairs, none came near
 rule's letter, 3/3; that `S` could not say so was two faults in `S` itself, the line-wise
 comparison and the end-state assertion, both fixed after it. The same three traces
 re-judge as 3/3.
+
+The `cut` scenario was built to ask the other half of the same question — whether the cap holds
+when a task is cut rather than resent — and then dropped. Its first batch was judged by a counter
+with a bug: it counted the test path's mentions in the task text, and a task names its file twice
+(`Test:` and `Touches:`), so two attempts were recorded as four and `cut/2` and `cut/3` sit in
+`results.tsv` as FAIL. Re-read by the fixed counter those two traces are 2 implementer attempts
+each, inside the cap. The seed was then strengthened with the red test on disk, and it still could not
+provoke the ladder: in two of three runs the orchestrator read the seeded test at step 4, saw the
+contradictions and stopped to ask instead of dispatching, and in the third the tester pared the
+seeded test down to one side of each pair and the run converged in two attempts. The model resolves
+the contradiction — by refusing it or by normalising the spec — before the cap is in play, so no
+seed here measures the cut hole, and a scenario that cannot provoke what it promises is worse than
+none. The two rows it left are re-checkable traces; they stay in the file as the record of what a
+buggy counter said.
+
+The two `C` rows that read FAIL under the old "exactly three attempts" reading are the same shape:
+they judge a run by a rule the design never held, since a stopped agent closing the round early is
+the behaviour `never grind` asks for. The harness now accepts ≤ 3 attempts and fails only a run
+that passes the cap, converges, or never repairs anything.
+
+One reporting bug was fixed on the way: `gone` is 1 while `.antz/` is still there, and the `S`
+branch's closing sentence read it as if it meant the opposite, so a run that left `.antz/` with no
+decision printed "closed in PASS anyway". The verdict never depended on it, because `S` asserts the
+trace and only reports the ending; the sentence was wrong. Every earlier `S` row happens to be a run
+whose decision was written, where the sentence was right, so only `S/1` of the last batch re-reads
+the other way, as "left `.antz/` in place and no decision written".
 
 ## Adding a scenario
 
