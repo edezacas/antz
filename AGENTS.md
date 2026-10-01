@@ -57,3 +57,7 @@ What is left to decide or to confirm, none of it blocking a run.
   capability and one seam. "Never grind" no longer does. Close them by running `/antz` in a real repo
   and reading the session back with `./eval/agents.sh --summary <session.jsonl>`; the verifier round
   that motivated them spent 102 turns.
+- **Whether a dispatch may run in the background**, so the orchestrator's turn is free while
+  children work and the live panel has a surface of its own. Explored and designed, not
+  implemented: `docs/background-subagents.md` has the API seams, the design, what it breaks and the
+  two decisions it is waiting on. Nothing blocks a run either way.
