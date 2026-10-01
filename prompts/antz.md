@@ -1,5 +1,5 @@
 ---
-description: /antz "<prompt>" - turn a vague prompt into a verified, TDD-built feature.
+description: /antz "<prompt>" turns a vague prompt into a verified, TDD-built feature.
 argument-hint: "<prompt>"
 ---
 
