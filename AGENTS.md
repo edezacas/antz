@@ -52,11 +52,11 @@ its `frontmatter/<agent>.yaml` — plus its target and preflight in `adapters/in
 
 What is left to decide or to confirm, none of it blocking a run.
 
-- **Three changes from one real run** (2026-09-29, 12 tasks, 5 h 30, then 2 h of repair by hand) still
-  need a real repo to close: the verifier round, the recon naming its commands, and a plan of one
-  capability and one seam. "Never grind" no longer does. Close them by running `/antz` in a real repo
-  and reading the session back with `./eval/agents.sh --summary <session.jsonl>`; the verifier round
-  that motivated them spent 102 turns.
+- **The bounded verifier round is still open.** A second real run (bluplat, 2026-10-02, 2 h, 14 tasks)
+  spent 48 turns / 435 s in one round and PASSed on the first try, well under the 102 turns that
+  motivated the change — but no repair round ever ran, so the cap that makes a round bounded was never
+  reached, and 48 exceeds the "couple of dozen" the rule names. Close it with a run whose verifier
+  repairs after blaming a side, read back with `./eval/agents.sh --summary <session.jsonl>`.
 - **Whether a dispatch may run in the background**, so the orchestrator's turn is free while
   children work and the live panel has a surface of its own. Explored and designed, not
   implemented: `docs/background-subagents.md` has the API seams, the design, what it breaks and the
