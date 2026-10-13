@@ -53,8 +53,6 @@ green:
 | **C** | A, plus a watcher re-injecting the fault every 2 s | ≤ 3 repairs, then stop: `.antz/` untouched, `.antz/03-verdict.md` written, no decision |
 | **D** | green tests and correct behaviour, but a needless abstraction: a one-implementation policy class behind a wrapper and a factory | `verifier → implementer → verifier`, same end state: the shape is at fault, so the repair is an implementation fault |
 | **M** | fixed recon, spec and plan, no fault, and a realistic `AGENTS.md` | enters at step 4, dispatches the four independent per-task chains in one parallel dispatch, and verifies; the measurement is its usage row, not the routing |
-| **N** | two packages with different runners, no package at the root, and a fixed plan whose criteria are too specific to guess | like `M`, four chains dispatched together and verified. What it adds is the two costs the one-module fixture cannot charge for: finding out how to run a suite, and a tester that wants the plan enough to open `.antz/`. It is the slowest scenario: a run that needs two repair rounds can outlast the default `TIMEOUT` of 1800 s — one of them was cut off there — so give it `TIMEOUT=3000` |
-| **H** | N, with a recon that names the exact commands | the control for N: what a recon that did its job is worth in the verifier's turns |
 | **S** | one task whose acceptance cannot be met: with `{ limit: 1000 }` the same call has to return 100 elements *and* throw a `RangeError`, and the seeded spec carries both | enters at step 4: the tester writes a red test, the implementer cannot take it green and stops. What is asserted is the trace — no `(agent, task)` payload dispatched twice, so the task was cut or reframed rather than resent unchanged — that the chain was reached, and a `TIMEOUT` that was not reached. It can burn the whole `TIMEOUT` when the rule fails, which is the failure it exists to catch. The end state is reported and not asserted: a task reframed by dropping the criterion the prompt contradicts is satisfiable, so a run that honours the rule closes in PASS, as all three measured runs did |
 
 A and B are the same observable — one failing suite — and differ only in which
@@ -212,6 +210,40 @@ excluded from that check on purpose: the installer preserves a local pin.
 `pi` is also run from inside each sandbox, and the run is discarded as
 meaningless if the session's recorded `cwd` is anywhere else.
 
+## Which scenarios a change needs
+
+Each scenario owns a contract no other arm asserts, so a change needs the arm that can fail
+on it and not the rest: a scenario that cannot observe the edit cannot catch a regression in
+it, and can only cost. This is the inner loop; the full `A B C D` stays the outer one —
+before an install, or when an edit moves the routing broadly.
+
+| The edit | What it can break | The run that can see it |
+|---|---|---|
+| `prompts/antz.md` — blaming a side and routing the repair | the blame goes to the wrong side, or nothing is routed | **A, B** |
+| `prompts/antz.md` — the attempt cap, *never grind*, cut-or-reframe | a payload is resent unchanged, or the cap never stops the round | **C, S** |
+| `prompts/antz.md` — who closes the run and deletes `.antz/` | `.antz/` gone with no decision, or kept on PASS | **A, B, C** |
+| `skills/antz-architecture` | a green change keeps a shape nobody judges | **D** |
+| `agents/antz-verifier.md` | the verdict does not outlive its round; the verifier repairs the fault itself | **C**, and **A** or **B** |
+| `agents/antz-tester.md`, `agents/antz-implementer.md` — the handover | the tester reopens `.antz/`; the task does not arrive whole | **M, S**, plus the `antzReads` column of `agents.tsv` |
+| `extensions/antz-subagent.ts` | the four shapes, the cap of four, the per-chain handoff | **`dispatch.sh`** (free), then **M** for the real thing |
+| `skills/antz-tdd`, the test the tester writes | the test is written against something other than the plan's seam | **M** |
+| docs, eval or README alone | nothing that reaches a client | none — `prompts.sh` and `judge.test.mjs` only |
+
+The three free instruments run first whatever the edit: `prompts.sh` (a second) catches a
+budget or a wiring mistake, `judge.test.mjs` (a second) the counters, `dispatch.sh` (three
+seconds) the tool. They are there so the paid batch is the last resort rather than the first.
+
+A single arm costs 5–12 minutes and ~120–430 k tokens, against ~30 minutes and ~850 k for
+`A B C D`. Editing `skills/antz-architecture` and running all four is ~690 k tokens that
+cannot fail on the edit: A and B seed a red suite, where the verifier is busy with blame,
+and C the same with a watcher, while **D** is the only arm whose seed — a green change with
+one needless abstraction — makes the architecture check reachable at all.
+
+The map is the contracts in `judge.mjs` read backwards, so it is as accurate as they are and
+no more: it says which arm *can* observe an edit, not that the edit is safe. One paragraph of
+`prompts/antz.md` can carry two of the rows above — union them, and keep the full batch when
+in doubt.
+
 ## What it does not prove
 
 - Not the happy path: recon, clarify and planning are out of both. A/B/C start
@@ -335,7 +367,7 @@ judged against the spec, the shape, and the decision document.
 |---|---|---|
 | the verdict on disk | a round that died before its repair took the verdict with it, and finishing by hand cost a real run 2 hours and 36.7 M tokens | `C` asserts the file: 35 lines naming the failing task. A verifier call that died on a proxy timeout had its verdict read back from disk and its repairs routed |
 | a bounded verifier round | a real round spent 102 turns and 31 minutes, most of its commands spent working out how to run two suites | verifier turns per round in `A`/`B`/`D`, 11.8 / 13.5 / 15.0 → 13.5 / 11.0 / 14.5: no reduction the fixture can show |
-| the recon names the commands | the phase whose job is to read the repo should write down how to run it | `N` against its control `H`: 22 turns per round against 25, because here the discovery cost is two `package.json` |
+| the recon names the commands | the phase whose job is to read the repo should write down how to run it | `N` against its control `H`: 22 turns per round against 25, because here the discovery cost is two `package.json`. Both retired since, see below |
 | never grind, and a stopped task cut or reframed rather than resent | one implementer spent 147 steps and 70 minutes on one task, 31 % of a run, with nothing saying when to stop | nothing: no run reached it, and `C` still spends its three attempts. The fixture had nothing to stop an agent on, and still does not; a stopped task is reachable since, via `S`, which was added after this batch |
 | a task is one capability and one seam | that same plan's T8 held three capabilities and 18 tests | not reachable: the eval seeds a plan, it never plans |
 | the task handed over whole | that run's testers opened `.antz/` 34 times, a 21 KB recon read each time | reads under `.antz/` in `agents.tsv`: 1.14 and 1.33 per run, 16 in 13 agent runs, → none in 10 |
@@ -414,6 +446,31 @@ trace and only reports the ending; the sentence was wrong. Every earlier `S` row
 whose decision was written, where the sentence was right, so only `S/1` of the last batch re-reads
 the other way, as "left `.antz/` in place and no decision written".
 
+## Retired scenarios
+
+A scenario is retired when it can no longer buy a measurement. It is kept for the record
+under `scenarios/retired/`, its seeds and its traces stay, and `judge.mjs` holds no
+contract for it — so `rejudge.sh` skips it and says so rather than guessing a verdict.
+
+- **N and H** (2026-10), the two-package discovery pair, now `scenarios/retired/mono/`.
+  N's unique claim was the cost the one-module fixture cannot charge for — how to run a
+  suite, and a tester that opens `.antz/` — and it came back null against H, its own
+  control: 22 turns per round against 25, because the discovery cost is two
+  `package.json`. Its other assertion, four chains dispatched in parallel, is `M`'s, and
+  `M` covers it in a fifth of the wall clock. N was also the only scenario that could
+  outlast `TIMEOUT`, and one of its three runs was cut off there. Over the recorded runs N
+  cost 1512 s and 734 k tokens a run and H 483 s and 535 k, against 296 s and 315 k for
+  `M`: the pair is three times the tokens of A, B and D together. Nothing was deleted —
+  giving N and H back their `run.sh` branch, their seed and their `judge.mjs` contract
+  runs them as before.
+- **`cut`** (2026-10), built, measured and dropped before this section existed. It never
+  had a contract, and its six rows in `out/` are the record of a counter bug, not of the
+  loop; they live in `out/results-dropped.tsv` so the summary no longer reports them.
+
+The rule this leaves: a scenario exists while it owns a contract no other arm asserts.
+When that stops being true — measured null, folded into a cheaper scenario, or outlasted
+by its own `TIMEOUT` — retire it here instead of leaving it in the batch.
+
 ## Adding a scenario
 
 Add `scenarios/<X>/src/…` with the files that differ from `fixture/`, plus a
@@ -422,7 +479,7 @@ document in `DECISION_OF` if the scenario writes one. The seed and the spawn sta
 `run.sh`; only the verdict lives in the judge. `prompts.sh` and `judge.test.mjs` are
 the two places a wiring mistake should surface before anything is paid for.
 A scenario that seeds its own plan puts it in `scenarios/<name>/seed/` and gets
-its own branch in `run.sh`, the way `stop` and `mono` do. Keep the fixture *blind*: no
+its own branch in `run.sh`, the way `stop` does. Keep the fixture *blind*: no
 comment, filename or seed text may hint at which side is at fault, or the eval
 measures the hint instead of the loop. C is the example of a scenario that
 borrows another's files and adds a perturbation, rather than restating them. A
@@ -437,8 +494,8 @@ that — only `prompts`, `agents`, `skills` and `extensions` come from the state
 and the tree is put back on its branch on the way out:
 
 ```bash
-./measure.sh before master  N:2 B:1 D:1    # the baseline
-./measure.sh item2  d7dad3c N:2             # one change on top of it
+./measure.sh before master  A:2 B:1 D:1    # the baseline
+./measure.sh item2  d7dad3c M:2             # one change on top of it
 TAG=before RUNS=5 ./run.sh M                # or install a state by hand and do it yourself
 ```
 
