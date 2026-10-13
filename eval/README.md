@@ -1,126 +1,189 @@
 # eval — does the repair loop actually work?
 
-`run.sh` measures the one part of antz that a normal run almost never exercises:
-the repair loop. Everything else in this repo is prompt text, and the loop is
-prompt text too — `prompts/antz.md` steps 4 and 5 — so it cannot be asserted on
-like code. It can be *provoked*.
+`run.sh` provokes the one part of antz a normal run almost never exercises: the repair loop,
+which is prompt text (`prompts/antz.md` steps 4 and 5) and so cannot be asserted on like code.
+It seeds a fault in a sandbox, runs `/antz` against it, and reads which agent the repair was
+routed to. The verdict is model judgement, so it is a rate over runs and not a boolean: one
+green run proves nothing.
 
-`D` provokes a different part: the suite is green and the behaviour is right, so only
-the architecture check can reject the change — the one arm that measures whether
-`skills/antz-architecture` bites.
+`run.sh` is the only instrument that calls a model. `prompts.sh`, `dispatch.sh`,
+`judge.test.mjs`, `rejudge.sh` and `agents.sh` cost seconds and no tokens. What the eval has
+already shown — the batches, the post-mortems, the scenarios retired — is `FINDINGS.md`,
+beside this file, kept out of this one so that this one stays a manual.
 
-`run.sh M` is the exception: it runs the per-task chain and records what each
-subagent spent, so the same harness measures prompt caching across agents.
+## The scenarios
 
-`dispatch.sh` is the other instrument, and the mirror image. Instead of
-provoking prompt text with real agents, it checks the one file of code that is
-not prompt text — `extensions/antz-subagent.ts` — with the pi SDK stubbed out.
-Free, deterministic, about a second, and it grades the **working tree** where
-`run.sh` grades the install. It has its own section at the end of this file.
+`/antz` routes on what is on disk, so the eval writes the state instead of running the earlier
+phases: each sandbox gets `.antz/` with `00-recon.md`, `01-spec.md` and `02-plan.md` and a plan
+whose tasks are all `[x]`, which sends `/antz` straight to verification. A/B/C/D therefore run
+about three dispatches; `M` and `S` seed an unchecked task and enter at step 4, so the
+tester → implementer chain runs first. The trace is the dispatch order, read from the session
+file (`pi --session`): the sequence of agents *is* the routing. The `.gitignore` that holds `*`
+is kept as `scenarios/spec/antz.gitignore` and renamed on copy: as a real `.gitignore` it would
+hide the seed — itself included — from this repo.
 
-`judge.mjs` is the third: the verdict itself, as a pure function of the session and the
-end state. `run.sh` produces the trace and calls it, `rejudge.sh` calls it again over the
-traces already in `out/`, and `judge.test.mjs` pins it. The run and the decision are
-separate so the decision can be re-made — which is what a change to a rule, or a bug
-found in one, should cost.
-
-**This is not a test, it is an eval.** The verdict depends on model judgement, so
-the result is a rate over N runs, not a boolean: it costs money and minutes, and
-one green run proves nothing — the same way a first-try PASS on a real feature
-says nothing about failure handling.
-
-## How it measures
-
-`/antz` routes on what is on disk, so the eval writes the state instead of
-running the earlier phases. Each sandbox gets `.antz/` with `00-recon.md`,
-`01-spec.md` and `02-plan.md`, and a plan whose tasks are all `[x]` — which sends
-`/antz` straight to step 5, verification. One run is therefore about three
-dispatches, not six phases. (The `.gitignore` holding `*` that `antz-scout` would
-write is kept as `scenarios/spec/antz.gitignore` and renamed on copy: as a real
-`.gitignore` it would hide the seed — itself included — from this repo.) `S` is the
-exception: its one task is unchecked, so `/antz` enters at step 4 and the
-tester → implementer chain runs before anything is verified.
-
-The trace is the dispatch order, read out of the session file (`pi --session`).
-The sequence of agents *is* the routing, and the routing is what a failure
-decides. The seeds differ in which side is at fault, and A/B are red where D is
-green:
-
-| Scenario | Seeded state | Contract asserted |
+| | Seeded state | Contract |
 |---|---|---|
 | **A** | test faithful to the criteria, implementation violating them | `verifier → implementer → verifier`, `.antz/` deleted, `docs/decisions/pagination.md` written |
 | **B** | implementation faithful, test contradicting the criteria | `verifier → tester → verifier`, same end state |
-| **C** | A, plus a watcher re-injecting the fault every 2 s | ≤ 3 repairs, then stop: `.antz/` untouched, `.antz/03-verdict.md` written, no decision |
-| **D** | green tests and correct behaviour, but a needless abstraction: a one-implementation policy class behind a wrapper and a factory | `verifier → implementer → verifier`, same end state: the shape is at fault, so the repair is an implementation fault |
-| **M** | fixed recon, spec and plan, no fault, and a realistic `AGENTS.md` | enters at step 4, dispatches the four independent per-task chains in one parallel dispatch, and verifies; the measurement is its usage row, not the routing |
-| **S** | one task whose acceptance cannot be met: with `{ limit: 1000 }` the same call has to return 100 elements *and* throw a `RangeError`, and the seeded spec carries both | enters at step 4: the tester writes a red test, the implementer cannot take it green and stops. What is asserted is the trace — no `(agent, task)` payload dispatched twice, so the task was cut or reframed rather than resent unchanged — that the chain was reached, and a `TIMEOUT` that was not reached. It can burn the whole `TIMEOUT` when the rule fails, which is the failure it exists to catch. The end state is reported and not asserted: a task reframed by dropping the criterion the prompt contradicts is satisfiable, so a run that honours the rule closes in PASS, as all three measured runs did |
+| **C** | A, with a watcher re-injecting the fault every 2 s | ≤ 3 repairs, then stop: `.antz/` untouched, `03-verdict.md` written, no decision |
+| **D** | green and correct, but a needless abstraction: a one-implementation policy class behind a wrapper and a factory | `verifier → implementer → verifier`, same end state |
+| **M** | fixed recon, spec and plan, no fault, and a realistic `AGENTS.md` | four independent chains dispatched together and verified; the measurement is its usage row |
+| **S** | one task whose acceptance cannot be met: `{ limit: 1000 }` must return 100 elements *and* throw a `RangeError` | the trace: no payload dispatched twice, the chain reached, no `TIMEOUT` hit |
 
-A and B are the same observable — one failing suite — and differ only in which
-side respects the acceptance criteria. That difference is the whole experiment:
-it isolates blame attribution from "make the red test go away". C is the scenario that
-reaches the cap, but whether it is reached is a rate: the watcher cannot be repaired away, so
-an agent that judges the environment unfixable and stops — which "never grind" asks for —
-closes the round first. Four runs took 1, 2, 3 and 3 attempts. `S` is the opposite: its task
-cannot be met as written, and the question is whether the orchestrator resends it
-anyway, cuts it or sends it with a different approach. It is not the reverse of `C` on
-the end state: C's fault is re-injected so no repair can hold, and the run stops with
-`.antz/` in place, while a task reframed to drop the criterion the prompt contradicts is
-satisfiable and closes in PASS — which is why `S` asserts the trace and not the ending.
+A and B differ only in which side respects the criteria, which isolates blame attribution from
+"make the red test go away". D routes like A, but its suite is green, so a verifier that stops
+at "the tests pass" fails it: D is the one arm that measures the architecture check. `S`
+asserts the trace and only reports the ending, because a task reframed to drop the criterion
+the prompt contradicts is satisfiable and closes in PASS.
 
-D routes exactly like A and differs only in the observable: the suite is green, so a
-verifier that stops at "the tests pass" passes D too, and the contract records that as
-a failure. It is the one arm that measures the architecture check rather than the
-repair loop: it fails when the shape goes unjudged, and also when the verifier
-reopens a green change on taste it cannot demonstrate.
+What A, B and D pin is the routing — the first agent after the opening verification is the one
+the verifier blamed, and the other side is never touched — plus the closing verification and
+the end state. Everything else is reported rather than counted: a trailing `verifier` round and
+repeats on the blamed side are tolerated, because the cap counts attempts, not rounds. A single
+`verifier` dispatch that repairs the fault itself fails instead, since no blame was reported and
+nothing was routed. Deleting `.antz/` is the orchestrator's job on PASS, never the verifier's.
+In `C`, an agent that judges the fault unfixable and stops is a PASS — that is what *never
+grind* asks for.
 
-A trailing extra `verifier` round is tolerated in A, B and D, because a verifier can
-return PASS without writing the decision document, and the orchestrator sends it
-back to finish. So is a repair that takes more than one round: the cap counts
-attempts, not rounds, and re-verifying between them is the orchestrator's call. What
-A, B and D pin is the routing — the first agent after the opening verification is the
-one the verifier blamed, and the other side is never touched — plus the closing
-verification and the end state. Anything else is reported in the run's detail rather
-than counted as a failure. The opposite case is a failure: a
-single `verifier` dispatch that ends with the decision written and `.antz/` gone
-means it repaired the fault itself, so no blame was reported and nothing was
-routed — the loop never ran. Deleting `.antz/` is not the verifier's job at all:
-on PASS the orchestrator removes it once the document exists, so a verifier that
-forgets costs a round rather than leaving a finished run on disk.
+## Running it
 
-Both arms have also been watched on a real run (2026-09-21, a small Node checkout project
-entered at step 5 with one fault seeded): an implementation that ignored a discount cap gave
-`verifier → implementer → verifier`, and a test that contradicted the spec gave
-`verifier → tester → verifier`. Each named the failing task and the side at fault, sent it
-only there, and closed in PASS with the decision written and `.antz/` deleted.
+```bash
+./run.sh                            # A, B, C and D, once each
+./run.sh A B                        # only those
+RUNS=5 ./run.sh                     # repetitions, for a rate
+TAG=before RUNS=5 ./run.sh M        # label a phase, for a before/after
+TIMEOUT=3000 ./run.sh C             # seconds per run, default 1800
+SKIP_FRESHNESS=1 ./run.sh           # grade the install knowingly
+node --test judge.test.mjs          # the judge, free
+./rejudge.sh                        # re-make every verdict from out/, free
+./agents.sh out/M-1.session.jsonl   # what each agent spent
+```
 
-## Measuring cache reuse (`M`)
+A few minutes to twenty per run, depending on the repair rounds. `run.sh` grades **what is
+installed** in `~/.pi/agent` and refuses to run unless the working tree matches it (`model:`
+excepted) — edit `prompts/` and forget `./adapters/pi/install.sh` and you would grade the
+previous antz. It runs `pi` inside the sandbox and discards the run if the session's `cwd` is
+anywhere else. A scenario `judge.mjs` has no contract for is refused before anything is
+spawned. Node is required: the verdict is `judge.mjs`.
 
-A/B/C/D enter at step 5, so they exercise about three dispatches and cannot show a
-caching change. `M` seeds recon, spec and a plan whose four tasks are unchecked:
-`/antz` enters at step 4, so every run does the same work — the four per-task
-tester → implementer chains and the verifier. The plan is fixed on purpose: a
-planner-generated one changes between runs, and that movement would be mistaken
-for the change under test.
+Each run appends a row to `out/results.tsv` (verdict and trace), one to `out/usage.tsv`
+(tokens) and one per agent to `out/agents.tsv`, and leaves the log, the session and a compact
+snapshot of the end state in `out/<scenario>-<run>.state/` — all gitignored. The sandbox is
+outside the repo, under `${ANTZ_EVAL_SANDBOX:-${TMPDIR:-/tmp}/antz-eval}`, because from inside
+`eval/` the harness and the comments that name the fault are one directory up, and an agent
+read them. To reclaim the megabytes and keep the numbers:
 
-The four tasks are independent, so the verdict also asserts the parallel shape:
-at least one dispatch must have carried more than one unit of work — several
-chains in one call, or sibling calls in one message, which pi runs concurrently
-as well. Tasks walked one call per turn are sequential however green they look,
-and `M` is the only scenario positioned to notice.
+```bash
+find out -mindepth 1 -maxdepth 1 ! -name '*.tsv' -exec rm -rf {} +
+rm -rf "${ANTZ_EVAL_SANDBOX:-${TMPDIR:-/tmp}/antz-eval}"
+```
 
-`M` also replaces the fixture's ten-line `AGENTS.md` with a realistic one. What a
-caching change buys is `AGENTS.md`, the skills and the cwd no longer being
-recomputed on every agent's first call, so against the fixture's tiny context
-that saving is a rounding error. The bigger one makes it a measurable share of
-the tokens.
+That takes the snapshots with it, and `rejudge.sh` then falls back to what the session alone
+can settle — it says so, and returns `UNKNOWN` rather than a PASS it cannot support.
 
-Whatever the verdict, every run appends its subagent totals to `out/usage.tsv`
-(separate from `results.tsv`, whose fixed columns predate this): calls to the
-tool, how many of those reported usage, and summed `input` / `cacheRead` /
-`cacheWrite` / `output`, read from the `usage` pi persists on each `toolResult`.
-One call can carry several agents, so `calls` is not the dispatch count; the
-trace in `results.tsv` is. `TAG` labels the phase, so the same feature is
-measured either side of a change:
+## Which scenarios a change needs
+
+Each scenario owns a contract no other asserts, so a change needs the arm that can fail on it
+and not the rest. This is the inner loop; the full `A B C D` is the outer one, before an
+install or when an edit moves the routing broadly.
+
+| The edit | The run that can see it |
+|---|---|
+| `prompts/antz.md` — blaming a side and routing the repair | **A, B** |
+| `prompts/antz.md` — the attempt cap, *never grind*, cut-or-reframe | **C, S** |
+| `prompts/antz.md` — who closes the run and deletes `.antz/` | **A, B, C** |
+| `skills/antz-architecture` | **D** |
+| `agents/antz-verifier.md` | **C**, and **A** or **B** |
+| `agents/antz-tester.md`, `antz-implementer.md` — the handover | **M, S**, and `antzReads` in `agents.tsv` |
+| `extensions/antz-subagent.ts` | **`dispatch.sh`** (free), then **M** |
+| `skills/antz-tdd`, the test the tester writes | **M** |
+| docs, eval or README alone | none — the free instruments only |
+
+A single arm is 5–12 minutes and ~120–430 k tokens, against ~30 minutes and ~850 k for
+`A B C D`. Editing `skills/antz-architecture` and running all four is ~690 k tokens that cannot
+fail on the edit, because only `D`'s seed makes the architecture check reachable. The map is
+`judge.mjs` read backwards: it says which arm *can* observe an edit, not that the edit is safe.
+One paragraph of `prompts/antz.md` can carry two rows — union them, and keep the full batch
+when in doubt.
+
+## The instruments
+
+### `prompts.sh` — the flow's wiring, free
+
+Checks in a second what the design already declares: the line budgets (9–13 per agent, 32 for
+`prompts/antz.md`); that every `.antz/NN-name.md` `/antz` routes on is one an agent writes, and
+every artifact an agent writes is routed on; that `prompts/antz.md` names no dispatch tool,
+which is what keeps its body byte-identical on all three clients; and that every agent declares
+the `name`, `description` and `tools` pi needs. It says nothing about prose.
+
+### `dispatch.sh` — the tool, free
+
+Substitutes the pi SDK with stubs (`stubs/`, three packages) and drives
+`extensions/antz-subagent.ts` directly, so the tool's own behaviour is asserted rather than the
+model's judgement: the four shapes (`agent`, `tasks`, `chain`, `chains`, and two at once
+refused); the concurrency cap of 4, asserted on live fake sessions rather than the clock;
+`{previous}` reaching the next step of its own chain and no other's; a failing chain leaving its
+siblings intact and marking the steps behind it `not run`; a `read` of a discovered `SKILL.md`
+marked used on the run that did it and not on its siblings; and both renderers, including a
+half-streamed call. The fake agents are the input; everything else asserted is the tool's.
+
+It proves nothing about a real model, and `run.sh` is still the only instrument that grades
+what is installed. A new import in the extension needs a new export in the stubs.
+
+### `judge.mjs` and `rejudge.sh` — the verdict, free to re-make
+
+A verdict is a pure function of the session (trace, payloads, concurrency shape, usage) and the
+end state (`.antz/` present, `03-verdict.md`, the decision document). `session.mjs` reads the
+first, `judge.mjs` decides, and neither spawns anything. `run.sh` produces both inputs and calls
+the judge; `rejudge.sh` points it at every trace in `out/` and prints what changed, for seconds
+and no model:
+
+```bash
+./rejudge.sh
+  S/2: FAIL -> PASS  (trace-only)
+  5 row(s) changed; written to out/rejudged.tsv
+```
+
+It never overwrites `results.tsv`: that is the record of what was paid for, judged the way it
+was judged at the time. Each row names which of three states it read — `snapshot` (the `.state/`
+survives, so the full verdict), `sandbox` (no snapshot, but the sandbox is still under
+`$ANTZ_EVAL_SANDBOX`), or `trace-only` (only the trace, which comes back `UNKNOWN` rather than a
+PASS the session cannot support). The counting rules are `judge.test.mjs`'s fixtures;
+`FINDINGS.md` has the ones that were wrong and what each cost. The judge is not the flow: a
+contract that is wrong is wrong however cleanly it is computed.
+
+## Reading a run
+
+`usage.tsv` totals a dispatch, so a `chains` call of eight agents is one row and the role
+disappears. `agents.tsv` keeps one row per agent run — agent, status, turns, reads, `antzReads`,
+tokens, seconds, skills, tools — read from the same session by `agents.sh`, which also works on
+any session, a real one included:
+
+```bash
+./agents.sh --summary out/M-1.session.jsonl
+./agents.sh --summary ~/.pi/agent/sessions/<cwd>/<session>.jsonl
+```
+
+- **`turns`** is the tool calls, and the LLM round trips — the cost a token total hides. The
+  fixture's verifier spends 10–20; the same role on a real repository spent 102 in one round,
+  and a round that size is the one a provider cuts short.
+- **`antzReads`** counts the reads under `.antz/`, which the flow wants at zero for a tester and
+  an implementer: they are handed their task. A real run's testers spent 34.
+- **`seconds`**, against the dispatch's wall clock, says whether the time was the model or a
+  suite that takes 40 s to boot.
+
+The two files read the same sessions by different paths, so the summary closes with a reconcile
+line: the dispatch totals against the sum of the agent rows. They agree; a dispatch that errored
+has no agent rows, which is the usual reason they would not.
+
+### Measuring cache reuse (`M`)
+
+`M` is the arm that measures tokens: a fixed plan, so every run does the same work, and a
+realistic 131-line `AGENTS.md` so the shared prefix is a measurable share of them. Its four
+tasks are independent, so the verdict also asserts the parallel shape — at least one dispatch
+carrying more than one unit of work, which is when pi runs them concurrently. Label the phases
+and compare the `usage.tsv` rows:
 
 ```bash
 TAG=before RUNS=5 ./run.sh M
@@ -128,501 +191,53 @@ TAG=before RUNS=5 ./run.sh M
 TAG=after  RUNS=5 ./run.sh M
 ```
 
-What to look for: `input` down and `cacheRead` up, with `withUsage` equal to
-`calls` — the verdict already checks that all four tasks reached the tester and
-the implementer. Two caveats — a provider that reports no cache leaves every
-token column at zero (`calls` still counts the tool invocations), and a provider
-without pricing in `models.json` reports `cost: 0`, so compare tokens, not money.
-Runs with long gaps between agents can miss the provider's cache window even
-when the change is correct.
-
-## What each agent spent
-
-`usage.tsv` totals a dispatch, so a `chains` call of eight agents is one row and the role
-disappears — which is exactly what has to be visible when the question is whether a verifier
-is spending its turns on judgement or a tester on re-reading the plan. `agents.tsv` keeps one
-row per agent run, read from the same session by a second path: agent, status, turns, reads,
-`antzReads`, input, cacheRead, cacheWrite, output, seconds, skills, tools.
-
-`eval/agents.sh` is the same reader standalone, and it works on any session — a real one
-included, because every run in `details.runs[]` carries its own `usage` and its own `steps`:
-
-```bash
-./agents.sh out/M-1.session.jsonl            # one row per agent run
-./agents.sh --summary out/M-1.session.jsonl  # means per agent
-./agents.sh --summary ~/.pi/agent/sessions/<cwd>/<session>.jsonl
-```
-
-What to look for:
-
-- **`turns`** is the tool calls, which is also the LLM round trips. It is the cost driver a token
-  total hides: the fixture's verifier spends 20, the same role on a real repository spent 102,
-  and a round that size is the one a provider cuts short.
-- **`antzReads`** is how many of its reads opened a file under `.antz/`. The flow wants it at
-  zero for a tester and an implementer — they are handed their task — and a real run's testers
-  spent 34 of them.
-- **`seconds`**, against the wall clock of the whole dispatch, says whether the time went into
-  the model or into a suite that takes 40 s to boot.
-
-The two files read the same sessions by different paths, so the summary closes with a reconcile
-line: the dispatch totals against the sum of the agent rows. They agree; a dispatch that errored
-has no agent rows, which is the usual reason they would not.
-
-## Running it
-
-```bash
-./run.sh                       # A, B, C and D, once each
-./run.sh A B                   # only those
-./run.sh S                     # the stopped task in front of the orchestrator
-RUNS=5 ./run.sh                # five repetitions of each
-TAG=before RUNS=5 ./run.sh M   # the full chain, to measure usage
-SKIP_FRESHNESS=1 ./run.sh
-./rejudge.sh                   # re-make every verdict from the traces, free
-node --test judge.test.mjs     # the judge's own checks, free
-```
-
-Roughly 2–15 minutes per run depending on how many repair rounds happen; `M` is
-at the top of that range because it runs the whole chain. Every run appends a row
-to `out/results.tsv`, a usage row to `out/usage.tsv` and one row per agent run to
-`out/agents.tsv`, and leaves the log, the session trace and a compact snapshot of
-what it left behind (`out/<scenario>-<run>.state/`) in `out/`, all of it
-gitignored. The sandbox is not there: it is built under
-`${ANTZ_EVAL_SANDBOX:-${TMPDIR:-/tmp}/antz-eval}`, outside the repo, because from inside
-`eval/` the harness and the seed comments that name the fault are one directory up, and an
-agent read them.
-
-The `.tsv` files are the record; the rest is only there to inspect a past run and
-costs a few megabytes a batch. To reclaim it without losing the numbers:
-
-```bash
-find out -mindepth 1 -maxdepth 1 ! -name '*.tsv' -exec rm -rf {} +
-rm -rf "${ANTZ_EVAL_SANDBOX:-${TMPDIR:-/tmp}/antz-eval}"
-```
-
-That also deletes the `.state` snapshots, and `rejudge.sh` then falls back to what the
-session alone can settle — it says so in the row, and it comes back `UNKNOWN` rather than
-a PASS it cannot support. Keeping them costs about a megabyte a batch.
-
-It measures **what is installed** in `~/.pi/agent`, not the working tree, and
-refuses to run when the two disagree — editing `prompts/antz.md` and forgetting
-`./adapters/pi/install.sh` would otherwise grade the previous antz. The `model:` line is
-excluded from that check on purpose: the installer preserves a local pin.
-`pi` is also run from inside each sandbox, and the run is discarded as
-meaningless if the session's recorded `cwd` is anywhere else.
-
-## Which scenarios a change needs
-
-Each scenario owns a contract no other arm asserts, so a change needs the arm that can fail
-on it and not the rest: a scenario that cannot observe the edit cannot catch a regression in
-it, and can only cost. This is the inner loop; the full `A B C D` stays the outer one —
-before an install, or when an edit moves the routing broadly.
-
-| The edit | What it can break | The run that can see it |
-|---|---|---|
-| `prompts/antz.md` — blaming a side and routing the repair | the blame goes to the wrong side, or nothing is routed | **A, B** |
-| `prompts/antz.md` — the attempt cap, *never grind*, cut-or-reframe | a payload is resent unchanged, or the cap never stops the round | **C, S** |
-| `prompts/antz.md` — who closes the run and deletes `.antz/` | `.antz/` gone with no decision, or kept on PASS | **A, B, C** |
-| `skills/antz-architecture` | a green change keeps a shape nobody judges | **D** |
-| `agents/antz-verifier.md` | the verdict does not outlive its round; the verifier repairs the fault itself | **C**, and **A** or **B** |
-| `agents/antz-tester.md`, `agents/antz-implementer.md` — the handover | the tester reopens `.antz/`; the task does not arrive whole | **M, S**, plus the `antzReads` column of `agents.tsv` |
-| `extensions/antz-subagent.ts` | the four shapes, the cap of four, the per-chain handoff | **`dispatch.sh`** (free), then **M** for the real thing |
-| `skills/antz-tdd`, the test the tester writes | the test is written against something other than the plan's seam | **M** |
-| docs, eval or README alone | nothing that reaches a client | none — `prompts.sh` and `judge.test.mjs` only |
-
-The three free instruments run first whatever the edit: `prompts.sh` (a second) catches a
-budget or a wiring mistake, `judge.test.mjs` (a second) the counters, `dispatch.sh` (three
-seconds) the tool. They are there so the paid batch is the last resort rather than the first.
-
-A single arm costs 5–12 minutes and ~120–430 k tokens, against ~30 minutes and ~850 k for
-`A B C D`. Editing `skills/antz-architecture` and running all four is ~690 k tokens that
-cannot fail on the edit: A and B seed a red suite, where the verifier is busy with blame,
-and C the same with a watcher, while **D** is the only arm whose seed — a green change with
-one needless abstraction — makes the architecture check reachable at all.
-
-The map is the contracts in `judge.mjs` read backwards, so it is as accurate as they are and
-no more: it says which arm *can* observe an edit, not that the edit is safe. One paragraph of
-`prompts/antz.md` can carry two of the rows above — union them, and keep the full batch when
-in doubt.
+What to look for: `input` down and `cacheRead` up, with `withUsage` equal to `calls`. Two
+caveats: a provider that reports no cache leaves every token column at zero, and one without
+pricing reports `cost: 0` — compare tokens, not money.
 
 ## What it does not prove
 
-- Not the happy path: recon, clarify and planning are out of both. A/B/C start
-  where a feature already exists and already fails, and D where it already exists
-  and is green; `M` skips planning too, so
-  its workload is identical run to run. Clarify is missing everywhere — `pi -p`
-  cannot answer it.
-- Not a real repo. The fixture is one 8-line module with three tests, and `M`
-  adds four toy helpers; a TypeScript codebase with a slow suite is a harder
-  judgement for the verifier.
-- Not the model's fault alone: the agents carry `model:` pins, so a run measures
-  a particular model pairing. A different pin is a different measurement.
-- Not stable across antz edits: this eval is the regression net for `prompts/`,
-  `agents/` and `skills/`, so run it after touching them, with the same `RUNS`.
-- The parallel assertion is a shape, not a stopwatch: it counts the units of work
-  one dispatch carried, which is when pi runs them concurrently. Whether they
-  actually overlapped is in the run's own `details` — each agent's `startedAt`
-  and `endedAt` are persisted with the session — so it is checkable by hand and
-  not checked here.
-- Not the stop itself. `S` reads a stop off the shape of the trace — the chain ran,
-  nothing went out twice, the `TIMEOUT` was not hit — and not off the subagent's
-  report. A run that stopped silently and one that explained what blocked it are the
-  same row, because nothing here reads the message that carries the explanation.
-- Not that the reframe was the right one. A task cut in two and a task nudged by one
-  word both count as "not resent unchanged": the assertion is the rule's letter, not
-  the judgement behind it. `S` also cannot tell a task cut at the first stop from one
-  reframed until the attempt cap — both leave the same trace — so its reason carries the
-  dispatch and repair counts instead of claiming which happened, and the per-agent step
-  counts in `agents.tsv` are what a reader checks by hand when it matters. Nor can it
-  tell a reframe that resolves the contradiction from a task cut and left undone: a task
-  reframed by dropping the criterion the prompt contradicts is satisfiable, so a run that
-  honours the rule closes in PASS. That is why `S` asserts the trace and reports the end
-  state instead of pinning it.
-
-## What it has shown so far
-
-One `M` run after `chains` was added — four independent tasks, one dispatch:
-the orchestrator made **two** tool calls where the pre-`chains` `M` runs made
-five, a single `chains` call holding one tester → implementer chain per task,
-then the verifier. The four testers started within four milliseconds of each
-other, at most 4 agents ran at once (the cap), and 322 s of agent work finished
-in 126 s of wall clock. One run says the shape is reachable, not that the model
-reaches for it every time.
-
-A second run — interactive, on a sandbox in `/tmp` that entered at step 4 — repeated
-it: one `chains` call of four, the four testers starting together, 4 agents at the
-cap and 2.3×, so the shape is not an artefact of headless mode. It also showed the
-property that makes parallel chains safe: every implementer's task carried its own
-tester's report and no chain's text reached another, so `{previous}` is per chain
-and not shared state.
-
-Two 10-run batches — five A and five B, run concurrently — with the orchestrator
-on `nan/deepseek-v4-flash`, tester and implementer on `nan/glm5.3-flash` and the
-verifier on `nan/mimo-v2.5`, a different family from the implementer as the
-README recommends:
-
-| `agents/antz-verifier.md` | stuck runs (needed an extra round) | repaired by itself | misrouted |
-|---|---|---|---|
-| as it was, verifier deleting on PASS | 1 / 10 | 0 / 10 | 0 / 10 |
-| reordered, then rolled back | 0 / 10 | 1 / 10 | 0 / 10 |
-
-**Neither row is evidence of an improvement.** Ten runs cannot tell 10% from 0%.
-What the first two batches established is the rate itself: the failure the reorder
-was chasing — a verifier declaring PASS without writing the decision, which leaves
-a finished run that never ends — is roughly a 1-in-10 event, not the 3-in-4 that a
-handful of earlier runs on an uncontrolled harness had suggested. Worth knowing
-before spending a prompt line on it, and the reason to repeat a batch before
-believing any of this.
-
-The reorder moved the verdict to the end and tied the word PASS to a state of the
-repo rather than to the report. That bought nothing measurable and put a worse
-failure next to it: a verifier taking the shortest path to the state it had just
-been told *is* PASS, fixing the test itself and closing the run. One observation
-is not a cause, but the trade is bad either way — a stuck run costs one verifier
-round and heals on the next `/antz`, while a bypassed loop reports no blame,
-routes nothing, and never runs the tester's red-before-green. It was rolled back.
-
-What changed instead is who closes the run: the verifier writes the decision and
-stops, and the orchestrator deletes `.antz/` on PASS once that document exists.
-That removes the deletion from a prompt that had it as a trailing clause after a
-long sentence about something else, and it puts the act with the one who decides
-the run is over. A and B still end with the document written and `.antz/` gone; C,
-where there is no PASS, is what checks the other half — that the new owner does not
-delete it on the way out. One run of each says yes: `verifier → implementer →
-verifier` and `verifier → tester → verifier` closing clean, and `verifier →
-implementer` three times over, with `.antz/` left where it was and no decision
-written.
-
-The batch also turned up the opposite failure, once: a verifier that wrote the test
-fix itself and closed the run in PASS. That is the one worth keeping an eye on, and
-the reason it gets its own verdict here instead of being reported as a routing
-mismatch: the end state looks right, so nothing else would notice that the loop
-never ran.
-
-Misrouting never happened: 20 of 20 runs sent a test fault to the tester and an
-implementation fault to the implementer, each with the verifier's report as the
-task and never to both agents. That is the part the loop exists for.
-
-Two behaviours worth knowing about, both observed, neither in any prompt:
-
-- **The orchestrator does not trust a child's report.** An implementer has
-  claimed a green suite while the file was unchanged; the orchestrator re-read
-  it, caught the lie, and said so in the next attempt's task.
-- **`antz-scout` can appear mid-loop**, as a fresh in-process probe while the
-  orchestrator was diagnosing why writes appeared not to persist. It is not part
-  of the documented repair loop and it did not consume an attempt.
-
-The shape of the rounds varies between runs — `verifier, implementer ×3, verifier`,
-an alternation, and `verifier, implementer ×3` with no closing verification, because
-the last attempt was the last one allowed. The assertions do not pin that shape: the
-cap is on attempts, and re-verifying between them is left to the orchestrator.
-
-### Why these changes exist, and what each one measured (2026-09-30)
-
-A queue of prompt changes, one commit each, installed one state at a time with `measure.sh`
-and read back with `agents.sh`. One run per state, so these are counts, not rates. The
-verifier's five jobs are what the assertions hold it to: independence, integration, the test
-judged against the spec, the shape, and the decision document.
-
-| Change | Why it exists | What it measured |
-|---|---|---|
-| the verdict on disk | a round that died before its repair took the verdict with it, and finishing by hand cost a real run 2 hours and 36.7 M tokens | `C` asserts the file: 35 lines naming the failing task. A verifier call that died on a proxy timeout had its verdict read back from disk and its repairs routed |
-| a bounded verifier round | a real round spent 102 turns and 31 minutes, most of its commands spent working out how to run two suites | verifier turns per round in `A`/`B`/`D`, 11.8 / 13.5 / 15.0 → 13.5 / 11.0 / 14.5: no reduction the fixture can show |
-| the recon names the commands | the phase whose job is to read the repo should write down how to run it | `N` against its control `H`: 22 turns per round against 25, because here the discovery cost is two `package.json`. Both retired since, see below |
-| never grind, and a stopped task cut or reframed rather than resent | one implementer spent 147 steps and 70 minutes on one task, 31 % of a run, with nothing saying when to stop | nothing: no run reached it, and `C` still spends its three attempts. The fixture had nothing to stop an agent on, and still does not; a stopped task is reachable since, via `S`, which was added after this batch |
-| a task is one capability and one seam | that same plan's T8 held three capabilities and 18 tests | not reachable: the eval seeds a plan, it never plans |
-| the task handed over whole | that run's testers opened `.antz/` 34 times, a 21 KB recon read each time | reads under `.antz/` in `agents.tsv`: 1.14 and 1.33 per run, 16 in 13 agent runs, → none in 10 |
-| one row per agent | a `chains` call of eight agents was a single usage row, and the role is what a cost question is about | `dispatch.sh`, and the reconcile line in the summary |
-| the panel names the file | `…/.antz/01-spec.md` and `…/src/pagination.js` rendered alike, so an audit misread which file an agent had read | `dispatch.sh`, one assertion |
-
-What it says. Two changes are demonstrated: the scratch directory is out of the testers' and
-implementers' hands, where the count going to zero is a change of kind rather than of mean, and
-the verdict on disk, which is precisely what a dead round leaves behind. Four are **not
-reachable here**: the fixture has no discovery cost to remove, nothing in it can provoke a task
-big enough to grind, and it never plans. Those four rest on the real run that motivated them,
-and the eval cannot confirm them — which is worth knowing before it is asked to.
-
-A fourth change came after the measurement: a task an agent stopped on is cut or sent with a
-different approach, never resent unchanged. `TAG=cortes RUNS=1 ./run.sh A B D C` checked it:
-`A`, `B` and `C` PASS with the blame routed as ever, and `C` still spends its three attempts.
-`D` came back `verifier → implementer → implementer → verifier` in 534 s, which the harness
-failed on shape: one repair round more than the assertion allowed, although the verifier had
-rejected the shape and the run did close with a verification. Two more runs of `D` gave the
-canonical `verifier → implementer → verifier`, so the deviation was the round shape varying,
-not a regression. The assertion was the thing that was wrong, and it now tolerates repeats on
-the blamed side, so that row is the only verdict in the file judging a run by a rule the
-design never held. Its end state was never recorded, which is why it stays as it was written
-rather than being re-judged: the trace is re-checkable, the repository it left is not.
-
-The net held. `A`, `B` and `D` PASS at the tip with the blame routed to the right side
-(`verifier → implementer → verifier`, `verifier → tester → verifier`, and the shape fault
-rejected), and `C` stops at three attempts with `.antz/` and its verdict still on disk.
-
-`S` has been paid for since: three runs, and the first measurement of the rule from the
-other side of `C`. Under the contract it was written with all three FAIL, and not one of
-the failures was the rule's. Two were a resend count of 11 and 16 that was never a
-payload count — `payloads()` compared the trace a line at a time while a task carries
-newlines, so `{previous}` and the criteria block every task shares read as a resend; per
-record the count is zero in all three runs. The third was `S/1` converging: the
-orchestrator read the contradiction and amended `.antz/01-spec.md` and `02-plan.md`
-*before* the first dispatch, so no agent ever stopped on it. The other two did stop —
-`S/2`'s implementer at 9 turns ("not fixable by any coherent implementation, so I stopped
-rather than grind"), `S/3`'s at 12, reverting `src/pagination.js` and proving the block by
-runs — and the orchestrator cut the `RangeError` criterion, re-dispatched a reframed
-tester → implementer chain (6/7 and 6/7 turns) and closed in PASS with the decision
-written. No run resent a payload, none spent more than 4 repairs, none came near the
-`TIMEOUT`, and no implementer ground: 7, 9→7, 12→7 turns. What the batch proves is the
-rule's letter, 3/3; that `S` could not say so was two faults in `S` itself, the line-wise
-comparison and the end-state assertion, both fixed after it. The same three traces
-re-judge as 3/3.
-
-The `cut` scenario was built to ask the other half of the same question — whether the cap holds
-when a task is cut rather than resent — and then dropped. Its first batch was judged by a counter
-with a bug: it counted the test path's mentions in the task text, and a task names its file twice
-(`Test:` and `Touches:`), so two attempts were recorded as four and `cut/2` and `cut/3` sit in
-`results.tsv` as FAIL. Re-read by the fixed counter those two traces are 2 implementer attempts
-each, inside the cap. The seed was then strengthened with the red test on disk, and it still could not
-provoke the ladder: in two of three runs the orchestrator read the seeded test at step 4, saw the
-contradictions and stopped to ask instead of dispatching, and in the third the tester pared the
-seeded test down to one side of each pair and the run converged in two attempts. The model resolves
-the contradiction — by refusing it or by normalising the spec — before the cap is in play, so no
-seed here measures the cut hole, and a scenario that cannot provoke what it promises is worse than
-none. The two rows it left are re-checkable traces; they stay in the file as the record of what a
-buggy counter said.
-
-One correction, found by re-reading the traces with `judge.mjs`: the second `cut` batch
-overwrote `out/cut-*.session.jsonl`, so the first batch's two traces are no longer on disk and
-that re-read cannot be reproduced. What is checkable is the second batch, and `cut` has no
-contract in `judge.mjs` because the scenario was dropped — `rejudge.sh` skips it and says so.
-
-The two `C` rows that read FAIL under the old "exactly three attempts" reading are the same shape:
-they judge a run by a rule the design never held, since a stopped agent closing the round early is
-the behaviour `never grind` asks for. The harness now accepts ≤ 3 attempts and fails only a run
-that passes the cap, converges, or never repairs anything.
-
-One reporting bug was fixed on the way: `gone` is 1 while `.antz/` is still there, and the `S`
-branch's closing sentence read it as if it meant the opposite, so a run that left `.antz/` with no
-decision printed "closed in PASS anyway". The verdict never depended on it, because `S` asserts the
-trace and only reports the ending; the sentence was wrong. Every earlier `S` row happens to be a run
-whose decision was written, where the sentence was right, so only `S/1` of the last batch re-reads
-the other way, as "left `.antz/` in place and no decision written".
-
-## Retired scenarios
-
-A scenario is retired when it can no longer buy a measurement. It is kept for the record
-under `scenarios/retired/`, its seeds and its traces stay, and `judge.mjs` holds no
-contract for it — so `rejudge.sh` skips it and says so rather than guessing a verdict.
-
-- **N and H** (2026-10), the two-package discovery pair, now `scenarios/retired/mono/`.
-  N's unique claim was the cost the one-module fixture cannot charge for — how to run a
-  suite, and a tester that opens `.antz/` — and it came back null against H, its own
-  control: 22 turns per round against 25, because the discovery cost is two
-  `package.json`. Its other assertion, four chains dispatched in parallel, is `M`'s, and
-  `M` covers it in a fifth of the wall clock. N was also the only scenario that could
-  outlast `TIMEOUT`, and one of its three runs was cut off there. Over the recorded runs N
-  cost 1512 s and 734 k tokens a run and H 483 s and 535 k, against 296 s and 315 k for
-  `M`: the pair is three times the tokens of A, B and D together. Nothing was deleted —
-  giving N and H back their `run.sh` branch, their seed and their `judge.mjs` contract
-  runs them as before.
-- **`cut`** (2026-10), built, measured and dropped before this section existed. It never
-  had a contract, and its six rows in `out/` are the record of a counter bug, not of the
-  loop; they live in `out/results-dropped.tsv` so the summary no longer reports them.
-
-The rule this leaves: a scenario exists while it owns a contract no other arm asserts.
-When that stops being true — measured null, folded into a cheaper scenario, or outlasted
-by its own `TIMEOUT` — retire it here instead of leaving it in the batch.
+- **Not the happy path.** Recon, clarify and planning are out: A/B/C start from a feature that
+  already exists and already fails, D from one that is green, and `M` skips planning. Clarify is
+  missing everywhere, because `pi -p` cannot answer it.
+- **Not a real repo.** The fixture is one small module with three tests; a TypeScript codebase
+  with a slow suite is a harder judgement for the verifier.
+- **Not the model.** The agents carry `model:` pins, so a run measures a model pairing.
+- **Not a stopwatch.** The parallel assertion counts the units of work a dispatch carried, not
+  that they overlapped. Each agent's `startedAt` and `endedAt` are in the session for a reader
+  who wants to check by hand.
+- **Not the judgement behind `S`.** A task cut in two and one nudged by a word both read as "not
+  resent unchanged", and a reframe that closes in PASS cannot be told from a cut left undone.
+  `S` asserts the rule's letter; the per-agent counts in `agents.tsv` are what a reader checks
+  by hand when it matters.
+- **Not stable across antz edits.** This is the regression net for `prompts/`, `agents/` and
+  `skills/`, so run it after touching them, with the same `RUNS`.
 
 ## Adding a scenario
 
-Add `scenarios/<X>/src/…` with the files that differ from `fixture/`, plus a
-`case` in `judge.mjs`'s `verdict` that asserts the contract — and its decision
-document in `DECISION_OF` if the scenario writes one. The seed and the spawn stay in
-`run.sh`; only the verdict lives in the judge. `prompts.sh` and `judge.test.mjs` are
-the two places a wiring mistake should surface before anything is paid for.
-A scenario that seeds its own plan puts it in `scenarios/<name>/seed/` and gets
-its own branch in `run.sh`, the way `stop` does. Keep the fixture *blind*: no
-comment, filename or seed text may hint at which side is at fault, or the eval
-measures the hint instead of the loop. C is the example of a scenario that
-borrows another's files and adds a perturbation, rather than restating them. A
-scenario whose seeded plan belongs to another feature needs its own prompt: `/antz` refuses
-to resume a plan that is not the one it was asked for, which is the guard working.
+Add `scenarios/<X>/src/…` for the files that differ from `fixture/`, a `case` in `judge.mjs`'s
+`verdict`, and its decision document in `DECISION_OF` if it writes one. The seed and the spawn
+stay in `run.sh`; only the verdict lives in the judge. `prompts.sh` and `judge.test.mjs` are
+where a wiring mistake should surface before anything is paid for.
+
+A scenario that seeds its own plan lives in `scenarios/<name>/seed/` with its own `run.sh`
+branch, the way `stop` does, and needs its own prompt if its plan belongs to another feature —
+`/antz` refuses to resume a plan it was not asked for. Keep the fixture *blind*: no comment,
+filename or seed text may hint at which side is at fault, or the eval measures the hint instead
+of the loop. `C` is the example of one that borrows another scenario's files and adds a
+perturbation rather than restating them.
 
 ## Running a ladder of states (`measure.sh`)
 
-run.sh grades what is installed, so comparing two states is a loop: check out the state,
-install it, run the batch, and keep the harness itself constant. `measure.sh` does exactly
-that — only `prompts`, `agents`, `skills` and `extensions` come from the state under test,
-and the tree is put back on its branch on the way out:
+Comparing two states is a loop — check out, install, run — and `measure.sh` holds the harness
+constant while it does it: only `prompts`, `agents`, `skills` and `extensions` come from the
+state under test, and the tree is put back on its branch on the way out.
 
 ```bash
 ./measure.sh before master  A:2 B:1 D:1    # the baseline
 ./measure.sh item2  d7dad3c M:2             # one change on top of it
-TAG=before RUNS=5 ./run.sh M                # or install a state by hand and do it yourself
 ```
 
-The tag labels the rows in `results.tsv`, `usage.tsv` and `agents.tsv`, which is what makes
-the two batches comparable afterwards. A scenario outside its contract does not stop the
-ladder: a FAIL is a result.
-
-## The prompt harness (`prompts.sh`)
-
-```bash
-./prompts.sh
-```
-
-Free, deterministic, about a second. `run.sh` can only tell you a prompt is broken by
-paying for a flow run, which is the wrong instrument for the two ways a prompt edit
-usually breaks — an agent file over its line budget, or `/antz` routing on an artifact
-nobody writes. This checks what the design already declares:
-
-- the budgets in `AGENTS.md`: 9–13 lines per agent, 32 for `prompts/antz.md`;
-- every `.antz/NN-name.md` `prompts/antz.md` routes on is one an agent is told to write,
-  and every artifact an agent writes is routed on — in both directions;
-- `prompts/antz.md` names no dispatch tool, which is what keeps its body byte-identical on
-  all three clients;
-- every agent declares the `name`, `description` and `tools` pi needs.
-
-It says nothing about prose or judgement. It exists so a wiring mistake costs a second
-instead of a paid batch.
-
-## The dispatch harness (`dispatch.sh`)
-
-```bash
-./dispatch.sh
-```
-
-`run.sh` can only see the tool through a real run: it is the wrong instrument for
-"did I break the four shapes?", and a run costs money. This one substitutes the
-pi SDK with stubs (`stubs/`, three packages, ~40 lines) and drives the tool
-directly, so the parts that are the tool's own behaviour rather than the model's
-judgement can be asserted on:
-
-- **the four shapes**: `agent`, `tasks`, `chain`, `chains` — including that
-  providing two by accident is refused rather than silently resolved;
-- **the concurrency cap**: six chains of two steps, with the peak number of live
-  fake sessions asserted at 4. The clock would prove less: it can pass on a fast
-  machine for the wrong reason;
-- **the per-chain handoff**: `{previous}` reaches the next step of the same chain
-  and no other chain's text does — the property that makes parallel chains safe;
-- **the failure path**: one chain failing leaves its siblings' results intact,
-  marks the steps behind it `not run` instead of leaving them queued, and sets
-  the error;
-- **the skills a child is handed versus the ones it reads**: a `read` of a
-  discovered `SKILL.md` is marked as used, on the run that did it and not on its
-  siblings, and an ordinary read is not;
-- **the panel does not hide which file**: a long path still renders its file name, so a run's
-  reads are identifiable instead of two identical truncated paths;
-- **both renderers**: chain-per-line in the call, `chain.step` numbering in the
-  result, and a half-streamed call not throwing while it renders.
-
-The fake agents are the input: they sleep a fixed delay, record the prompt, and
-fail on demand. Everything else in the assertions is the tool's.
-
-**What it does not prove.** The SDK and the agents are fake, so it says nothing
-about how a real model uses the shapes, what a real subagent does with its task,
-or whether the flow works — that is `run.sh` and, above it, the manual run. A new
-import in the extension needs a new export in `stubs/node_modules/…/pi-coding-agent`,
-and a new SDK method it calls needs a method there too; a missing name fails the
-harness by name rather than silently.
-
-`run.sh` remains the only instrument that grades what is *installed*, and the two
-are allowed to disagree: this one exists so a change to the tool can be checked
-before anything is installed, or paid for.
-
-## The judge, and re-making a verdict for free (`judge.mjs`, `rejudge.sh`)
-
-```bash
-node --test judge.test.mjs     # the judge's own checks, free, about a second
-./rejudge.sh                   # every trace in out/, re-judged, free
-./rejudge.sh S                 # only that scenario
-```
-
-A verdict is a pure function of two things: the session (the trace, the payloads, the
-concurrency shape, the usage) and the end state (`.antz/` present or not, the verdict file,
-the decision document). `session.mjs` reads the first, `judge.mjs` decides the second, and
-neither spawns anything. `run.sh` produces both inputs and calls the judge; when the run
-finishes it copies the end state into `out/<scenario>-<run>.state/` — `.antz/`, `docs/`,
-and a `tree.txt` of what changed — so the decision survives the run that produced it.
-
-That separation is the point. Every counting rule here used to live in shell, and every one
-of them has been wrong at least once: a payload resend compared line by line read 11 where
-the answer was 0, because a task carries the boilerplate every task shares; a task that
-names its test file twice read as two attempts, and turned two runs into FAIL; `.antz/`
-present-or-not was a variable named `gone` that read as its own opposite in one report.
-Each wrong count cost a paid batch to notice, because re-checking meant re-running. Now it
-does not:
-
-```bash
-./rejudge.sh
-== what the current judge says against what was paid for
-  S/2: FAIL -> PASS  (trace-only)
-  S/3: FAIL -> PASS  (trace-only)
-  5 row(s) changed; written to out/rejudged.tsv
-```
-
-That is the real output of the first rejudge over the traces in this repo's `out/`: the two
-`S` rows that a buggy counter had written as FAIL, and that the README already re-read by
-hand as "the same three traces re-judge as 3/3", now re-judge themselves. The other three
-are the `C` rows, where the rule needs the end state and no snapshot exists for them, so
-they come back `UNKNOWN` — not a PASS the session cannot support, and not the FAIL or PASS
-they were written with either.
-
-`rejudge.sh` never overwrites `results.tsv`. That file is the record of what was paid for,
-judged the way it was judged at the time, and rows kept there deliberately under a rule the
-design no longer holds stay readable; the point is to see what the current judge would say
-instead, not to rewrite history. It writes `out/rejudged.tsv` and prints the diff.
-
-Each row names which of three states it read, because it changes what a `PASS` means:
-
-- **`snapshot`** — the run's `.state/` survives, so the verdict is the full one;
-- **`sandbox`** — no snapshot, but the sandbox is still under `$ANTZ_EVAL_SANDBOX`, which
-  is how the runs from before this existed are still re-judgeable in full;
-- **`trace-only`** — neither, so only what the session alone can settle is asserted. A run
-  whose trace is clean comes back `UNKNOWN`, with the number of checks skipped, rather than
-  a `PASS` built on an end state nobody kept.
-
-**What it does not prove.** The judge is not the flow: it decides whether a trace matches a
-contract, and a contract that is wrong is wrong however cleanly it is computed. The
-trace-only mode cannot see the end state at all, so a verdict from it is a statement about
-routing and counting, not about whether the run closed. And `judge.test.mjs` proves the
-judge against fixtures, not the model — it is a regression net for the counters, not a
-substitute for the batch.
+The tag labels the rows in `results.tsv`, `usage.tsv` and `agents.tsv`, which is what makes two
+batches comparable afterwards. A FAIL is a result, not an error, so a scenario outside its
+contract does not stop the ladder.

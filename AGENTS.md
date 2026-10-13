@@ -29,7 +29,8 @@ dispatch stubs and `eval/judge.mjs` need it, an install never does.
 - The flow is verified by hand (install, `/antz` in a sandbox, read `.antz/` mid-flight) and by
   six instruments: `./eval/prompts.sh`, `./eval/dispatch.sh` and `node --test eval/judge.test.mjs`
   are free and deterministic, `./eval/rejudge.sh` re-judges stored traces for free, `./eval/agents.sh`
-  reads any session, `./eval/run.sh` grades a batch of the repair loop. `eval/README.md` has them all.
+  reads any session, `./eval/run.sh` grades a batch of the repair loop. `eval/README.md` has them all,
+  `eval/FINDINGS.md` what they have shown — the batches paid for, and the scenarios retired since.
 
 ## Structure
 A new client is an `adapters/<client>/` directory — its `README.md`, its `install.sh` wrapper,
