@@ -116,7 +116,8 @@ and one sentence of description, and `modeOf` (`:170`) is untouched.
   lever).
 - **A duplicate guard.** With background the orchestrator does not see a result before
   deciding what to do next, so it can send the same task twice — which is exactly what the
-  attempt cap measures and what `payload_keys` (`eval/run.sh:119`) looks for. Cheapest
+  attempt cap measures and what `resends()` (`eval/session.mjs`) computes and `judge.mjs`
+  counts. Cheapest
   honest guard: refuse a dispatch whose `(agent, task)` pair matches a live run, and say
   which job it collides with.
 
@@ -131,13 +132,13 @@ and one sentence of description, and `modeOf` (`:170`) is untouched.
 |---|---|
 | `prompts/antz.md`, step 4 | "Mark `[x]` when the chain ends" and "the task is proved by one command … that command comes from the tester" assume the report is in hand. In background it arrives later, as a message. Needs one sentence, and a rule for what to do when the user speaks mid-step-4 (today only clarify talks to the user). |
 | `eval/agents.sh:35` | Reads `toolResult[]` with `toolName == antz_subagent`. Background spend and steps would read as **zero, without failing** — wrong numbers in silence. |
-| `eval/run.sh:168` (`usage_of`, selector at `:171`) | Same filter: `select(.role == "toolResult" and .toolName == "antz_subagent")`. |
+| `eval/run.sh` (`usage_of`, selector `role == "toolResult" and toolName == "antz_subagent"`) | Same filter: a background result would not be a `toolResult`, so its spend and steps read as **zero, without failing**. |
 | `eval/dispatch.mjs:29` | The fake `pi` object needs `sendMessage` (and a `registerMessageRenderer` no-op); `:95` builds a bare ctx, which needs `hasUI`/`ui` for the widget path. |
 | `eval/stubs/node_modules/@earendil-works/pi-coding-agent/index.js` | Header says it: "Adding an import or an SDK method to the extension means adding it here." Only needed if a new *named export* is imported; `sendMessage`/`setWidget` are instance methods and belong in `dispatch.mjs`. |
 | `eval/README.md` | "What each agent spent" and "The dispatch harness" sections describe the two readers above. |
 
-Unaffected, and worth stating so nobody rewrites them: `sequence` (`run.sh:98`),
-`payload_keys` (`:119`), `attempts_by_file` (`:138`), `parallel_dispatches` (`:154`) all
+Unaffected, and worth stating so nobody rewrites them: `sequence()`, `resends()`, `count()`
+and `parallelDispatches()` (`eval/session.mjs`) all
 read the *tool call arguments*, so routing, the attempt cap and the parallelism count keep
 their meaning. Cache-and-cost grading of `run.sh M` is also unaffected as long as step 3
 below lands with steps 1-2.
@@ -252,5 +253,5 @@ Asked and left unanswered on 2026-10-01; both need a human call before step 2.
   dashboard), `npm:@tintinweb/pi-subagents` (background by default, FleetView, steering),
   `npm:@pi-vault/pi-subagents` and `npm:pi-subagents-lite` (`run_in_background`),
   `npm:@bacnh85/pi-subagent` (in-process sessions, like antz).
-- Changing what `sequence`, `parallel_dispatches`, `payload_keys` or `attempts_by_file`
+- Changing what `sequence`, `parallelDispatches`, `resends` or the attempt count
   measure.

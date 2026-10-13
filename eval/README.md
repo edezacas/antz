@@ -18,6 +18,12 @@ not prompt text — `extensions/antz-subagent.ts` — with the pi SDK stubbed ou
 Free, deterministic, about a second, and it grades the **working tree** where
 `run.sh` grades the install. It has its own section at the end of this file.
 
+`judge.mjs` is the third: the verdict itself, as a pure function of the session and the
+end state. `run.sh` produces the trace and calls it, `rejudge.sh` calls it again over the
+traces already in `out/`, and `judge.test.mjs` pins it. The run and the decision are
+separate so the decision can be re-made — which is what a change to a rule, or a bug
+found in one, should cost.
+
 **This is not a test, it is an eval.** The verdict depends on model judgement, so
 the result is a rate over N runs, not a boolean: it costs money and minutes, and
 one green run proves nothing — the same way a first-try PASS on a real feature
@@ -173,12 +179,15 @@ has no agent rows, which is the usual reason they would not.
 RUNS=5 ./run.sh                # five repetitions of each
 TAG=before RUNS=5 ./run.sh M   # the full chain, to measure usage
 SKIP_FRESHNESS=1 ./run.sh
+./rejudge.sh                   # re-make every verdict from the traces, free
+node --test judge.test.mjs     # the judge's own checks, free
 ```
 
 Roughly 2–15 minutes per run depending on how many repair rounds happen; `M` is
 at the top of that range because it runs the whole chain. Every run appends a row
 to `out/results.tsv`, a usage row to `out/usage.tsv` and one row per agent run to
-`out/agents.tsv`, and leaves the log and the session trace in `out/`, all of it
+`out/agents.tsv`, and leaves the log, the session trace and a compact snapshot of
+what it left behind (`out/<scenario>-<run>.state/`) in `out/`, all of it
 gitignored. The sandbox is not there: it is built under
 `${ANTZ_EVAL_SANDBOX:-${TMPDIR:-/tmp}/antz-eval}`, outside the repo, because from inside
 `eval/` the harness and the seed comments that name the fault are one directory up, and an
@@ -191,6 +200,10 @@ costs a few megabytes a batch. To reclaim it without losing the numbers:
 find out -mindepth 1 -maxdepth 1 ! -name '*.tsv' -exec rm -rf {} +
 rm -rf "${ANTZ_EVAL_SANDBOX:-${TMPDIR:-/tmp}/antz-eval}"
 ```
+
+That also deletes the `.state` snapshots, and `rejudge.sh` then falls back to what the
+session alone can settle — it says so in the row, and it comes back `UNKNOWN` rather than
+a PASS it cannot support. Keeping them costs about a megabyte a batch.
 
 It measures **what is installed** in `~/.pi/agent`, not the working tree, and
 refuses to run when the two disagree — editing `prompts/antz.md` and forgetting
@@ -384,6 +397,11 @@ seed here measures the cut hole, and a scenario that cannot provoke what it prom
 none. The two rows it left are re-checkable traces; they stay in the file as the record of what a
 buggy counter said.
 
+One correction, found by re-reading the traces with `judge.mjs`: the second `cut` batch
+overwrote `out/cut-*.session.jsonl`, so the first batch's two traces are no longer on disk and
+that re-read cannot be reproduced. What is checkable is the second batch, and `cut` has no
+contract in `judge.mjs` because the scenario was dropped — `rejudge.sh` skips it and says so.
+
 The two `C` rows that read FAIL under the old "exactly three attempts" reading are the same shape:
 they judge a run by a rule the design never held, since a stopped agent closing the round early is
 the behaviour `never grind` asks for. The harness now accepts ≤ 3 attempts and fails only a run
@@ -399,9 +417,12 @@ the other way, as "left `.antz/` in place and no decision written".
 ## Adding a scenario
 
 Add `scenarios/<X>/src/…` with the files that differ from `fixture/`, plus a
-`case` in `run_once` that asserts the contract. A scenario that seeds its own plan
-puts it in `scenarios/<name>/seed/` and gets its own branch in `run_once`, the way
-`stop` and `mono` do. Keep the fixture *blind*: no
+`case` in `judge.mjs`'s `verdict` that asserts the contract — and its decision
+document in `DECISION_OF` if the scenario writes one. The seed and the spawn stay in
+`run.sh`; only the verdict lives in the judge. `prompts.sh` and `judge.test.mjs` are
+the two places a wiring mistake should surface before anything is paid for.
+A scenario that seeds its own plan puts it in `scenarios/<name>/seed/` and gets
+its own branch in `run.sh`, the way `stop` and `mono` do. Keep the fixture *blind*: no
 comment, filename or seed text may hint at which side is at fault, or the eval
 measures the hint instead of the loop. C is the example of a scenario that
 borrows another's files and adds a perturbation, rather than restating them. A
@@ -489,3 +510,62 @@ harness by name rather than silently.
 `run.sh` remains the only instrument that grades what is *installed*, and the two
 are allowed to disagree: this one exists so a change to the tool can be checked
 before anything is installed, or paid for.
+
+## The judge, and re-making a verdict for free (`judge.mjs`, `rejudge.sh`)
+
+```bash
+node --test judge.test.mjs     # the judge's own checks, free, about a second
+./rejudge.sh                   # every trace in out/, re-judged, free
+./rejudge.sh S                 # only that scenario
+```
+
+A verdict is a pure function of two things: the session (the trace, the payloads, the
+concurrency shape, the usage) and the end state (`.antz/` present or not, the verdict file,
+the decision document). `session.mjs` reads the first, `judge.mjs` decides the second, and
+neither spawns anything. `run.sh` produces both inputs and calls the judge; when the run
+finishes it copies the end state into `out/<scenario>-<run>.state/` — `.antz/`, `docs/`,
+and a `tree.txt` of what changed — so the decision survives the run that produced it.
+
+That separation is the point. Every counting rule here used to live in shell, and every one
+of them has been wrong at least once: a payload resend compared line by line read 11 where
+the answer was 0, because a task carries the boilerplate every task shares; a task that
+names its test file twice read as two attempts, and turned two runs into FAIL; `.antz/`
+present-or-not was a variable named `gone` that read as its own opposite in one report.
+Each wrong count cost a paid batch to notice, because re-checking meant re-running. Now it
+does not:
+
+```bash
+./rejudge.sh
+== what the current judge says against what was paid for
+  S/2: FAIL -> PASS  (trace-only)
+  S/3: FAIL -> PASS  (trace-only)
+  5 row(s) changed; written to out/rejudged.tsv
+```
+
+That is the real output of the first rejudge over the traces in this repo's `out/`: the two
+`S` rows that a buggy counter had written as FAIL, and that the README already re-read by
+hand as "the same three traces re-judge as 3/3", now re-judge themselves. The other three
+are the `C` rows, where the rule needs the end state and no snapshot exists for them, so
+they come back `UNKNOWN` — not a PASS the session cannot support, and not the FAIL or PASS
+they were written with either.
+
+`rejudge.sh` never overwrites `results.tsv`. That file is the record of what was paid for,
+judged the way it was judged at the time, and rows kept there deliberately under a rule the
+design no longer holds stay readable; the point is to see what the current judge would say
+instead, not to rewrite history. It writes `out/rejudged.tsv` and prints the diff.
+
+Each row names which of three states it read, because it changes what a `PASS` means:
+
+- **`snapshot`** — the run's `.state/` survives, so the verdict is the full one;
+- **`sandbox`** — no snapshot, but the sandbox is still under `$ANTZ_EVAL_SANDBOX`, which
+  is how the runs from before this existed are still re-judgeable in full;
+- **`trace-only`** — neither, so only what the session alone can settle is asserted. A run
+  whose trace is clean comes back `UNKNOWN`, with the number of checks skipped, rather than
+  a `PASS` built on an end state nobody kept.
+
+**What it does not prove.** The judge is not the flow: it decides whether a trace matches a
+contract, and a contract that is wrong is wrong however cleanly it is computed. The
+trace-only mode cannot see the end state at all, so a verdict from it is a statement about
+routing and counting, not about whether the run closed. And `judge.test.mjs` proves the
+judge against fixtures, not the model — it is a regression net for the counters, not a
+substitute for the batch.

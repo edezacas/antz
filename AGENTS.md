@@ -16,7 +16,8 @@ steps and nothing else: the per-client detail lives in its `frontmatter/`, never
 ## Stack
 Markdown and bash: no runtime, no build step. `prompts/<name>.md` and `skills/<name>/SKILL.md`
 are pi built-ins and `extensions/*.ts` is pi's auto-discovery path, but `agents/<name>.md` is
-the extension's own convention, not pi core.
+the extension's own convention, not pi core. Node is the eval's, not the product's: the
+dispatch stubs and `eval/judge.mjs` need it, an install never does.
 
 ## Commands
 - Install (user scope, then `/reload` in pi):
@@ -26,9 +27,9 @@ the extension's own convention, not pi core.
 - The three skills are global and separate: `npx skills add edezacas/antz -g`.
 - Run it from inside a target repo: `/antz "<prompt>"`.
 - The flow is verified by hand (install, `/antz` in a sandbox, read `.antz/` mid-flight) and by
-  four instruments: `./eval/prompts.sh` and `./eval/dispatch.sh` are free and deterministic,
-  `./eval/agents.sh` reads any session, `./eval/run.sh` grades a batch of the repair loop.
-  `eval/README.md` has them all.
+  six instruments: `./eval/prompts.sh`, `./eval/dispatch.sh` and `node --test eval/judge.test.mjs`
+  are free and deterministic, `./eval/rejudge.sh` re-judges stored traces for free, `./eval/agents.sh`
+  reads any session, `./eval/run.sh` grades a batch of the repair loop. `eval/README.md` has them all.
 
 ## Structure
 A new client is an `adapters/<client>/` directory — its `README.md`, its `install.sh` wrapper,

@@ -44,6 +44,11 @@
 # It measures what is INSTALLED (~/.pi/agent), not the working tree, and checks
 # that the two agree: a prompts/ edit without ./adapters/pi/install.sh would grade
 # the old antz.
+#
+# The run and the verdict are separate. This file produces the trace; `judge.mjs`
+# decides what it means, from the session and a compact snapshot of the end state kept
+# in out/<scenario>-<run>.state/. So the same decision can be re-made without paying for
+# the run again (`rejudge.sh`) and pinned by `judge.test.mjs`.
 
 set -uo pipefail
 
@@ -57,6 +62,12 @@ SANDBOX="${ANTZ_EVAL_SANDBOX:-${TMPDIR:-/tmp}/antz-eval}"
 AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 RUNS="${RUNS:-1}"
 TIMEOUT="${TIMEOUT:-1800}"
+
+# The verdict is `judge.mjs`, so node is not optional here. dispatch.sh needs it too.
+command -v node >/dev/null 2>&1 || {
+  echo "node is required: the verdict for every run is computed by judge.mjs" >&2
+  exit 1
+}
 
 PROMPT='paginate() must respect the spec limit: asking for limit 1000 has to return 100 elements, not 1000'
 PROMPT_M='add range, chunk, unique and sum helpers under src/, each with its own test file'
@@ -95,58 +106,10 @@ if [ "${SKIP_FRESHNESS:-0}" != "1" ]; then
   fi
 fi
 
-# The trace of the loop: every antz_subagent dispatch, in order. The sequence of
-# agents IS the routing, and the routing is what the eval measures. A `chains`
-# call carries one chain per task, so it flattens like `chain` and `tasks` do.
-sequence() {
-  jq -r '
-    select(.message.content? | type == "array")
-    | .message.content[]
-    | select(.type == "toolCall" and .name == "antz_subagent")
-    | .arguments as $a
-    | (($a.chain // []) + (($a.chains // []) | (add // [])) + ($a.tasks // [])) as $many
-    | (if ($many | length) > 0 then $many else [{ agent: $a.agent }] end)
-    | .[] | .agent
-  ' "$1" 2>/dev/null | paste -sd' ' -
-}
-
-count_of() { printf '%s\n' "$1" | tr ' ' '\n' | grep -cx "$2"; }
-
-# Every unit of work a dispatch carried, as the orchestrator wrote it: the agent and
-# the task text it passed. `{previous}` is left literal on purpose, because it is
-# substituted only when the step runs, so two identical records mean the same task went
-# out twice with nothing changed in between — which is what the flow forbids for a task
-# an agent stopped on. `@json` keeps one line per record: a task carries newlines, so
-# without it a line-wise `uniq -d` would count the boilerplate every task shares
-# (`{previous}`, the criteria block) as a resend.
-payload_keys() {
-  jq -r '
-    select(.message.content? | type == "array")
-    | .message.content[]
-    | select(.type == "toolCall" and .name == "antz_subagent")
-    | .arguments as $a
-    | (($a.chain // []) + (($a.chains // []) | (add // [])) + ($a.tasks // [])) as $many
-    | (if ($many | length) > 0 then $many else [{ agent: $a.agent, task: $a.task }] end)
-    | .[] | select(.agent) | "\(.agent)\t\(.task // "")" | @json
-  ' "$1" 2>/dev/null
-}
-
-one_line() { printf '%s' "$1" | tr '\n\t' '  ' | cut -c1-160; }
-
-# How many dispatches carried more than one unit of concurrent work. A unit is an
-# agent that can run alongside another: every element of `tasks`, every chain of
-# `chains`, and one for the shapes that are sequential by definition. Sibling
-# calls in one message count together, because pi runs those concurrently.
-parallel_dispatches() {
-  jq -r '
-    select(.message.content? | type == "array")
-    | [.message.content[]
-       | select(.type == "toolCall" and .name == "antz_subagent")
-       | ([((.arguments.chains // []) | length), ((.arguments.tasks // []) | length), 1] | max)]
-    | (add // 0)
-    | select(. > 1)
-  ' "$1" 2>/dev/null | wc -l | tr -d ' '
-}
+# The trace, the payloads, the concurrency shape and the verdict live in `judge.mjs`,
+# as a pure function of the session and the end state. Nothing that reads a session
+# stays here: the same decision is re-made for free by `rejudge.sh`, and `judge.test.mjs`
+# pins it against the counters this file used to get wrong.
 
 # What the subagents spent in one session: token counts only. `calls` is every
 # dispatch and `withUsage` is how many reported any, so a provider that reports
@@ -231,156 +194,30 @@ run_once() {
   [ -n "$watcher" ] && kill "$watcher" 2>/dev/null
   seconds=$(( $(date +%s) - start ))
 
-  SEQUENCE="$(sequence "$session")"
-  local parallel; parallel="$(parallel_dispatches "$session")"
-  # The payloads dispatched twice, byte for byte. Legitimate in a repair round (C's
-  # repairs carry the fault and the blame, and the same task may come back framed the
-  # same way); a fault in S, where the task a subagent stopped on has to be cut or
-  # reframed instead of going out again untouched.
-  local resent_what; resent_what="$(payload_keys "$session" | sort | uniq -d)"
-  local resent=0
-  [ -n "$resent_what" ] && resent="$(printf '%s\n' "$resent_what" | wc -l | tr -d ' ')"
-  local dispatches; dispatches="$(printf '%s' "$SEQUENCE" | wc -w | tr -d ' ')"
-  local cwd; cwd="$(jq -r 'select(.type == "session") | .cwd' "$session" 2>/dev/null | head -1)"
-  if [ "$cwd" != "$sandbox" ]; then
-    VERDICT=FAIL
-    REASON="pi ran in '$cwd' instead of the sandbox: the run measures nothing"
-    SECONDS_TAKEN="$seconds"
-    return
+  # The compact end state, kept beside the trace so the verdict can be re-made without
+  # paying for the run again: `.antz/` (present only when the run did not close) and the
+  # decision document, which together are everything the verdict reads off disk.
+  local state="$OUT/$scenario-$run.state"
+  rm -rf "$state"; mkdir -p "$state"
+  [ -d "$sandbox/.antz" ] && cp -R "$sandbox/.antz" "$state/.antz"
+  [ -d "$sandbox/docs" ] && cp -R "$sandbox/docs" "$state/docs"
+  git -C "$sandbox" status --porcelain >"$state/tree.txt" 2>/dev/null
+
+  # The verdict — from the session and the end state, by the one implementation both
+  # this and `rejudge.sh` use. VERDICT/REASON/SEQUENCE are what the rest of this file
+  # reports; `skipped` stays zero while the end state is present.
+  if [ ! -f "$session" ]; then
+    VERDICT=FAIL; REASON="the run produced no session: pi never started or died before writing one"
+    SEQUENCE="(no dispatches)"
+  else
+    IFS=$'\t' read -r VERDICT REASON SEQUENCE _ < <(
+      node "$HERE/judge.mjs" --scenario "$scenario" --session "$session" --state "$state" \
+        --sandbox "$sandbox" --seconds "$seconds" --timeout "$TIMEOUT" --run "$run" \
+        --record "$state/run.json" 2>/dev/null
+    )
+    [ -n "${VERDICT:-}" ] || { VERDICT=FAIL; REASON="judge.mjs produced no verdict"; }
+    [ -n "$SEQUENCE" ] || SEQUENCE="(no dispatches)"
   fi
-  [ -n "$SEQUENCE" ] || SEQUENCE="(no dispatches)"
-
-  local gone=1; [ -d "$sandbox/.antz" ] || gone=0
-  local doc_name="pagination.md"
-  [ "$scenario" = "M" ] && doc_name="collection-helpers.md"
-  case "$scenario" in N|H) doc_name="store-helpers.md" ;; esac
-  local doc=0; [ -f "$sandbox/docs/decisions/$doc_name" ] && doc=1
-  local repairs; repairs=$(( $(count_of "$SEQUENCE" antz-implementer) + $(count_of "$SEQUENCE" antz-tester) ))
-
-  VERDICT=PASS
-  case "$scenario" in
-    A|B|D)
-      # What this pins: the first agent after the opening verification is the one the
-      # verifier blamed, the other side is never touched, and the run closes with a
-      # verification. What it leaves to the orchestrator: how many rounds a repair takes
-      # and whether it re-verifies between them. The cap is on attempts, not on rounds,
-      # and a run was failed on shape alone before this was written down.
-      local blame=antz-implementer other=antz-tester
-      [ "$scenario" = "B" ] && { blame=antz-tester; other=antz-implementer; }
-      local blamed reached trailing reruns
-      blamed="$(printf '%s' "$SEQUENCE" | tr ' ' '\n' | grep -cx "$blame")"
-      reached="$(printf '%s' "$SEQUENCE" | tr ' ' '\n' | grep -cx "$other")"
-      # A trailing verifier round is tolerated: a verifier can return PASS without doing
-      # the PASS work (writing the decision), and the orchestrator sends it back to
-      # finish. That is recovery, not a routing fault, so it is reported and not failed.
-      trailing="${SEQUENCE##*"$blame" }"
-      reruns="$(printf '%s' "$trailing" | tr ' ' '\n' | grep -cx 'antz-verifier')"
-      reruns=$((reruns - 1))
-      [ "$reruns" -lt 0 ] && reruns=0
-      if [ "$SEQUENCE" = "antz-verifier" ] && [ "$doc" -eq 1 ] && [ "$gone" -eq 0 ]; then
-        # The verifier wrote the fix itself and closed the run. The end state looks
-        # right and the loop was bypassed: no blame was reported, so nothing was
-        # routed, and the tester's red-before-green never ran.
-        if [ "$scenario" = "D" ]; then
-          VERDICT=FAIL; REASON="the verifier read the green suite and passed: it never judged the shape"
-        else
-          VERDICT=FAIL; REASON="the verifier repaired and closed the run itself: the repair loop never ran"
-        fi
-      elif [ "${SEQUENCE%% *}" != "antz-verifier" ]; then
-        VERDICT=FAIL; REASON="the run did not open with a verification: '$SEQUENCE'"
-      elif [ "$reached" -ne 0 ]; then
-        VERDICT=FAIL; REASON="the repair reached $other, which was not blamed: '$SEQUENCE'"
-      elif [ "$blamed" -lt 1 ]; then
-        if [ "$scenario" = "D" ]; then
-          VERDICT=FAIL; REASON="the verifier did not reject the shape: nothing was repaired, got '$SEQUENCE'"
-        else
-          VERDICT=FAIL; REASON="nothing was repaired, so there was no blame to route: '$SEQUENCE'"
-        fi
-      elif [ "${SEQUENCE##* }" != "antz-verifier" ]; then
-        VERDICT=FAIL; REASON="the run did not close with a verification: '$SEQUENCE'"
-      elif [ "$gone" -eq 1 ]; then
-        VERDICT=FAIL; REASON="the verifier should have deleted .antz/ after PASS"
-      elif [ "$doc" -eq 0 ]; then
-        VERDICT=FAIL; REASON="docs/decisions/$doc_name is missing, and only PASS writes it"
-      else
-        if [ "$scenario" = "D" ]; then
-          REASON="the verifier failed the green change on shape, routed it to $blame ($blamed round(s)), PASS: .antz/ deleted and the decision written"
-        else
-          REASON="blame routed to $blame ($blamed round(s)), PASS, .antz/ deleted and the decision written"
-        fi
-        [ "$reruns" -gt 0 ] && REASON="$REASON; the verifier needed $reruns extra round(s) to finish the PASS work"
-      fi
-      ;;
-    C)
-      # The cap is on attempts, not on verifier rounds: the orchestrator may
-      # re-verify between them (it usually does) or not. ≤ 3, and not exactly 3: the
-      # watcher cannot be repaired away, so an agent that judges the environment and
-      # stops — which is what "never grind" asks for — closes the round before the cap
-      # is spent. Four runs took 1, 2, 3 and 3 attempts. Both endings are the design
-      # working; what still fails is a run that goes past the cap, converges, or repairs
-      # nothing at all.
-      if [ "$doc" -eq 1 ] || [ "$gone" -eq 0 ]; then
-        VERDICT=FAIL; REASON="it converged: with the fault re-injected there can be no PASS"
-      elif [ "$repairs" -gt 3 ]; then
-        VERDICT=FAIL; REASON="it went past the cap: $repairs repairs"
-      elif [ "$repairs" -lt 1 ]; then
-        VERDICT=FAIL; REASON="nothing was repaired, so no attempt could stop on the fault: '$SEQUENCE'"
-      elif [ "${SEQUENCE%% *}" != "antz-verifier" ]; then
-        VERDICT=FAIL; REASON="the run did not enter at step 5: '${SEQUENCE%% *}' ran first"
-      elif [ ! -s "$sandbox/.antz/03-verdict.md" ]; then
-        # The verdict is what survives a round that dies before its repair.
-        VERDICT=FAIL; REASON=".antz/03-verdict.md is missing or empty: the verdict has to outlive the round"
-      else
-        local spent="$repairs attempt(s), then it stopped"
-        [ "$repairs" -lt 3 ] && spent="$repairs attempt(s) and an agent stopped on the unfixable fault"
-        REASON="$spent: .antz/ untouched, no decision written"
-        # Informational, not a fault here: C's agent does not stop, it fails to fix an
-        # external fault, and a repair may legitimately carry the same task again. The
-        # number is what makes the contrast with S visible in results.tsv.
-        [ "$resent" -gt 0 ] && REASON="$REASON; $resent payload(s) dispatched twice, which S is the scenario that forbids"
-      fi
-      ;;
-    S)
-      # One task whose two criteria contradict each other, so no implementation satisfies
-      # it. What S measures is what the orchestrator does with an agent that stops on it —
-      # cut the task or send it with a different approach, never the same payload again.
-      # The assertion is the trace: no (agent, task) pair dispatched twice, the chain was
-      # reached, and the run ended under its own steam. The end state is reported and not
-      # asserted, because a task reframed by dropping the criterion that contradicts the
-      # prompt is satisfiable: a run that honours the rule legitimately closes in PASS, and
-      # the harness cannot tell that reframe from a task cut and left undone — which is why
-      # the per-agent turns in agents.tsv are read by hand when it matters.
-      if [ "$resent" -ne 0 ]; then
-        VERDICT=FAIL; REASON="the stopped task was resent unchanged ($resent payload(s)): $(one_line "$resent_what")"
-      elif [ "$seconds" -ge "$TIMEOUT" ]; then
-        VERDICT=FAIL; REASON="it was still going when the timeout hit: the task outlasted the run instead of being cut"
-      elif [ "${SEQUENCE%% *}" != "antz-tester" ] || [ "$(count_of "$SEQUENCE" antz-implementer)" -lt 1 ]; then
-        VERDICT=FAIL; REASON="the task never reached the tester-to-implementer chain, so no agent could stop on it: '$SEQUENCE'"
-      else
-        local end="left .antz/ in place and no decision written"
-        # `gone` is 1 when `.antz/` is still there, naming the opposite of what it says.
-        { [ "$gone" -eq 0 ] || [ "$doc" -eq 1 ]; } && end="closed in PASS anyway, .antz/ deleted and the decision written"
-        REASON="no payload was dispatched twice: $dispatches dispatch(es), $repairs repair(s) on the task, $end"
-      fi
-      ;;
-    M|N|H)
-      # Not a routing contract: the measurement is the usage row, and per agent in
-      # agents.tsv. This only says the run reached the end as the parallel shape, so a
-      # broken run is visible instead of a zero row.
-      if [ "$gone" -eq 1 ]; then
-        VERDICT=FAIL; REASON="the run did not finish: .antz/ is still there"
-      elif [ "$doc" -eq 0 ]; then
-        VERDICT=FAIL; REASON="docs/decisions/$doc_name is missing"
-      elif [ "$(count_of "$SEQUENCE" antz-tester)" -lt 4 ] || [ "$(count_of "$SEQUENCE" antz-implementer)" -lt 4 ]; then
-        VERDICT=FAIL; REASON="the four planned tasks did not all reach the tester and the implementer: '$SEQUENCE'"
-      elif [ "$parallel" -lt 1 ]; then
-        VERDICT=FAIL; REASON="the independent tasks were not dispatched together: no dispatch carried more than one unit of work: '$SEQUENCE'"
-      else
-        REASON="four independent chains dispatched in parallel ($parallel dispatch(es) carried more than one), verified: decision written and .antz/ deleted"
-      fi
-      ;;
-    *) VERDICT=FAIL; REASON="unknown scenario" ;;
-  esac
   SECONDS_TAKEN="$seconds"
 }
 
