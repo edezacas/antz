@@ -23,9 +23,11 @@
 #   B  implementation faithful, test that contradicts the criteria      -> test at fault
 #   C  A, plus a watcher that re-injects the fault every 2 s             -> the 3-attempt cap
 #   D  green tests, correct behaviour, and a needless abstraction        -> shape at fault
-#   N  two packages with different runners, a fixed plan with rich criteria
-#   H  N, with a recon that already names the exact commands
 #   S  one task whose criteria cannot both hold, so nothing can converge -> the stopped task
+#
+# N and H, the two-package discovery scenarios, are retired: their measurement came
+# back null against their own control, and they were the only runs that could outlast
+# TIMEOUT. The seeds and traces stay under scenarios/retired/mono for the record.
 #
 # The dispatch totals in usage.tsv hide the agent: a `chains` call of eight is one
 # row. agents.tsv keeps one row per agent run, from the same session by a second
@@ -71,9 +73,6 @@ command -v node >/dev/null 2>&1 || {
 
 PROMPT='paginate() must respect the spec limit: asking for limit 1000 has to return 100 elements, not 1000'
 PROMPT_M='add range, chunk, unique and sum helpers under src/, each with its own test file'
-# N and H seed their own spec, so the prompt has to name that feature: /antz refuses to
-# resume a plan that belongs to another one, which is the guard working as intended.
-PROMPT_N='the store has to report its capacity and round-trip through JSON, and the browser needs a duration formatter and a grid span helper, each with its own test file'
 
 usage() { sed -n '3,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 for arg in "$@"; do [ "$arg" = "-h" ] || [ "$arg" = "--help" ] && usage; done
@@ -143,22 +142,14 @@ run_once() {
   rm -f "$session" "$broken"
   rm -rf "$sandbox"
   mkdir -p "$sandbox/.antz" "$sandbox/src"
-  # The tree the run starts from. N and H bring their own: two packages, two runners and
-  # no package at the root, so finding out how to run a suite costs turns — the thing the
-  # one-module fixture cannot charge for.
-  local base="$HERE/fixture"
-  case "$scenario" in N|H) base="$HERE/scenarios/mono/tree" ;; esac
-  cp -R "$base/." "$sandbox/"
+  # The tree the run starts from: the one-module fixture. The two-package `mono` tree
+  # N and H used is retired with them, under `scenarios/retired/`.
+  cp -R "$HERE/fixture/." "$sandbox/"
   if [ "$scenario" = "M" ]; then
     # Fixed recon, spec and plan: /antz enters at step 4 with the same tasks every
     # run, and a bigger AGENTS.md than the fixture so the shared prefix is real.
     cp "$HERE/scenarios/M/seed/"*.md "$sandbox/.antz/"
     cp "$HERE/scenarios/M/AGENTS.md" "$sandbox/AGENTS.md"
-  elif [ "$scenario" = "N" ] || [ "$scenario" = "H" ]; then
-    # One fixed plan both times. H differs in one file: its recon names the commands,
-    # which is the control for what a recon that did its job is worth.
-    cp "$HERE/scenarios/mono/seed/"*.md "$sandbox/.antz/"
-    [ "$scenario" = "H" ] && cp "$HERE/scenarios/mono/seed-hint/00-recon.md" "$sandbox/.antz/00-recon.md"
   elif [ "$scenario" = "S" ]; then
     # One unchecked task whose two criteria contradict each other, so the tester's test
     # can be red but never green. That is the point: nothing can converge, and the
@@ -185,7 +176,6 @@ run_once() {
 
   local prompt="$PROMPT"
   [ "$scenario" = "M" ] && prompt="$PROMPT_M"
-  case "$scenario" in N|H) prompt="$PROMPT_N" ;; esac
   start="$(date +%s)"
   # From inside the sandbox: `/antz` routes on what is in the cwd, so launching
   # it anywhere else would measure another repo — or none.
@@ -223,6 +213,16 @@ run_once() {
 
 SCENARIOS=("$@")
 [ "${#SCENARIOS[@]}" -eq 0 ] && SCENARIOS=(A B C D)
+# A scenario with no contract in judge.mjs would burn a run and only then come back
+# 'unknown scenario'. The judge is the one list of what it knows, so ask it first — this
+# is what refuses a retired arm (`N`, `H`, `cut`) before it costs anything.
+known="$(node --input-type=module -e "import('$HERE/judge.mjs').then((m) => process.stdout.write(m.SCENARIOS.join(' ')))" 2>/dev/null)"
+for scenario in "${SCENARIOS[@]}"; do
+  case " $known " in
+    *" $scenario "*) ;;
+    *) echo "unknown scenario '$scenario': judge.mjs has no contract for it (knows: ${known:-none})" >&2; exit 2 ;;
+  esac
+done
 mkdir -p "$OUT" "$SANDBOX"
 RESULTS="$OUT/results.tsv"
 [ -f "$RESULTS" ] || printf 'scenario\trun\tverdict\tsequence\tdetail\tseconds\n' >"$RESULTS"

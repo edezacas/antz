@@ -51,7 +51,7 @@ for session in "$OUT"/*.session.jsonl; do
   base="$(basename "$session" .session.jsonl)"
   scenario="${base%%-*}"
   run="${base##*-}"
-  case "$scenario" in A|B|C|D|S|M|N|H) ;; *) echo "skip $base: no contract in judge.mjs for '$scenario'" >&2; continue ;; esac
+  case "$scenario" in A|B|C|D|S|M) ;; *) echo "skip $base: no contract in judge.mjs for '$scenario'" >&2; continue ;; esac
   [ -n "$filter" ] && [ "$filter" != "$scenario" ] && continue
 
   state="$OUT/$base.state"

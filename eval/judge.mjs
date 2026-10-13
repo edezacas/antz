@@ -34,8 +34,6 @@ const DECISION_OF = {
   D: "pagination.md",
   S: "pagination.md",
   M: "collection-helpers.md",
-  N: "store-helpers.md",
-  H: "store-helpers.md",
 };
 
 /** The scenarios this judge knows a contract for. */
@@ -169,9 +167,7 @@ export function verdict({ scenario, trace, resent = [], parallel = 0, end = null
       pass = `no payload was dispatched twice: ${trace.length} dispatch(es), ${reps} repair(s) on the task, ${ending}`;
       break;
     }
-    case "M":
-    case "N":
-    case "H": {
+    case "M": {
       state(end?.antzPresent === true, "the run did not finish: .antz/ is still there");
       state(end?.decision === false, `docs/decisions/${DECISION_OF[scenario]} is missing`);
       only(

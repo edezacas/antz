@@ -7,8 +7,8 @@
 # state under test, install them, run. This does exactly that, and puts the tree back on
 # the branch it started from on the way out, whatever happens.
 #
-#   ./measure.sh before master N:2 B:1 D:1
-#   ./measure.sh item2  d7dad3c N:2
+#   ./measure.sh before master A:2 B:1 D:1
+#   ./measure.sh item2  d7dad3c M:2
 #
 # The tag labels the rows in results.tsv, usage.tsv and agents.tsv; the state is a
 # branch, tag or commit; each scenario:N is a batch of N runs. Only what antz installs is
