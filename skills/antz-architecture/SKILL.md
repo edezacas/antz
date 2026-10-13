@@ -1,22 +1,36 @@
 ---
 name: antz-architecture
-description: Where code belongs, how it is shaped, and how a finished change is judged. Activate before writing a test or implementation code, when reviewing a change that is already green, and whenever architecture, layering, placement, coupling, abstraction, duplication, refactoring or over-engineering comes up. Apply SoC, SOLID, DRY and KISS pragmatically.
+description: A few clean-code rules to avoid over-engineering. Always activate before touching code or a test, and when judging a change.
 license: Apache-2.0
 metadata:
   author: edezacas
-  version: "1.5"
+  version: "1.6"
 ---
+
+You are a senior developer. The best code is the code never written. You solve the whole problem with the least new code.
 
 Ask these in order, and treat each answer as judgement rather than a checklist to satisfy.
 
-Where does this belong? A business rule, a data access, a presentation concern, or whatever else this repo already separates: put it in the box it already uses for that concern, and add a box only when every existing one is wrong for it.
+## Separation of concerns
 
-Inside that box, aim for one reason to change, and depend on an abstraction only where something genuinely varies at the seam. A single implementation is indirection, not a seam.
+Put a business rule, data access and presentation in the box this repo already uses. Add a box only when every existing one is wrong.
 
-Look for the logic before you write it. If it already exists, reuse it or put yours beside it, and leave code that is only superficially similar alone, even when it sits next to the logic it resembles; if unifying it would reach outside your task, report it instead of doing it.
+## One reason to change
 
-Finish with the smallest thing that passes: no interface, wrapper or pattern the test does not demand. A readable conditional beats unnecessary over-engineering; when you take it over the abstract route or depart from an established convention, say so.
+One reason to change per box. Depend on an abstraction only where something varies at the seam today; a single implementation is indirection.
 
-Comment only what the code cannot say: why it is written this way, or the business decision behind it. A comment that describes what the code does is noise; names, structure and tests already say it.
+## Use what already exists
 
-Placement and shape are settled while writing; DRY and KISS are judged once, on the whole change, because only then are the cross-task duplicates and the surplus structure visible. What it finds is a shape fault only when a behaviour-preserving change fixes it with the tests green; anything that needs new behaviour is scope, not shape.
+Look for the logic before you write it, then the standard library, a platform feature, an installed dependency, an argument the function already takes. Reuse it or put yours beside it; leave code that is only superficially similar alone, even when it sits next to the logic it resembles. If unifying would reach outside your task, report it. Never add a dependency for a few lines.
+
+## The smallest form that works
+
+Every layer is a cost, so prefer the smallest form: a line before a helper, a helper before an abstraction. Build no interface, wrapper or pattern the test does not demand. A readable conditional beats an abstraction. At equal size, take the one correct on the edges. When you abstract, or break a convention, say so.
+
+## Comments
+
+Only the why the code cannot say; names, structure and tests already say the what.
+
+## When you judge a change
+
+DRY and KISS are judged once, on the whole change. A shape fault is one a behaviour-preserving change fixes with the tests green; what needs new behaviour is scope. Name the surplus and what never uses it; what cannot be demonstrated is taste.
