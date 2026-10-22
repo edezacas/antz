@@ -148,7 +148,7 @@ The TDD and architecture rules left antz for `edezacas/agent-skills`. antz ships
 `antz-clarify`, and the agents keep asking for "whatever skills cover test-driven development and
 architecture". `prompts/`, `agents/` and `extensions/` are untouched, so this batch measures the
 two skills from outside. `D` and `M` are the arms that can see it. `TAG=skills-move ./run.sh D M`,
-then `RUNS=3 ./run.sh D`.
+then `TAG=skills-move RUNS=3 ./run.sh D`.
 
 | Run | Verdict | What it showed |
 |---|---|---|
