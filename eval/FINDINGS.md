@@ -142,6 +142,49 @@ branch's closing sentence read it as its opposite, so a run that left `.antz/` w
 printed "closed in PASS anyway". The verdict never depended on it — `S` asserts the trace and
 only reports the ending.
 
+## The skills move (2026-10-22)
+
+The TDD and architecture rules left antz for `edezacas/agent-skills`. antz ships one skill now,
+`antz-clarify`, and the agents keep asking for "whatever skills cover test-driven development and
+architecture". `prompts/`, `agents/` and `extensions/` are untouched, so this batch measures the
+two skills from outside. `D` and `M` are the arms that can see it. `TAG=skills-move ./run.sh D M`,
+then `RUNS=3 ./run.sh D`.
+
+| Run | Verdict | What it showed |
+|---|---|---|
+| `M` | PASS | four chains in two dispatches, decision written, `.antz/` deleted, 1396 s and 537 k tokens. Every tester, every implementer and the verifier read `tdd` and `code-design` |
+| `D` 1 | FAIL | the verifier read `code-design`, named the surplus, and passed it anyway |
+| `D` 2-4 | PASS | the canonical shape, one repair round, 665 s, 834 s and 420 s |
+
+`M` is the clean half. The merged `tdd` reaches the tester and the implementer, they read it, and
+the four chains converge, so the fusion did not break the handover. Whether the headless seam
+rule was exercised, `M` cannot say, because its plan names every test path already.
+
+`D` 1 is worth keeping. The verifier did not skip the skill. `agents.tsv` records `code-design`
+for that run, and its report names the fault exactly, "`LimitPolicy` single-impl seam, stateless
+`ArrayPaginator`/`makePaginator` in `src/pagination.js`", then files it as "taste in untouched
+baseline code, no plan criterion broken, so not a failing task".
+
+That is the scenario contradicting itself. `D` seeds the over-abstraction in the baseline, and
+`agents/antz-verifier.md` says "judge the change, not the tree". A verifier that takes that line
+literally has to let it pass. Seven `D` runs before the move passed, and three of the four after
+it did, so the rate is 10 of 11 and not a regression from the rename, which changed no body text.
+The two clauses simply disagree, and one run in eleven noticed.
+
+If `D` is to keep measuring the architecture check, one of the two has to move. Either the seed
+puts the surplus inside the change, or the verifier is told to judge the tree. Neither is a fix
+to make from one batch, and until one of them happens, `D` measures the loop and only sometimes
+the shape.
+
+### The skills' own evals
+
+The batch above reads the flow. The skills were also measured on their own, with the runner in
+`agent-skills`, 20 cases by two configs and 40 runs: `tdd` 9/9 against 6/9, `code-design` 10/10
+against 9/10, 58/72 against 55/72 overall, and the assertions that can fail because of the skill
+rather than by luck 14/14 against 10/14. Two cases carry the difference, the tester's batch of
+tests written ahead of any implementation and the smallest change for one new option. The other
+four pass in both arms and are guardrails as written, not evidence.
+
 ## Retired scenarios
 
 A scenario is retired when it can no longer buy a measurement. It is kept under
