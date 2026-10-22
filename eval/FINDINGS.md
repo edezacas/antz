@@ -152,9 +152,9 @@ then `RUNS=3 ./run.sh D`.
 
 | Run | Verdict | What it showed |
 |---|---|---|
-| `M` | PASS | four chains in two dispatches, decision written, `.antz/` deleted, 1396 s and 537 k tokens. Every tester, every implementer and the verifier read `tdd` and `code-design` |
+| `M` | PASS | four chains in two dispatches, decision written, `.antz/` deleted, 1396 s and 537 k tokens. Every tester and every implementer read `tdd` and `code-design`; both verifiers read `code-design` |
 | `D` 1 | FAIL | the verifier read `code-design`, named the surplus, and passed it anyway |
-| `D` 2-4 | PASS | the canonical shape, one repair round, 665 s, 834 s and 420 s |
+| `D` 2-4 | PASS | the canonical shape, a repair round or two, 665 s, 834 s and 420 s |
 
 `M` is the clean half. The merged `tdd` reaches the tester and the implementer, they read it, and
 the four chains converge, so the fusion did not break the handover. Whether the headless seam
@@ -172,18 +172,19 @@ it did, so the rate is 10 of 11 and not a regression from the rename, which chan
 The two clauses simply disagree, and one run in eleven noticed.
 
 If `D` is to keep measuring the architecture check, one of the two has to move. Either the seed
-puts the surplus inside the change, or the verifier is told to judge the tree. Neither is a fix
-to make from one batch, and until one of them happens, `D` measures the loop and only sometimes
-the shape.
+puts the surplus inside the change, or the verifier's rule widens from the change to the tree.
+Neither is a fix to make from one batch, and until one of them happens, `D` measures the loop and
+only sometimes the shape.
 
 ### The skills' own evals
 
 The batch above reads the flow. The skills were also measured on their own, with the runner in
-`agent-skills`, 20 cases by two configs and 40 runs: `tdd` 9/9 against 6/9, `code-design` 10/10
-against 9/10, 58/72 against 55/72 overall, and the assertions that can fail because of the skill
-rather than by luck 14/14 against 10/14. Two cases carry the difference, the tester's batch of
-tests written ahead of any implementation and the smallest change for one new option. The other
-four pass in both arms and are guardrails as written, not evidence.
+`agent-skills`. They are 6 of that iteration's 20 cases, 12 of its 40 runs, each one graded by a
+separate judge. `tdd` 9/9 against 6/9, `code-design` 10/10 against 9/10, 19/19 against 15/19
+together, and the assertions that can fail because of the skill rather than by luck 14/14 against
+10/14. Two cases carry the difference, the tester's batch of tests written ahead of any
+implementation and the smallest change for one new option. The other four cases pass in both
+arms, so this batch gives them no signal.
 
 ## Retired scenarios
 
