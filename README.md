@@ -43,8 +43,21 @@ Pick your client. Its guide is the install and nothing else.
 | OpenCode | [adapters/opencode](adapters/opencode/README.md) |
 
 The five agents and the `/antz` command install at user scope, so antz is available in every
-project with no per-repo setup, and `--uninstall` takes them back out. The three skills come
-next, in the same guide, and they are one global copy every client shares.
+project with no per-repo setup, and `--uninstall` takes them back out.
+
+The skill antz ships comes next. It is one global copy every client shares.
+
+```sh
+npx skills add edezacas/antz -g
+```
+
+The flow is better with skills covering test-driven development and architecture. antz works
+with the ones you already use, and [edezacas/agent-skills](https://github.com/edezacas/agent-skills)
+has a good pair.
+
+```sh
+npx skills add edezacas/agent-skills -g
+```
 
 To have an agent do the install, hand it this:
 

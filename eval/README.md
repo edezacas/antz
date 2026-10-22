@@ -93,17 +93,19 @@ install or when an edit moves the routing broadly.
 | `prompts/antz.md` — blaming a side and routing the repair | **A, B** |
 | `prompts/antz.md` — the attempt cap, *never grind*, cut-or-reframe | **C, S** |
 | `prompts/antz.md` — who closes the run and deletes `.antz/` | **A, B, C** |
-| `skills/antz-architecture` | **D** |
+| `code-design` in agent-skills | **D** |
 | `agents/antz-verifier.md` | **C**, and **A** or **B** |
 | `agents/antz-tester.md`, `antz-implementer.md` — the handover | **M, S**, and `antzReads` in `agents.tsv` |
 | `extensions/antz-subagent.ts` | **`dispatch.sh`** (free), then **M** |
-| `skills/antz-tdd`, the test the tester writes | **M** |
+| `tdd` in agent-skills, the test the tester writes | **M** |
 | docs, eval or README alone | none — the free instruments only |
 
 A single arm is 5–12 minutes and ~120–430 k tokens, against ~30 minutes and ~850 k for
-`A B C D`. Editing `skills/antz-architecture` and running all four is ~690 k tokens that cannot
-fail on the edit, because only `D`'s seed makes the architecture check reachable. The map is
-`judge.mjs` read backwards: it says which arm *can* observe an edit, not that the edit is safe.
+`A B C D`. Editing `code-design` in agent-skills and running all four is ~690 k tokens that cannot
+fail on the edit, because only `D`'s seed makes the architecture check reachable. `D` and `M` grade
+whatever copy is installed, so reinstall the skill after editing it: the tree no longer pins either.
+The map is `judge.mjs` read backwards: it says which arm *can* observe an edit, not that the edit
+is safe.
 One paragraph of `prompts/antz.md` can carry two rows — union them, and keep the full batch
 when in doubt.
 

@@ -26,7 +26,7 @@ NAME="install.sh"
 
 # What antz owns. Anything else in these directories belongs to someone else.
 AGENTS=(antz-scout antz-planner antz-tester antz-implementer antz-verifier)
-SKILLS=(antz-clarify antz-tdd antz-architecture)
+SKILLS=(antz-clarify)
 PROMPT="antz"
 EXTENSION="antz-subagent.ts"
 
@@ -305,7 +305,7 @@ install_antz() {
     note "The rest of each agent file comes from $REPO. Drop a model: line and reinstall to reset it."
   fi
   if [ ! -f "$HOME/.agents/skills/${SKILLS[0]}/SKILL.md" ] && [ ! -f "$DEST/skills/${SKILLS[0]}/SKILL.md" ]; then
-    note "The three skills are not part of this install; they are global and shared:"
+    note "The skill is not part of this install; it is global and shared:"
     note "  npx skills add $REPO -g"
   fi
   if [ "$CLIENT" = "pi" ]; then

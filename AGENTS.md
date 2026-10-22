@@ -24,7 +24,7 @@ dispatch stubs and `eval/judge.mjs` need it, an install never does.
   `curl -fsSL https://raw.githubusercontent.com/edezacas/antz/master/adapters/pi/install.sh | bash`,
   or a wrapper from a checkout; `--uninstall` takes it back out. Smoke check any client in a
   scratch dir, twice, then `--uninstall`: `./adapters/pi/install.sh --dir "$(mktemp -d)"`.
-- The three skills are global and separate: `npx skills add edezacas/antz -g`.
+- The skill is global and separate: `npx skills add edezacas/antz -g`.
 - Run it from inside a target repo: `/antz "<prompt>"`.
 - The flow is verified by hand (install, `/antz` in a sandbox, read `.antz/` mid-flight) and by
   six instruments: `./eval/prompts.sh`, `./eval/dispatch.sh` and `node --test eval/judge.test.mjs`

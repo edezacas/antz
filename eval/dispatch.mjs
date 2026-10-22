@@ -183,21 +183,21 @@ const soloChain = await dispatch({ chains: [[{ agent: "antz-tester", task: "TASK
 check("a chains call of one chain works", soloChain.details.runs.length === 1 && soloChain.details.runs[0].status === "done");
 
 console.log("\n== the skills a child is handed, and the one it reads");
-const SKILL_FILE = join(FIXTURES, "skills", "antz-tdd", "SKILL.md");
-globalThis.__skills = [{ name: "antz-tdd", filePath: SKILL_FILE }];
+const SKILL_FILE = join(FIXTURES, "skills", "tdd", "SKILL.md");
+globalThis.__skills = [{ name: "tdd", filePath: SKILL_FILE }];
 reset({ read: SKILL_FILE });
 const skilled = await dispatch({ agent: "antz-tester", task: "TASK: skilled" });
-check("the discovered skills are on the details, once per call", JSON.stringify(skilled.details.skills) === '["antz-tdd"]', JSON.stringify(skilled.details.skills));
-check("reading the SKILL.md marks the skill as used", JSON.stringify(skilled.details.runs[0].skillsUsed) === '["antz-tdd"]', JSON.stringify(skilled.details.runs[0].skillsUsed));
-check("the header names what was available", /skills: antz-tdd/.test(renderResult(skilled, true)));
-check("the expanded row names what was used", /skills used: antz-tdd/.test(renderResult(skilled, true)));
-reset({ read: "skills/antz-tdd/SKILL.md" });
+check("the discovered skills are on the details, once per call", JSON.stringify(skilled.details.skills) === '["tdd"]', JSON.stringify(skilled.details.skills));
+check("reading the SKILL.md marks the skill as used", JSON.stringify(skilled.details.runs[0].skillsUsed) === '["tdd"]', JSON.stringify(skilled.details.runs[0].skillsUsed));
+check("the header names what was available", /skills: tdd/.test(renderResult(skilled, true)));
+check("the expanded row names what was used", /skills used: tdd/.test(renderResult(skilled, true)));
+reset({ read: "skills/tdd/SKILL.md" });
 const relative = await dispatch({ agent: "antz-tester", task: "TASK: relative" });
-check("a relative read still resolves to the skill", JSON.stringify(relative.details.runs[0].skillsUsed) === '["antz-tdd"]', JSON.stringify(relative.details.runs[0].skillsUsed));
+check("a relative read still resolves to the skill", JSON.stringify(relative.details.runs[0].skillsUsed) === '["tdd"]', JSON.stringify(relative.details.runs[0].skillsUsed));
 reset({ read: join(FIXTURES, "src", "pagination.js") });
 const plain = await dispatch({ agent: "antz-tester", task: "TASK: plain" });
 check("an ordinary read is not a skill", plain.details.runs[0].skillsUsed === undefined, JSON.stringify(plain.details.runs[0].skillsUsed));
-check("available and used are not the same list", !/skills used:/.test(renderResult(plain, true)) && /skills: antz-tdd/.test(renderResult(plain, true)));
+check("available and used are not the same list", !/skills used:/.test(renderResult(plain, true)) && /skills: tdd/.test(renderResult(plain, true)));
 globalThis.__skills = Array.from({ length: 10 }, (_, i) => ({
   name: `s${i}`,
   filePath: join(FIXTURES, "skills", `s${i}`, "SKILL.md"),
